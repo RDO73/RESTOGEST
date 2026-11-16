@@ -1,15 +1,3 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "outputDirectory": "public",
-  "functions": {
-    "api/index.ts": {
-      "includeFiles": "{src/schema/migrations/**,node_modules/@electric-sql/pglite/dist/**}"
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/api"
-    }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }

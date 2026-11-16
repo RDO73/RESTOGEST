@@ -105,7 +105,7 @@ npm run test:concurrency
 
 ## Déploiement Vercel (`.vercel.app`)
 
-Le dépôt inclut l'adaptateur Serverless Express ([api/index.ts](api/index.ts)) et [vercel.json](vercel.json) :
+Le dépôt est configuré pour le support natif Express sur Vercel ([src/index.ts](src/index.ts) et [vercel.json](vercel.json)) :
 
 1. Configurer une base **PostgreSQL 14+ managée** (Neon, Supabase, RDS...) et y appliquer `npm run db:migrate`.
 2. Définir les variables d'environnement dans le projet Vercel (Production & Preview) :
