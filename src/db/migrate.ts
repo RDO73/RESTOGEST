@@ -14,6 +14,7 @@ function resolveMigrationsDir(customDir?: string): string {
   const candidates = [
     path.resolve(__dirname, '../schema/migrations'),
     path.resolve(__dirname, '../../src/schema/migrations'),
+    path.resolve(process.cwd(), 'src/schema/migrations'),
   ];
   for (const dir of candidates) {
     if (fs.existsSync(dir)) {

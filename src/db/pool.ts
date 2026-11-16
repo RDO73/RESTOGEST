@@ -21,6 +21,7 @@ export interface IDbPool {
 // Classe adaptatrice pour PGlite respectant l'interface Pool de pg
 class PGlitePoolAdapter implements IDbPool {
   private pgliteInstance: PGlite | null = null;
+  private initPromise: Promise<PGlite> | null = null;
   private readonly dataDir: string;
 
   constructor(dataDir: string) {
@@ -31,11 +32,46 @@ class PGlitePoolAdapter implements IDbPool {
   }
 
   private async getInstance(): Promise<PGlite> {
-    if (!this.pgliteInstance) {
-      this.pgliteInstance = new PGlite(this.dataDir);
-      await this.pgliteInstance.waitReady;
+    if (this.pgliteInstance) {
+      return this.pgliteInstance;
     }
-    return this.pgliteInstance;
+    if (!this.initPromise) {
+      this.initPromise = (async () => {
+        const db = new PGlite(this.dataDir);
+        await db.waitReady;
+
+        if (process.env.VERCEL) {
+          const reg = await db.query<{ reg: string | null }>(
+            "SELECT to_regclass('public.schema_migrations') AS reg"
+          );
+          if (!reg.rows[0]?.reg) {
+            const bootstrapPool: IDbPool & { exec: (sql: string) => Promise<void> } = {
+              query: async (text: string, params?: any[]) => {
+                const res = await db.query(text, params);
+                return { rows: res.rows, rowCount: res.rows.length };
+              },
+              exec: async (sql: string) => {
+                await db.exec(sql);
+              },
+              connect: async () => ({
+                query: async (text: string, params?: any[]) => {
+                  const res = await db.query(text, params);
+                  return { rows: res.rows, rowCount: res.rows.length };
+                },
+                release: () => {},
+              }),
+              end: async () => {},
+            };
+            const { applyMigrations } = await import('./migrate.js');
+            await applyMigrations(bootstrapPool);
+          }
+        }
+
+        this.pgliteInstance = db;
+        return db;
+      })();
+    }
+    return this.initPromise;
   }
 
   async query(text: string, params?: any[]): Promise<{ rows: any[]; rowCount?: number }> {
@@ -69,6 +105,7 @@ class PGlitePoolAdapter implements IDbPool {
   }
 
   async end(): Promise<void> {
+    this.initPromise = null;
     if (this.pgliteInstance) {
       await this.pgliteInstance.close();
       this.pgliteInstance = null;

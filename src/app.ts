@@ -1,4 +1,5 @@
 import express from 'express';
+import { config } from './config/env.js';
 import { authRouter } from './modules/auth/auth.router.js';
 import { catalogRouter } from './modules/catalog/catalog.router.js';
 import { salesRouter } from './modules/sales/sales.router.js';
@@ -11,11 +12,19 @@ export const app = express();
 
 app.use(express.json());
 
+const databaseMode =
+  config.databaseType === 'postgres'
+    ? 'postgresql'
+    : process.env.VERCEL
+      ? 'pglite-ephemeral'
+      : 'pglite-local';
+
 // Endpoint racine & santé
 app.get('/', (_req, res) => {
   res.json({
     service: 'RESTOGEST API V1',
     status: 'ok',
+    database: databaseMode,
     health: '/health',
     endpoints: [
       '/api/auth',
@@ -32,6 +41,7 @@ app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     service: 'RESTOGEST API V1',
+    database: databaseMode,
     timestamp: new Date().toISOString(),
   });
 });
