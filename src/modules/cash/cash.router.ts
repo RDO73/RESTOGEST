@@ -1,0 +1,386 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { requireAuth } from '../../middlewares/auth-middleware.js';
+import { withTenantContext } from '../../db/tenant-context.js';
+
+export const cashRouter = Router();
+
+cashRouter.use(requireAuth);
+
+// -------------------------------------------------------------
+// 1. SESSION ACTIVE AVEC CALCULS EN TEMPS RÉEL
+// -------------------------------------------------------------
+cashRouter.get('/sessions/current', async (req, res, next) => {
+  try {
+    const session = await withTenantContext(req.auth!, async (client) => {
+      const sRes = await client.query(
+        `SELECT cs.*, u.full_name as opened_by_name
+         FROM public.cash_sessions cs
+         LEFT JOIN public.users u ON u.id = cs.opened_by
+         WHERE cs.company_id = $1 AND cs.status = 'open'
+         ORDER BY cs.opened_at DESC LIMIT 1`,
+        [req.auth!.companyId]
+      );
+
+      if (sRes.rows.length === 0) {
+        return null;
+      }
+
+      const activeSession = sRes.rows[0];
+
+      // Totaux par mode de règlement
+      const paymentsRes = await client.query(
+        `SELECT payment_method, COALESCE(SUM(amount), 0) as total_amount
+         FROM public.payments
+         WHERE cash_session_id = $1
+         GROUP BY payment_method`,
+        [activeSession.id]
+      );
+
+      const paymentMap: Record<string, number> = {
+        cash: 0,
+        card: 0,
+        mobile_money: 0,
+        transfer: 0,
+        check: 0,
+        other: 0,
+      };
+
+      for (const row of paymentsRes.rows) {
+        paymentMap[row.payment_method] = parseFloat(row.total_amount);
+      }
+
+      // Remboursements espèces décaissés
+      const refRes = await client.query(
+        `SELECT COALESCE(SUM(amount), 0) as total_cash_refunds
+         FROM public.refunds
+         WHERE cash_session_id = $1 AND refund_method = 'cash' AND status = 'completed'`,
+        [activeSession.id]
+      );
+      const totalCashRefunds = parseFloat(refRes.rows[0].total_cash_refunds);
+
+      // Dépenses sorties de caisse
+      const expRes = await client.query(
+        `SELECT COALESCE(SUM(amount), 0) as total_expenses
+         FROM public.expenses
+         WHERE cash_session_id = $1`,
+        [activeSession.id]
+      );
+      const totalExpenses = parseFloat(expRes.rows[0].total_expenses);
+
+      // Solde théorique en espèces
+      const openingAmount = parseFloat(activeSession.opening_amount);
+      const theoreticalCash = openingAmount + paymentMap.cash - totalCashRefunds - totalExpenses;
+
+      return {
+        ...activeSession,
+        openingAmount,
+        metrics: {
+          cashIn: paymentMap.cash,
+          cardIn: paymentMap.card,
+          mobileMoneyIn: paymentMap.mobile_money,
+          transferIn: paymentMap.transfer,
+          checkIn: paymentMap.check,
+          cashRefunds: totalCashRefunds,
+          totalExpenses,
+          theoreticalCashInDrawer: theoreticalCash,
+        },
+      };
+    });
+
+    res.json({ success: true, data: session });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// -------------------------------------------------------------
+// 2. HISTORIQUE DES SESSIONS DE CAISSE
+// -------------------------------------------------------------
+cashRouter.get('/sessions', async (req, res, next) => {
+  try {
+    const { status, startDate, endDate, limit = '50', offset = '0' } = req.query;
+
+    const sessions = await withTenantContext(req.auth!, async (client) => {
+      let query = `
+        SELECT cs.*,
+               u_open.full_name as opened_by_name,
+               u_close.full_name as closed_by_name,
+               COALESCE((SELECT SUM(amount) FROM public.payments WHERE cash_session_id = cs.id), 0) as total_collected,
+               COALESCE((SELECT SUM(amount) FROM public.expenses WHERE cash_session_id = cs.id), 0) as total_expenses
+        FROM public.cash_sessions cs
+        LEFT JOIN public.users u_open ON u_open.id = cs.opened_by
+        LEFT JOIN public.users u_close ON u_close.id = cs.closed_by
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+
+      if (status) {
+        params.push(status);
+        query += ` AND cs.status = $${params.length}`;
+      }
+
+      if (startDate) {
+        params.push(startDate);
+        query += ` AND cs.opened_at >= $${params.length}`;
+      }
+
+      if (endDate) {
+        params.push(endDate);
+        query += ` AND cs.opened_at <= $${params.length}`;
+      }
+
+      query += ` ORDER BY cs.opened_at DESC`;
+
+      params.push(parseInt(limit as string, 10));
+      query += ` LIMIT $${params.length}`;
+
+      params.push(parseInt(offset as string, 10));
+      query += ` OFFSET $${params.length}`;
+
+      const result = await client.query(query, params);
+      return result.rows;
+    });
+
+    res.json({ success: true, data: sessions });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// -------------------------------------------------------------
+// 3. DÉTAIL D'UNE SESSION DE CAISSE
+// -------------------------------------------------------------
+cashRouter.get('/sessions/:id', async (req, res, next) => {
+  try {
+    const sessionId = req.params.id;
+
+    const session = await withTenantContext(req.auth!, async (client) => {
+      const sRes = await client.query(
+        `SELECT cs.*,
+                u_open.full_name as opened_by_name,
+                u_close.full_name as closed_by_name
+         FROM public.cash_sessions cs
+         LEFT JOIN public.users u_open ON u_open.id = cs.opened_by
+         LEFT JOIN public.users u_close ON u_close.id = cs.closed_by
+         WHERE cs.id = $1`,
+        [sessionId]
+      );
+
+      if (sRes.rows.length === 0) return null;
+
+      const paymentsRes = await client.query(
+        `SELECT p.*, s.invoice_number
+         FROM public.payments p
+         LEFT JOIN public.sales s ON s.id = p.sale_id
+         WHERE p.cash_session_id = $1
+         ORDER BY p.paid_at ASC`,
+        [sessionId]
+      );
+
+      const expensesRes = await client.query(
+        `SELECT e.*, u.full_name as author_name
+         FROM public.expenses e
+         LEFT JOIN public.users u ON u.id = e.user_id
+         WHERE e.cash_session_id = $1
+         ORDER BY e.created_at ASC`,
+        [sessionId]
+      );
+
+      return {
+        ...sRes.rows[0],
+        payments: paymentsRes.rows,
+        expenses: expensesRes.rows,
+      };
+    });
+
+    if (!session) {
+      res.status(404).json({ success: false, error: 'Session de caisse introuvable' });
+      return;
+    }
+
+    res.json({ success: true, data: session });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// -------------------------------------------------------------
+// 4. OUVERTURE D'UNE NOUVELLE SESSION DE CAISSE
+// -------------------------------------------------------------
+cashRouter.post('/sessions/open', async (req, res, next) => {
+  try {
+    const schema = z.object({
+      openingAmount: z.number().min(0, { message: 'Le montant du fond de caisse initial doit être positif ou nul' }).default(0),
+    });
+    const data = schema.parse(req.body);
+
+    const session = await withTenantContext(req.auth!, async (client) => {
+      // Vérifier si une session n'est pas déjà ouverte dans l'entreprise
+      const existing = await client.query(
+        `SELECT id FROM public.cash_sessions WHERE company_id = $1 AND status = 'open'`,
+        [req.auth!.companyId]
+      );
+      if (existing.rows.length > 0) {
+        throw new Error('Une session de caisse est déjà active pour cette entreprise. Clôturez-la avant d\'en ouvrir une nouvelle.');
+      }
+
+      const result = await client.query(
+        `INSERT INTO public.cash_sessions (company_id, opened_by, opening_amount, status)
+         VALUES ($1, $2, $3, 'open')
+         RETURNING *`,
+        [req.auth!.companyId, req.auth!.userId, data.openingAmount]
+      );
+      return result.rows[0];
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Session de caisse ouverte avec succès',
+      data: session,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// -------------------------------------------------------------
+// 5. CLÔTURE D'UNE SESSION DE CAISSE (Procédure SECURITY DEFINER close_cash_session)
+// -------------------------------------------------------------
+cashRouter.post('/sessions/:id/close', async (req, res, next) => {
+  try {
+    const sessionId = req.params.id;
+    const schema = z.object({
+      actualAmount: z.number().min(0, { message: 'Le montant d\'espèces compté doit être positif ou nul' }),
+    });
+    const data = schema.parse(req.body);
+
+    const closedSession = await withTenantContext(req.auth!, async (client) => {
+      await client.query(
+        `SELECT public.close_cash_session($1::UUID, $2::NUMERIC)`,
+        [sessionId, data.actualAmount]
+      );
+
+      const sRes = await client.query(
+        `SELECT * FROM public.cash_sessions WHERE id = $1`,
+        [sessionId]
+      );
+      return sRes.rows[0];
+    });
+
+    res.json({
+      success: true,
+      message: "Session de caisse clôturée avec calcul automatique du solde théorique et de l'écart",
+      data: closedSession,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// -------------------------------------------------------------
+// 6. LISTE DES DÉPENSES DE CAISSE
+// -------------------------------------------------------------
+cashRouter.get('/expenses', async (req, res, next) => {
+  try {
+    const { cashSessionId, category, startDate, endDate, limit = '50', offset = '0' } = req.query;
+
+    const expenses = await withTenantContext(req.auth!, async (client) => {
+      let query = `
+        SELECT e.*, u.full_name as author_name, cs.status as cash_session_status
+        FROM public.expenses e
+        LEFT JOIN public.users u ON u.id = e.user_id
+        LEFT JOIN public.cash_sessions cs ON cs.id = e.cash_session_id
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+
+      if (cashSessionId) {
+        params.push(cashSessionId);
+        query += ` AND e.cash_session_id = $${params.length}`;
+      }
+
+      if (category) {
+        params.push(category);
+        query += ` AND e.category = $${params.length}`;
+      }
+
+      if (startDate) {
+        params.push(startDate);
+        query += ` AND e.created_at >= $${params.length}`;
+      }
+
+      if (endDate) {
+        params.push(endDate);
+        query += ` AND e.created_at <= $${params.length}`;
+      }
+
+      query += ` ORDER BY e.created_at DESC`;
+
+      params.push(parseInt(limit as string, 10));
+      query += ` LIMIT $${params.length}`;
+
+      params.push(parseInt(offset as string, 10));
+      query += ` OFFSET $${params.length}`;
+
+      const result = await client.query(query, params);
+      return result.rows;
+    });
+
+    res.json({ success: true, data: expenses });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// -------------------------------------------------------------
+// 7. ENREGISTREMENT D'UNE DÉPENSE SORTIE DE CAISSE
+// -------------------------------------------------------------
+cashRouter.post('/expenses', async (req, res, next) => {
+  try {
+    const schema = z.object({
+      cashSessionId: z.string().uuid().optional(),
+      category: z.string().min(1).max(100),
+      amount: z.number().positive({ message: 'Le montant de la dépense doit être strictement positif' }),
+      description: z.string().min(1, { message: 'Une description ou motif de la dépense est requis' }),
+    });
+    const data = schema.parse(req.body);
+
+    const expense = await withTenantContext(req.auth!, async (client) => {
+      // Déterminer la session de caisse
+      let sessionId = data.cashSessionId;
+      if (!sessionId) {
+        const active = await client.query(
+          `SELECT id FROM public.cash_sessions WHERE company_id = $1 AND status = 'open' LIMIT 1`,
+          [req.auth!.companyId]
+        );
+        if (active.rows.length > 0) {
+          sessionId = active.rows[0].id;
+        }
+      }
+
+      const result = await client.query(
+        `INSERT INTO public.expenses (company_id, user_id, cash_session_id, category, amount, description)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`,
+        [
+          req.auth!.companyId,
+          req.auth!.userId,
+          sessionId || null,
+          data.category,
+          data.amount,
+          data.description,
+        ]
+      );
+      return result.rows[0];
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Dépense enregistrée avec succès',
+      data: expense,
+    });
+  } catch (error) {
+    next(error);
+  }
+});

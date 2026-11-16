@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment & local secrets
+.env
+.env.local
+.env.*.local
+
+# Embedded database data & runtime artifacts
+data/
+*.log
+
+# OS / IDE / Test caches
+.DS_Store
+Thumbs.db
+coverage/
+.vitest/
