@@ -108,14 +108,17 @@ npm run test:concurrency
 
 Le dépôt est configuré pour le support natif Express sur Vercel ([src/index.ts](src/index.ts) et [vercel.json](vercel.json)) :
 
-1. Configurer une base **PostgreSQL 14+ managée** (Neon, Supabase, RDS...) et y appliquer `npm run db:migrate`.
-2. Définir les variables d'environnement dans le projet Vercel (Production & Preview) :
+1. **Base de données permanente (Neon ou Supabase via Vercel Marketplace) :**
+   - Relier une base PostgreSQL (ex. Neon ou Supabase) dans **Vercel -> Storage / Marketplace**.
+   - Dès qu'une variable `DATABASE_URL`, `POSTGRES_URL` ou `DATABASE_URL_UNPOOLED` (`postgres://` / `postgresql://`) est injectée (et/ou `DATABASE_TYPE=postgres`, `DATABASE_ADMIN_URL`), le backend active automatiquement le mode PostgreSQL SSL avec `ensureDatabaseReady()` et applique les **8 migrations SQL (`001..008`)** au premier démarrage à froid (`GET /health` ou première requête API), avec verrou consultatif `pg_advisory_lock`.
+   - `GET /health` retourne alors `"database": "postgres"`.
+2. **Variables d'environnement recommandées (Production & Preview) :**
    - `NODE_ENV=production`
    - `DATABASE_TYPE=postgres`
-   - `DATABASE_URL` (`restogest_app`)
-   - `DATABASE_ADMIN_URL` (`restogest_admin`)
+   - `DATABASE_URL` (chaîne de connexion PostgreSQL / `POSTGRES_URL` injectée par Neon/Supabase)
+   - `DATABASE_ADMIN_URL` (chaîne directe unpooled `DATABASE_URL_UNPOOLED` / admin pour migrations et vérification des sessions)
    - `JWT_SECRET` (secret aléatoire robuste)
-3. Connecter le CLI et déployer en production :
+3. **Déploiement manuel CLI (optionnel si Git auto-deploy activé) :**
 
 ```bash
 vercel login

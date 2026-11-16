@@ -2,11 +2,11 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RestoGest V1 — POS, Stocks &amp; Gestion Restaurant</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>RestoGest — POS, Stocks &amp; Gestion Restaurant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=JetBrains+Mono:wght@500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -16,49 +16,73 @@
   <div id="auth-view" class="auth-shell hidden">
     <div class="auth-grid">
       <section class="auth-hero">
-        <div class="brand-pill">
-          <span class="brand-dot"></span>
-          RestoGest SaaS V1
+        <div class="auth-hero-top">
+          <div class="brand-badge">
+            <span class="brand-dot"></span>
+            <span>RestoGest Cloud V1</span>
+          </div>
+          <div id="auth-env-badge" class="env-chip">Vérification API...</div>
         </div>
-        <h1>Pilotez votre restaurant, fournil et caisse en temps réel.</h1>
+
+        <h1>La plateforme tout-en-un pour votre restaurant &amp; fournil.</h1>
         <p class="auth-subtitle">
-          Caisse POS atomique, déstockage automatique par fiches recettes, calcul exact du Prix Moyen Pondéré (PMP) et isolation multi-entreprises PostgreSQL (RLS forcée).
+          Encaissez plus vite au comptoir, déstockez automatiquement vos fiches recettes, calculez vos marges PMP et sécurisez chaque clôture de caisse.
         </p>
 
         <div class="hero-features">
           <div class="hero-feature">
-            <strong>POS &amp; Caisse Sécurisée</strong>
-            <span>Encaissement multi-modes, contrôle d'écart de caisse et ticket de caisse imprimable.</span>
+            <div class="hero-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+            </div>
+            <div>
+              <strong>Caisse POS Haute Vélocité</strong>
+              <span>Prise de commande tactile, règlements mixtes et ticket imprimable instantané.</span>
+            </div>
           </div>
           <div class="hero-feature">
-            <strong>Recettes &amp; Stocks 3 Modes</strong>
-            <span>Suivi direct, consommation d'ingrédients à la vente, alertes seuils et anti-cycles SQL.</span>
+            <div class="hero-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+            </div>
+            <div>
+              <strong>Stocks &amp; Recettes Anti-Cycle</strong>
+              <span>Déduction exacte des ingrédients à la vente et alertes automatiques de réapprovisionnement.</span>
+            </div>
           </div>
           <div class="hero-feature">
-            <strong>Achats &amp; Valorisation PMP</strong>
-            <span>Commandes fournisseurs, réception verrouillée et journal d'audit immuable.</span>
+            <div class="hero-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg>
+            </div>
+            <div>
+              <strong>Isolation Multi-Tenant PostgreSQL RLS</strong>
+              <span>Données cloisonnées par entreprise, sessions signées SHA-256 et journal d'audit immuable.</span>
+            </div>
           </div>
         </div>
 
         <div class="auth-demo-card">
-          <div>
-            <strong>Tester immédiatement sans saisie manuelle</strong>
-            <p>Crée un établissement de démonstration complet (catégories, produits, recette, achat reçu + caisse ouverte).</p>
+          <div class="auth-demo-copy">
+            <strong>Tester l'application complète en 1 clic</strong>
+            <p>Crée un établissement avec carte produits, recette Espresso, achat reçu (PMP) et caisse ouverte.</p>
           </div>
           <button id="btn-demo-quickstart" type="button" class="btn btn-amber">
-            Lancer la Démo Interactive
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Lancer la Démo
           </button>
-        </div>
-
-        <div id="auth-env-badge" class="env-status-bar">
-          Vérification de l'API en cours...
         </div>
       </section>
 
       <section class="auth-panel">
+        <div class="auth-panel-head">
+          <div class="logo-mark">RG</div>
+          <div>
+            <h2>Accès Établissement</h2>
+            <p class="muted-text">Connectez-vous ou ouvrez votre espace RestoGest</p>
+          </div>
+        </div>
+
         <div class="tabs-segmented" role="tablist">
           <button id="tab-login" type="button" class="seg-btn active" data-auth-tab="login">Connexion</button>
-          <button id="tab-register" type="button" class="seg-btn" data-auth-tab="register">Créer une entreprise</button>
+          <button id="tab-register" type="button" class="seg-btn" data-auth-tab="register">Créer un compte</button>
         </div>
 
         <form id="login-form" class="form-stack">
@@ -70,13 +94,13 @@
             <label for="login-password">Mot de passe</label>
             <input id="login-password" type="password" required placeholder="••••••••" autocomplete="current-password" />
           </div>
-          <button type="submit" class="btn btn-primary btn-full">Se connecter</button>
+          <button type="submit" class="btn btn-primary btn-full">Se connecter à mon espace</button>
         </form>
 
         <form id="register-form" class="form-stack hidden">
           <div class="field-row">
             <div class="field">
-              <label for="reg-company">Nom de l'établissement</label>
+              <label for="reg-company">Nom du restaurant / fournil</label>
               <input id="reg-company" type="text" required minlength="2" placeholder="Le Palais Gourmand" />
             </div>
             <div class="field">
@@ -120,10 +144,12 @@
 
   <!-- APPLICATION PRINCIPALE -->
   <div id="app-view" class="app-shell hidden">
-    <aside class="sidebar">
+    <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
+
+    <aside id="app-sidebar" class="sidebar">
       <div class="sidebar-header">
         <div class="logo-mark">RG</div>
-        <div>
+        <div class="sidebar-brand-text">
           <div class="logo-title">RestoGest</div>
           <div id="sidebar-company-name" class="logo-sub">Chargement...</div>
         </div>
@@ -131,12 +157,12 @@
 
       <nav class="nav-list" aria-label="Navigation principale">
         <button class="nav-item active" data-route="dashboard" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
           <span>Tableau de bord</span>
         </button>
         <button class="nav-item" data-route="pos" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-          <span>Caisse &amp; Ventes POS</span>
+          <span>Caisse &amp; POS</span>
         </button>
         <button class="nav-item" data-route="catalog" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
@@ -165,29 +191,35 @@
             <div id="user-email" class="user-mail">...</div>
           </div>
         </div>
-        <button id="btn-logout" type="button" class="btn btn-ghost btn-full">Déconnexion</button>
+        <button id="btn-logout" type="button" class="btn btn-ghost btn-full">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Déconnexion
+        </button>
       </div>
     </aside>
 
     <div class="main-area">
       <header class="topbar">
         <div class="topbar-left">
-          <button id="btn-mobile-menu" type="button" class="icon-btn mobile-only" aria-label="Menu">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          <button id="btn-mobile-menu" type="button" class="icon-btn mobile-only" aria-label="Ouvrir le menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
-          <div>
+          <div class="topbar-titles">
             <h2 id="page-title">Tableau de bord</h2>
             <p id="page-subtitle" class="topbar-sub">Vue d'ensemble en temps réel</p>
           </div>
         </div>
         <div class="topbar-actions">
           <span id="cash-status-pill" class="status-pill status-neutral">Caisse : —</span>
-          <button id="btn-refresh-all" type="button" class="btn btn-outline">Actualiser</button>
+          <button id="btn-refresh-all" type="button" class="btn btn-outline btn-refresh" aria-label="Actualiser">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+            <span class="hide-xs">Actualiser</span>
+          </button>
         </div>
       </header>
 
       <div id="ephemeral-banner" class="ephemeral-banner hidden">
-        <span><strong>Mode Démo Éphémère (PGlite) :</strong> Les données de cette session sont stockées en mémoire serveur temporaire. Pour la persistance durable multi-instances, configurez une base PostgreSQL (Neon / Supabase) dans les variables Vercel.</span>
+        <strong>Stockage démo temporaire (PGlite) :</strong> Connectez une base PostgreSQL (Neon / Supabase) dans Vercel Storage pour conserver vos ventes et produits de façon permanente.
       </div>
 
       <main id="main-content" class="content-pad"></main>
@@ -195,12 +227,30 @@
 
     <!-- NAVIGATION MOBILE BAS DE PAGE -->
     <nav class="mobile-bottom-nav" aria-label="Navigation mobile">
-      <button class="mobile-nav-item active" data-route="dashboard" type="button">Accueil</button>
-      <button class="mobile-nav-item" data-route="pos" type="button">POS</button>
-      <button class="mobile-nav-item" data-route="catalog" type="button">Catalogue</button>
-      <button class="mobile-nav-item" data-route="inventory" type="button">Stocks</button>
-      <button class="mobile-nav-item" data-route="purchases" type="button">Achats</button>
-      <button class="mobile-nav-item" data-route="cash" type="button">Caisse</button>
+      <button class="mobile-nav-item active" data-route="dashboard" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        <span>Accueil</span>
+      </button>
+      <button class="mobile-nav-item" data-route="pos" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+        <span>POS</span>
+      </button>
+      <button class="mobile-nav-item" data-route="catalog" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+        <span>Menu</span>
+      </button>
+      <button class="mobile-nav-item" data-route="inventory" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/></svg>
+        <span>Stocks</span>
+      </button>
+      <button class="mobile-nav-item" data-route="purchases" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
+        <span>Achats</span>
+      </button>
+      <button class="mobile-nav-item" data-route="cash" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/></svg>
+        <span>Caisse</span>
+      </button>
     </nav>
   </div>
 

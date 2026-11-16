@@ -8,10 +8,18 @@
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'restogest_owner') THEN
-        CREATE ROLE restogest_owner WITH LOGIN CREATEROLE;
+        BEGIN
+            CREATE ROLE restogest_owner WITH LOGIN CREATEROLE;
+        EXCEPTION WHEN insufficient_privilege THEN
+            CREATE ROLE restogest_owner WITH LOGIN;
+        END;
     END IF;
     IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'restogest_admin') THEN
-        CREATE ROLE restogest_admin WITH LOGIN BYPASSRLS;
+        BEGIN
+            CREATE ROLE restogest_admin WITH LOGIN BYPASSRLS;
+        EXCEPTION WHEN insufficient_privilege THEN
+            CREATE ROLE restogest_admin WITH LOGIN;
+        END;
     END IF;
     IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'restogest_app') THEN
         CREATE ROLE restogest_app WITH LOGIN NOBYPASSRLS;

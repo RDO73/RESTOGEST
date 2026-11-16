@@ -155,19 +155,20 @@ if (config.databaseType === 'embedded') {
   adminPoolInstance = embeddedPool;
 } else {
   console.log(`[DATABASE] Mode PostgreSQL externe actif`);
-  appPoolInstance = new Pool({
-    connectionString: config.databaseUrl,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
-  });
+  const buildPgConfig = (connectionString: string, max: number) => {
+    const isLocal = /@(localhost|127\.0\.0\.1)(:|\/|$)/i.test(connectionString);
+    const disableSsl = /sslmode=disable/i.test(connectionString);
+    return {
+      connectionString,
+      max,
+      idleTimeoutMillis: 15000,
+      connectionTimeoutMillis: 8000,
+      ...(isLocal || disableSsl ? {} : { ssl: { rejectUnauthorized: false } }),
+    };
+  };
 
-  adminPoolInstance = new Pool({
-    connectionString: config.databaseAdminUrl,
-    max: 5,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
-  });
+  appPoolInstance = new Pool(buildPgConfig(config.databaseUrl, 12));
+  adminPoolInstance = new Pool(buildPgConfig(config.databaseAdminUrl, 5));
 
   (appPoolInstance as any).on('error', (err: any) => {
     console.error('[DATABASE APP POOL ERROR]', err);
@@ -176,6 +177,47 @@ if (config.databaseType === 'embedded') {
   (adminPoolInstance as any).on('error', (err: any) => {
     console.error('[DATABASE ADMIN POOL ERROR]', err);
   });
+}
+
+let pgReadyPromise: Promise<void> | null = null;
+
+/**
+ * Vérifie et applique automatiquement les 8 migrations SQL sur une base PostgreSQL
+ * distante vierge (ex: Neon / Supabase via Vercel Marketplace), avec verrou consultatif.
+ */
+export async function ensureDatabaseReady(): Promise<void> {
+  if (config.databaseType !== 'postgres') {
+    return;
+  }
+  if (!pgReadyPromise) {
+    pgReadyPromise = (async () => {
+      try {
+        const probe = await adminPoolInstance.query(
+          "SELECT to_regclass('public.schema_migrations') AS mig, to_regclass('public.companies') AS comp"
+        );
+        if (probe.rows[0]?.mig && probe.rows[0]?.comp) {
+          return;
+        }
+
+        const lockClient = await adminPoolInstance.connect();
+        try {
+          await lockClient.query('SELECT pg_advisory_lock(73910421)');
+          try {
+            const { applyMigrations } = await import('./migrate.js');
+            await applyMigrations(adminPoolInstance);
+          } finally {
+            await lockClient.query('SELECT pg_advisory_unlock(73910421)').catch(() => {});
+          }
+        } finally {
+          lockClient.release();
+        }
+      } catch (err) {
+        pgReadyPromise = null;
+        throw err;
+      }
+    })();
+  }
+  return pgReadyPromise;
 }
 
 export const appPool = appPoolInstance;

@@ -18,7 +18,6 @@ const state = {
   subtabs: {
     catalog: 'products',
     purchases: 'orders',
-    inventory: 'levels',
   },
   categories: [],
   products: [],
@@ -37,13 +36,14 @@ const state = {
   expenses: [],
   posFilter: { search: '', categoryId: '' },
   invFilter: { search: '', lowStockOnly: false },
+  payMethod: 'cash',
 };
 
 const ROUTE_META = {
   dashboard: { title: 'Tableau de bord', sub: 'Indicateurs clés et alertes en temps réel' },
-  pos: { title: 'Caisse & Ventes POS', sub: 'Prise de commande, encaissement et déstockage atomique' },
+  pos: { title: 'Caisse & POS', sub: 'Prise de commande, encaissement et déstockage atomique' },
   catalog: { title: 'Catalogue & Recettes', sub: 'Catégories, articles et fiches techniques anti-cycle' },
-  inventory: { title: 'Stocks & Inventaire', sub: 'Niveaux, valorisation PMP, alertes et ajustements' },
+  inventory: { title: 'Stocks & Alertes', sub: 'Niveaux, valorisation PMP, alertes et ajustements' },
   purchases: { title: 'Achats & Fournisseurs', sub: 'Approvisionnement, réception et calcul automatique du PMP' },
   cash: { title: 'Trésorerie & Caisse', sub: 'Ouverture, dépenses et clôture réconciliée' },
 };
@@ -68,7 +68,7 @@ function methodLabel(m) {
   return (
     {
       cash: 'Espèces',
-      card: 'Carte bancaire',
+      card: 'Carte',
       mobile_money: 'Mobile Money',
       transfer: 'Virement',
       check: 'Chèque',
@@ -78,7 +78,7 @@ function methodLabel(m) {
 }
 
 // -------------------------------------------------------------
-// MODALE & NAVIGATION
+// MODALE, DRAWER & NAVIGATION
 // -------------------------------------------------------------
 function openModal(title, html) {
   document.getElementById('modal-title').textContent = title;
@@ -89,6 +89,15 @@ function openModal(title, html) {
 function closeModal() {
   document.getElementById('modal-backdrop').classList.add('hidden');
   document.getElementById('modal-body').innerHTML = '';
+}
+
+function toggleSidebar(forceOpen) {
+  const sb = document.getElementById('app-sidebar');
+  const bd = document.getElementById('sidebar-backdrop');
+  if (!sb || !bd) return;
+  const open = typeof forceOpen === 'boolean' ? forceOpen : !sb.classList.contains('open');
+  sb.classList.toggle('open', open);
+  bd.classList.toggle('hidden', !open);
 }
 
 function switchAuthTab(tab) {
@@ -116,9 +125,10 @@ function setRoute(route) {
   document.querySelectorAll('.nav-item, .mobile-nav-item').forEach((el) => {
     el.classList.toggle('active', el.dataset.route === route);
   });
-  document.querySelector('.sidebar')?.classList.remove('open');
+  toggleSidebar(false);
   renderChrome();
   renderRoute();
+  window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
 function renderChrome() {
@@ -141,22 +151,25 @@ function renderChrome() {
   const cashPill = document.getElementById('cash-status-pill');
   if (state.cashCurrent) {
     cashPill.className = 'status-pill status-open';
-    cashPill.textContent = `Caisse ouverte : ${fmtMoney(state.cashCurrent.metrics?.theoreticalCashInDrawer, CURRENCY())}`;
+    cashPill.textContent = `Caisse : ${fmtMoney(state.cashCurrent.metrics?.theoreticalCashInDrawer, CURRENCY())}`;
   } else {
     cashPill.className = 'status-pill status-closed';
     cashPill.textContent = 'Caisse fermée';
   }
 
-  const dbLabel =
-    state.health?.database === 'postgresql'
-      ? 'PostgreSQL Connecté'
-      : state.health?.database === 'pglite-ephemeral'
-        ? 'Démo Éphémère (PGlite)'
-        : 'Base Locale (PGlite)';
-  document.getElementById('sidebar-db-pill').textContent = dbLabel;
+  const dbType = state.health?.database;
+  const isPermanentPg = dbType === 'postgres';
+  const dbPill = document.getElementById('sidebar-db-pill');
+  dbPill.textContent = isPermanentPg
+    ? 'PostgreSQL Permanent'
+    : dbType === 'pglite-ephemeral'
+      ? 'Démo Éphémère (PGlite)'
+      : 'Base Locale (PGlite)';
+  dbPill.classList.toggle('is-ephemeral', !isPermanentPg);
+
   document.getElementById('ephemeral-banner').classList.toggle(
     'hidden',
-    state.health?.database !== 'pglite-ephemeral'
+    dbType !== 'pglite-ephemeral'
   );
 }
 
@@ -169,11 +182,11 @@ async function loadHealth() {
     state.health = h;
     const badge = document.getElementById('auth-env-badge');
     if (badge) {
-      badge.textContent = `API en ligne • Moteur: ${h.database || 'pglite'} • ${fmtDate(h.timestamp)}`;
+      badge.textContent = `API OK • DB: ${h.database || 'postgres'}`;
     }
   } catch {
     const badge = document.getElementById('auth-env-badge');
-    if (badge) badge.textContent = 'API hors ligne ou inaccessible';
+    if (badge) badge.textContent = 'API inaccessible';
   }
 }
 
@@ -291,36 +304,59 @@ function renderDashboard() {
   return `
     <div class="kpi-grid">
       <div class="card kpi-card">
-        <div class="kpi-label">Caisse Active</div>
+        <div class="kpi-top">
+          <span class="kpi-label">Caisse Active</span>
+          <span class="kpi-icon ${cashBalance !== null ? 'is-green' : 'is-red'}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/></svg>
+          </span>
+        </div>
         <div class="kpi-value">${cashBalance !== null ? esc(fmtMoney(cashBalance, cur)) : 'Fermée'}</div>
-        <div class="kpi-foot">${state.cashCurrent ? `Fond initial : ${esc(fmtMoney(state.cashCurrent.openingAmount, cur))}` : 'Ouvrez une session pour encaisser en espèces'}</div>
+        <div class="kpi-foot">${state.cashCurrent ? `Fond initial : ${esc(fmtMoney(state.cashCurrent.openingAmount, cur))}` : 'Ouvrez une session pour encaisser'}</div>
       </div>
+
       <div class="card kpi-card">
-        <div class="kpi-label">Ventes Validées (${completedSales.length})</div>
+        <div class="kpi-top">
+          <span class="kpi-label">Chiffre d'affaires (${completedSales.length})</span>
+          <span class="kpi-icon is-orange">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/></svg>
+          </span>
+        </div>
         <div class="kpi-value">${esc(fmtMoney(totalSalesAmount, cur))}</div>
-        <div class="kpi-foot">${state.sales.filter((s) => s.status === 'pending').length} commande(s) en attente</div>
+        <div class="kpi-foot">${state.sales.filter((s) => s.status === 'pending').length} ticket(s) en attente</div>
       </div>
+
       <div class="card kpi-card">
-        <div class="kpi-label">Valorisation Stock (PMP)</div>
+        <div class="kpi-top">
+          <span class="kpi-label">Valorisation Stock (PMP)</span>
+          <span class="kpi-icon is-blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
+          </span>
+        </div>
         <div class="kpi-value">${esc(fmtMoney(state.invSummary?.total_inventory_valuation || 0, cur))}</div>
-        <div class="kpi-foot">${state.invSummary?.tracked_products_count || 0} article(s) suivi(s)</div>
+        <div class="kpi-foot">${state.invSummary?.tracked_products_count || 0} article(s) suivis</div>
       </div>
+
       <div class="card kpi-card">
-        <div class="kpi-label">Alertes Stock</div>
+        <div class="kpi-top">
+          <span class="kpi-label">Alertes Stock</span>
+          <span class="kpi-icon ${state.alerts.length > 0 ? 'is-red' : 'is-green'}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </span>
+        </div>
         <div class="kpi-value">${state.alerts.length}</div>
-        <div class="kpi-foot">${state.invSummary?.out_of_stock_count || 0} en rupture critique</div>
+        <div class="kpi-foot">${state.invSummary?.out_of_stock_count || 0} rupture(s) critique(s)</div>
       </div>
     </div>
 
     <div class="card">
       <div class="section-head">
-        <h3>Actions rapides</h3>
+        <h3>Raccourcis opérationnels</h3>
       </div>
       <div class="toolbar">
-        <button class="btn btn-primary" data-jump="pos" type="button">Ouvrir la Caisse POS</button>
-        <button class="btn btn-amber" data-jump="purchases" type="button">Nouvel Achat Fournisseur</button>
-        <button class="btn btn-outline" data-jump="catalog" type="button">Ajouter Produit / Recette</button>
-        <button class="btn btn-outline" data-jump="cash" type="button">${state.cashCurrent ? 'Gérer / Clôturer Caisse' : 'Ouvrir Session Caisse'}</button>
+        <button class="btn btn-primary" data-jump="pos" type="button">Ouvrir Caisse POS</button>
+        <button class="btn btn-amber" data-jump="purchases" type="button">Nouvel Achat</button>
+        <button class="btn btn-outline" data-jump="catalog" type="button">Catalogue &amp; Recettes</button>
+        <button class="btn btn-outline" data-jump="cash" type="button">${state.cashCurrent ? 'Gérer / Clôturer Caisse' : 'Ouvrir Caisse'}</button>
       </div>
     </div>
 
@@ -330,26 +366,28 @@ function renderDashboard() {
           <h3>Alertes de réapprovisionnement</h3>
           <button class="btn btn-outline btn-sm" data-jump="inventory" type="button">Voir tout</button>
         </div>
-        ${
-          state.alerts.length === 0
-            ? '<p class="kpi-foot">Aucune alerte de stock bas ou rupture pour le moment.</p>'
-            : `<div class="table-wrap"><table>
-                <thead><tr><th>Produit</th><th>Stock</th><th>Seuil</th><th>Niveau</th></tr></thead>
-                <tbody>
-                  ${state.alerts
-                    .slice(0, 6)
-                    .map(
-                      (a) => `<tr>
-                        <td><strong>${esc(a.product_name)}</strong></td>
-                        <td class="mono">${esc(fmtQty(a.current_quantity))} ${esc(a.unit)}</td>
-                        <td class="mono">${esc(fmtQty(a.min_stock_alert))}</td>
-                        <td><span class="status-pill ${a.alert_level === 'critical_out_of_stock' ? 'status-critical' : 'status-pending'}">${a.alert_level === 'critical_out_of_stock' ? 'Rupture' : 'Stock bas'}</span></td>
-                      </tr>`
-                    )
-                    .join('')}
-                </tbody>
-              </table></div>`
-        }
+        <div class="table-wrap">
+          <table class="responsive-table">
+            <thead><tr><th>Produit</th><th>Stock</th><th>Seuil</th><th>Niveau</th></tr></thead>
+            <tbody>
+              ${
+                state.alerts.length === 0
+                  ? '<tr><td colspan="4" class="muted-text">Aucune alerte de stock bas.</td></tr>'
+                  : state.alerts
+                      .slice(0, 6)
+                      .map(
+                        (a) => `<tr>
+                          <td data-label="Produit"><strong>${esc(a.product_name)}</strong></td>
+                          <td data-label="Stock" class="mono">${esc(fmtQty(a.current_quantity))} ${esc(a.unit)}</td>
+                          <td data-label="Seuil" class="mono">${esc(fmtQty(a.min_stock_alert))}</td>
+                          <td data-label="Niveau"><span class="status-pill ${a.alert_level === 'critical_out_of_stock' ? 'status-critical' : 'status-pending'}">${a.alert_level === 'critical_out_of_stock' ? 'Rupture' : 'Stock bas'}</span></td>
+                        </tr>`
+                      )
+                      .join('')
+              }
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div class="card">
@@ -357,26 +395,28 @@ function renderDashboard() {
           <h3>Dernières ventes</h3>
           <button class="btn btn-outline btn-sm" data-jump="pos" type="button">POS</button>
         </div>
-        ${
-          state.sales.length === 0
-            ? '<p class="kpi-foot">Aucune vente enregistrée pour le moment.</p>'
-            : `<div class="table-wrap"><table>
-                <thead><tr><th>Facture</th><th>Montant</th><th>Statut</th><th>Date</th></tr></thead>
-                <tbody>
-                  ${state.sales
-                    .slice(0, 6)
-                    .map(
-                      (s) => `<tr>
-                        <td class="mono">${esc(s.invoice_number)}</td>
-                        <td class="mono">${esc(fmtMoney(s.total_amount, cur))}</td>
-                        <td>${statusBadge(s.status)}</td>
-                        <td>${esc(fmtDate(s.created_at))}</td>
-                      </tr>`
-                    )
-                    .join('')}
-                </tbody>
-              </table></div>`
-        }
+        <div class="table-wrap">
+          <table class="responsive-table">
+            <thead><tr><th>Facture</th><th>Montant</th><th>Statut</th><th>Date</th></tr></thead>
+            <tbody>
+              ${
+                state.sales.length === 0
+                  ? '<tr><td colspan="4" class="muted-text">Aucune vente enregistrée.</td></tr>'
+                  : state.sales
+                      .slice(0, 6)
+                      .map(
+                        (s) => `<tr>
+                          <td data-label="Facture" class="mono"><strong>${esc(s.invoice_number)}</strong></td>
+                          <td data-label="Montant" class="mono">${esc(fmtMoney(s.total_amount, cur))}</td>
+                          <td data-label="Statut">${statusBadge(s.status)}</td>
+                          <td data-label="Date">${esc(fmtDate(s.created_at))}</td>
+                        </tr>`
+                      )
+                      .join('')
+              }
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   `;
@@ -414,68 +454,98 @@ function renderPos() {
 
   const sale = state.activeSale;
   const summary = computeSaleSummary(sale);
+  const qtyByProduct = new Map();
+  for (const it of sale?.items || []) {
+    qtyByProduct.set(it.product_id, (qtyByProduct.get(it.product_id) || 0) + parseFloat(it.quantity || 0));
+  }
+  const totalCartItems = (sale?.items || []).reduce((s, it) => s + parseFloat(it.quantity || 0), 0);
 
   return `
     <div class="pos-grid">
-      <div style="display:flex; flex-direction:column; gap:16px;">
+      <div class="pos-left">
         <div class="card">
           <div class="section-head">
             <h3>Carte &amp; Produits</h3>
-            <div class="toolbar">
-              <input id="pos-search" type="search" placeholder="Rechercher un article..." value="${esc(state.posFilter.search)}" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;" />
-              <select id="pos-cat-filter" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;">
-                <option value="">Toutes catégories</option>
-                ${state.categories
-                  .map(
-                    (c) =>
-                      `<option value="${esc(c.id)}" ${state.posFilter.categoryId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`
-                  )
-                  .join('')}
-              </select>
-            </div>
+            <input id="pos-search" class="input-inline" type="search" placeholder="Rechercher un plat, boisson..." value="${esc(state.posFilter.search)}" style="max-width:260px;" />
+          </div>
+
+          <div class="category-strip">
+            <button type="button" class="cat-chip ${!state.posFilter.categoryId ? 'active' : ''}" data-pos-cat="">Tous (${state.products.length})</button>
+            ${state.categories
+              .map(
+                (c) => `<button type="button" class="cat-chip ${state.posFilter.categoryId === c.id ? 'active' : ''}" data-pos-cat="${esc(c.id)}">${esc(c.name)}</button>`
+              )
+              .join('')}
           </div>
 
           ${
             filteredProducts.length === 0
-              ? '<p class="kpi-foot">Aucun produit trouvé. Ajoutez des articles depuis le Catalogue.</p>'
+              ? '<p class="muted-text">Aucun produit trouvé. Ajoutez des articles depuis Catalogue.</p>'
               : `<div class="product-grid">
                   ${filteredProducts
-                    .map(
-                      (p) => `<button class="product-tile" type="button" data-pos-add="${esc(p.id)}">
+                    .map((p) => {
+                      const inCartQty = qtyByProduct.get(p.id) || 0;
+                      const tileCls =
+                        p.inventory_tracking === 'recipe_on_sale'
+                          ? 'is-recipe'
+                          : p.inventory_tracking === 'none'
+                            ? 'is-service'
+                            : '';
+                      const stockText =
+                        p.inventory_tracking === 'none'
+                          ? 'Service'
+                          : p.inventory_tracking === 'recipe_on_sale'
+                            ? 'Recette'
+                            : `${fmtQty(p.current_stock)} ${p.unit}`;
+                      return `<button class="product-tile ${tileCls}" type="button" data-pos-add="${esc(p.id)}">
+                        ${inCartQty > 0 ? `<span class="product-tile-badge">${esc(fmtQty(inCartQty))}</span>` : ''}
                         <span class="product-tile-name">${esc(p.name)}</span>
-                        <span class="product-tile-price">${esc(fmtMoney(p.selling_price, cur))}</span>
-                        <span class="product-tile-meta">
-                          ${esc(p.category_name || 'Sans catégorie')} • Stock: ${p.inventory_tracking === 'none' ? 'Illimité' : esc(fmtQty(p.current_stock) + ' ' + p.unit)}
-                        </span>
-                      </button>`
-                    )
+                        <div>
+                          <div class="product-tile-price">${esc(fmtMoney(p.selling_price, cur))}</div>
+                          <div class="product-tile-meta">
+                            <span>${esc(p.category_name || 'Carte')}</span>
+                            <span>${esc(stockText)}</span>
+                          </div>
+                        </div>
+                      </button>`;
+                    })
                     .join('')}
                 </div>`
           }
         </div>
 
+        ${
+          sale && totalCartItems > 0
+            ? `<div class="mobile-pos-jump">
+                <button id="btn-mobile-jump-ticket" type="button" class="btn btn-primary btn-full" style="box-shadow: var(--shadow-md);">
+                  Voir ticket (${esc(fmtQty(totalCartItems))} art.) • ${esc(fmtMoney(summary.total, cur))}
+                </button>
+              </div>`
+            : ''
+        }
+
         <div class="card">
           <div class="section-head">
-            <h3>Historique des ventes récentes</h3>
+            <h3>Ventes récentes</h3>
             <button id="btn-new-sale" type="button" class="btn btn-outline btn-sm">+ Nouveau ticket</button>
           </div>
           <div class="table-wrap">
-            <table>
+            <table class="responsive-table">
               <thead><tr><th>Facture</th><th>Articles</th><th>Total</th><th>Encaissé</th><th>Statut</th><th>Actions</th></tr></thead>
               <tbody>
                 ${
                   state.sales.length === 0
-                    ? '<tr><td colspan="6" class="kpi-foot">Aucune vente pour le moment.</td></tr>'
+                    ? '<tr><td colspan="6" class="muted-text">Aucune vente enregistrée.</td></tr>'
                     : state.sales
                         .map(
                           (s) => `<tr>
-                            <td class="mono">${esc(s.invoice_number)}</td>
-                            <td class="mono">${esc(s.total_items_count)}</td>
-                            <td class="mono">${esc(fmtMoney(s.total_amount, cur))}</td>
-                            <td class="mono">${esc(fmtMoney(s.paid_amount, cur))}</td>
-                            <td>${statusBadge(s.status)}</td>
-                            <td>
-                              <div class="toolbar">
+                            <td data-label="Facture" class="mono"><strong>${esc(s.invoice_number)}</strong></td>
+                            <td data-label="Articles" class="mono">${esc(s.total_items_count)}</td>
+                            <td data-label="Total" class="mono">${esc(fmtMoney(s.total_amount, cur))}</td>
+                            <td data-label="Encaissé" class="mono">${esc(fmtMoney(s.paid_amount, cur))}</td>
+                            <td data-label="Statut">${statusBadge(s.status)}</td>
+                            <td data-label="Actions">
+                              <div class="toolbar" style="justify-content:flex-end;">
                                 <button class="btn btn-outline btn-sm" data-select-sale="${esc(s.id)}" type="button">Ouvrir</button>
                                 ${
                                   s.status === 'completed'
@@ -499,11 +569,11 @@ function renderPos() {
         </div>
       </div>
 
-      <div class="card ticket-panel">
+      <div id="pos-ticket-card" class="card ticket-panel">
         <div class="section-head" style="margin-bottom:0;">
           <div>
-            <h3>${sale ? `Ticket ${esc(sale.invoice_number)}` : 'Nouveau ticket POS'}</h3>
-            <span class="kpi-foot">${sale ? `${statusBadge(sale.status)}` : 'Cliquez sur un produit pour démarrer'}</span>
+            <h3>${sale ? `Ticket ${esc(sale.invoice_number)}` : 'Ticket POS'}</h3>
+            <span class="muted-text">${sale ? statusBadge(sale.status) : 'Sélectionnez un article'}</span>
           </div>
           ${
             sale && sale.status === 'completed'
@@ -514,8 +584,8 @@ function renderPos() {
 
         ${
           !state.cashCurrent
-            ? `<div style="padding:10px 12px;border-radius:8px;background:var(--warning-bg);color:var(--warning);font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
-                <span>Aucune caisse ouverte (requis pour les paiements espèces).</span>
+            ? `<div class="alert-callout">
+                <span>Caisse fermée : requise pour paiements espèces.</span>
                 <button id="btn-pos-open-cash" type="button" class="btn btn-amber btn-sm">Ouvrir</button>
               </div>`
             : ''
@@ -523,24 +593,33 @@ function renderPos() {
 
         ${
           !sale
-            ? '<p class="kpi-foot">Sélectionnez un article dans la carte à gauche ou cliquez sur « Nouveau ticket ».</p>'
+            ? '<p class="muted-text">Touchez un produit sur la carte pour ouvrir automatiquement une commande.</p>'
             : `
               <div>
                 ${
                   (sale.items || []).length === 0
-                    ? '<p class="kpi-foot">Ticket vide — cliquez sur un produit à gauche.</p>'
+                    ? '<p class="muted-text">Ticket vide — touchez un produit pour l\'ajouter.</p>'
                     : sale.items
                         .map(
                           (it) => `<div class="ticket-item">
-                            <div>
-                              <strong>${esc(it.product_name)}</strong>
-                              <div class="kpi-foot mono">${esc(fmtQty(it.quantity))} × ${esc(fmtMoney(it.unit_price, cur))}</div>
+                            <div class="ticket-item-info">
+                              <div class="ticket-item-name">${esc(it.product_name)}</div>
+                              <div class="muted-text mono">${esc(fmtMoney(it.unit_price, cur))} / ${esc(it.unit)}</div>
                             </div>
                             <div class="toolbar">
-                              <span class="mono"><strong>${esc(fmtMoney(it.subtotal, cur))}</strong></span>
                               ${
                                 sale.status === 'pending'
-                                  ? `<button class="btn btn-danger btn-sm" data-del-sale-item="${esc(it.id)}" type="button">&times;</button>`
+                                  ? `<div class="qty-stepper">
+                                      <button type="button" class="qty-btn" data-step-item="${esc(it.id)}" data-prod="${esc(it.product_id)}" data-qty="${esc(it.quantity)}" data-price="${esc(it.unit_price)}" data-delta="-1">−</button>
+                                      <span class="qty-val">${esc(fmtQty(it.quantity))}</span>
+                                      <button type="button" class="qty-btn" data-step-item="${esc(it.id)}" data-prod="${esc(it.product_id)}" data-qty="${esc(it.quantity)}" data-price="${esc(it.unit_price)}" data-delta="1">+</button>
+                                    </div>`
+                                  : `<span class="mono">x${esc(fmtQty(it.quantity))}</span>`
+                              }
+                              <span class="mono" style="min-width:74px;text-align:right;"><strong>${esc(fmtMoney(it.subtotal, cur))}</strong></span>
+                              ${
+                                sale.status === 'pending'
+                                  ? `<button class="btn btn-danger btn-sm" data-del-sale-item="${esc(it.id)}" type="button" aria-label="Retirer">&times;</button>`
                                   : ''
                               }
                             </div>
@@ -553,8 +632,8 @@ function renderPos() {
               ${
                 sale.status === 'pending'
                   ? `<form id="sale-discount-form" class="toolbar">
-                      <input id="sale-discount-input" type="number" step="0.01" min="0" value="${esc(summary.discount)}" placeholder="Remise" style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:8px;" />
-                      <button type="submit" class="btn btn-outline btn-sm">Appliquer remise</button>
+                      <input id="sale-discount-input" class="input-inline" type="number" step="0.01" min="0" value="${esc(summary.discount)}" placeholder="Remise" style="flex:1;" />
+                      <button type="submit" class="btn btn-outline">Appliquer remise</button>
                     </form>`
                   : ''
               }
@@ -563,15 +642,15 @@ function renderPos() {
                 <div class="summary-line"><span>Sous-total</span><span class="mono">${esc(fmtMoney(summary.subtotal, cur))}</span></div>
                 <div class="summary-line"><span>Remise</span><span class="mono">- ${esc(fmtMoney(summary.discount, cur))}</span></div>
                 <div class="summary-line"><span>TVA (${summary.taxRate}%)</span><span class="mono">${esc(fmtMoney(summary.tax, cur))}</span></div>
-                <div class="summary-line summary-total"><span>Total net</span><span class="mono">${esc(fmtMoney(summary.total, cur))}</span></div>
-                <div class="summary-line"><span>Déjà encaissé</span><span class="mono" style="color:var(--success)">${esc(fmtMoney(summary.paid, cur))}</span></div>
-                <div class="summary-line"><span>Reste à payer</span><span class="mono" style="color:var(--primary)"><strong>${esc(fmtMoney(summary.remaining, cur))}</strong></span></div>
+                <div class="summary-line summary-total"><span>Total à payer</span><span class="mono">${esc(fmtMoney(summary.total, cur))}</span></div>
+                <div class="summary-line"><span>Encaissé</span><span class="mono" style="color:var(--success)">${esc(fmtMoney(summary.paid, cur))}</span></div>
+                <div class="summary-line"><span>Reste dû</span><span class="mono" style="color:var(--primary)"><strong>${esc(fmtMoney(summary.remaining, cur))}</strong></span></div>
               </div>
 
               ${
                 (sale.payments || []).length > 0
-                  ? `<div style="font-size:12px;color:var(--text-muted);">
-                      <strong>Paiements enregistrés :</strong>
+                  ? `<div class="muted-text" style="font-size:12px;">
+                      <strong>Règlements :</strong>
                       ${sale.payments
                         .map((p) => `<div>• ${esc(methodLabel(p.payment_method))} : <span class="mono">${esc(fmtMoney(p.amount, cur))}</span></div>`)
                         .join('')}
@@ -581,27 +660,24 @@ function renderPos() {
 
               ${
                 sale.status === 'pending'
-                  ? `<form id="sale-payment-form" class="form-stack" style="padding-top:10px;border-top:1px solid var(--border);">
-                      <div class="field-row">
-                        <div class="field">
-                          <label>Montant encaissé</label>
-                          <input id="pay-amount" type="number" step="0.01" min="0.01" required value="${summary.remaining > 0 ? summary.remaining : ''}" />
-                        </div>
-                        <div class="field">
-                          <label>Mode de règlement</label>
-                          <select id="pay-method">
-                            <option value="cash">Espèces</option>
-                            <option value="card">Carte bancaire</option>
-                            <option value="mobile_money">Mobile Money</option>
-                            <option value="transfer">Virement</option>
-                            <option value="check">Chèque</option>
-                            <option value="other">Autre</option>
-                          </select>
+                  ? `<form id="sale-payment-form" class="form-stack">
+                      <div class="field">
+                        <label>Mode de règlement</label>
+                        <div class="method-pills">
+                          ${['cash', 'card', 'mobile_money', 'transfer', 'check', 'other']
+                            .map(
+                              (m) => `<button type="button" class="method-pill ${state.payMethod === m ? 'active' : ''}" data-pay-method="${m}">${esc(methodLabel(m))}</button>`
+                            )
+                            .join('')}
                         </div>
                       </div>
-                      <div class="toolbar">
-                        <button type="submit" class="btn btn-amber" style="flex:1;">Encaisser paiement</button>
-                        <button id="btn-complete-sale" type="button" class="btn btn-success" style="flex:1;" ${(sale.items || []).length === 0 ? 'disabled' : ''}>
+                      <div class="field">
+                        <label>Montant encaissé (${esc(cur)})</label>
+                        <input id="pay-amount" type="number" step="0.01" min="0.01" required value="${summary.remaining > 0 ? summary.remaining : ''}" />
+                      </div>
+                      <div class="field-row">
+                        <button type="submit" class="btn btn-amber">Encaisser paiement</button>
+                        <button id="btn-complete-sale" type="button" class="btn btn-success" ${(sale.items || []).length === 0 ? 'disabled' : ''}>
                           Finaliser &amp; Déstocker
                         </button>
                       </div>
@@ -628,7 +704,7 @@ async function openQuickReceipt(saleId) {
             <strong style="font-size:15px;">${esc(r.company.name)}</strong><br/>
             <span>Facture : ${esc(r.receiptHeader.invoiceNumber)}</span><br/>
             <span>Date : ${esc(fmtDate(r.receiptHeader.date))}</span><br/>
-            <span>Caissier : ${esc(r.receiptHeader.serverName || 'Équipe')}</span>
+            <span>Serveur : ${esc(r.receiptHeader.serverName || 'Équipe')}</span>
           </div>
           <hr/>
           ${r.items
@@ -676,9 +752,15 @@ function bindPos() {
     }
   });
 
-  document.getElementById('pos-cat-filter')?.addEventListener('change', (e) => {
-    state.posFilter.categoryId = e.target.value;
-    renderRoute();
+  document.querySelectorAll('[data-pos-cat]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.posFilter.categoryId = btn.dataset.posCat;
+      renderRoute();
+    });
+  });
+
+  document.getElementById('btn-mobile-jump-ticket')?.addEventListener('click', () => {
+    document.getElementById('pos-ticket-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
   document.getElementById('btn-pos-open-cash')?.addEventListener('click', () => setRoute('cash'));
@@ -699,12 +781,47 @@ function bindPos() {
       try {
         if (!state.activeSale || state.activeSale.status !== 'pending') {
           const created = await apiFetch('/api/sales', { method: 'POST', body: {} });
-          state.activeSale = created.data;
+          state.activeSale = { ...created.data, items: [], payments: [], paidAmount: 0 };
         }
-        await apiFetch(`/api/sales/${state.activeSale.id}/items`, {
-          method: 'POST',
-          body: { productId: btn.dataset.posAdd, quantity: 1 },
-        });
+        const prodId = btn.dataset.posAdd;
+        const existing = (state.activeSale.items || []).find((it) => it.product_id === prodId);
+        if (existing) {
+          const nextQty = Math.round((parseFloat(existing.quantity) + 1) * 1000) / 1000;
+          await apiFetch(`/api/sales/${state.activeSale.id}/items/${existing.id}`, { method: 'DELETE' });
+          await apiFetch(`/api/sales/${state.activeSale.id}/items`, {
+            method: 'POST',
+            body: { productId: prodId, quantity: nextQty, unitPrice: parseFloat(existing.unit_price) },
+          });
+        } else {
+          await apiFetch(`/api/sales/${state.activeSale.id}/items`, {
+            method: 'POST',
+            body: { productId: prodId, quantity: 1 },
+          });
+        }
+        await refreshAllData();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-step-item]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        const itemId = btn.dataset.stepItem;
+        const prodId = btn.dataset.prod;
+        const curQty = parseFloat(btn.dataset.qty);
+        const unitPrice = parseFloat(btn.dataset.price);
+        const delta = parseFloat(btn.dataset.delta);
+        const nextQty = Math.round((curQty + delta) * 1000) / 1000;
+
+        await apiFetch(`/api/sales/${state.activeSale.id}/items/${itemId}`, { method: 'DELETE' });
+        if (nextQty > 0) {
+          await apiFetch(`/api/sales/${state.activeSale.id}/items`, {
+            method: 'POST',
+            body: { productId: prodId, quantity: nextQty, unitPrice },
+          });
+        }
         await refreshAllData();
       } catch (err) {
         showToast(err.message, 'error');
@@ -718,6 +835,7 @@ function bindPos() {
         const res = await apiFetch(`/api/sales/${btn.dataset.selectSale}`);
         state.activeSale = res.data;
         renderRoute();
+        document.getElementById('pos-ticket-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       } catch (err) {
         showToast(err.message, 'error');
       }
@@ -734,6 +852,15 @@ function bindPos() {
       } catch (err) {
         showToast(err.message, 'error');
       }
+    });
+  });
+
+  document.querySelectorAll('[data-pay-method]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.payMethod = btn.dataset.payMethod;
+      document.querySelectorAll('[data-pay-method]').forEach((b) => {
+        b.classList.toggle('active', b.dataset.payMethod === state.payMethod);
+      });
     });
   });
 
@@ -756,10 +883,9 @@ function bindPos() {
     e.preventDefault();
     try {
       const amount = parseFloat(document.getElementById('pay-amount').value);
-      const paymentMethod = document.getElementById('pay-method').value;
       await apiFetch(`/api/sales/${state.activeSale.id}/payments`, {
         method: 'POST',
-        body: { amount, paymentMethod },
+        body: { amount, paymentMethod: state.payMethod },
       });
       showToast('Paiement enregistré', 'success');
       await refreshAllData();
@@ -791,7 +917,7 @@ function bindPos() {
         'Annuler une vente',
         `<form id="modal-cancel-sale-form" class="form-stack">
           <div class="field">
-            <label>Motif d'annulation (obligatoire, 3 car. min.)</label>
+            <label>Motif d'annulation (3 caractères min.)</label>
             <input id="cancel-sale-reason" required minlength="3" placeholder="Ex: Erreur de saisie client" />
           </div>
           <button type="submit" class="btn btn-danger">Confirmer l'annulation</button>
@@ -891,22 +1017,26 @@ function renderCatalog() {
             </div>
 
             <div class="card">
-              <div class="section-head"><h3>Liste des produits</h3></div>
+              <div class="section-head"><h3>Catalogue produits</h3></div>
               <div class="table-wrap">
-                <table>
+                <table class="responsive-table">
                   <thead><tr><th>Nom</th><th>Suivi</th><th>Prix Vente</th><th>PMP</th><th>Stock</th></tr></thead>
                   <tbody>
-                    ${state.products
-                      .map(
-                        (p) => `<tr>
-                          <td><strong>${esc(p.name)}</strong><div class="kpi-foot">${esc(p.category_name || '—')}</div></td>
-                          <td><span class="status-pill status-neutral">${esc(p.inventory_tracking)}</span></td>
-                          <td class="mono">${esc(fmtMoney(p.selling_price, cur))}</td>
-                          <td class="mono">${esc(fmtMoney(p.cost_price, cur))}</td>
-                          <td class="mono">${p.inventory_tracking === 'none' ? '—' : esc(fmtQty(p.current_stock) + ' ' + p.unit)}</td>
-                        </tr>`
-                      )
-                      .join('')}
+                    ${
+                      state.products.length === 0
+                        ? '<tr><td colspan="5" class="muted-text">Aucun produit enregistré.</td></tr>'
+                        : state.products
+                            .map(
+                              (p) => `<tr>
+                                <td data-label="Produit"><strong>${esc(p.name)}</strong><div class="muted-text" style="font-size:11px;">${esc(p.category_name || '—')}</div></td>
+                                <td data-label="Suivi"><span class="status-pill status-neutral">${esc(p.inventory_tracking)}</span></td>
+                                <td data-label="Prix Vente" class="mono">${esc(fmtMoney(p.selling_price, cur))}</td>
+                                <td data-label="PMP" class="mono">${esc(fmtMoney(p.cost_price, cur))}</td>
+                                <td data-label="Stock" class="mono">${p.inventory_tracking === 'none' ? '—' : esc(fmtQty(p.current_stock) + ' ' + p.unit)}</td>
+                              </tr>`
+                            )
+                            .join('')
+                    }
                   </tbody>
                 </table>
               </div>
@@ -935,12 +1065,16 @@ function renderCatalog() {
             <div class="card">
               <div class="section-head"><h3>Catégories enregistrées</h3></div>
               <div class="table-wrap">
-                <table>
+                <table class="responsive-table">
                   <thead><tr><th>Nom</th><th>Description</th></tr></thead>
                   <tbody>
-                    ${state.categories
-                      .map((c) => `<tr><td><strong>${esc(c.name)}</strong></td><td>${esc(c.description || '—')}</td></tr>`)
-                      .join('')}
+                    ${
+                      state.categories.length === 0
+                        ? '<tr><td colspan="2" class="muted-text">Aucune catégorie.</td></tr>'
+                        : state.categories
+                            .map((c) => `<tr><td data-label="Nom"><strong>${esc(c.name)}</strong></td><td data-label="Description">${esc(c.description || '—')}</td></tr>`)
+                            .join('')
+                    }
                   </tbody>
                 </table>
               </div>
@@ -985,12 +1119,12 @@ function renderCatalog() {
               <div class="section-head"><h3>Fiches techniques actives</h3></div>
               ${
                 state.recipes.length === 0
-                  ? '<p class="kpi-foot">Aucune fiche technique enregistrée.</p>'
+                  ? '<p class="muted-text">Aucune fiche technique enregistrée.</p>'
                   : state.recipes
                       .map(
                         (r) => `<div style="padding:12px 0;border-bottom:1px solid var(--border);">
-                          <strong>${esc(r.product_name)}</strong> — <span class="kpi-foot">${esc(r.recipe_name)} (pour ${esc(fmtQty(r.output_quantity))})</span>
-                          <ul style="margin:6px 0 0;padding-left:18px;font-size:12px;color:var(--text-muted);">
+                          <strong>${esc(r.product_name)}</strong> — <span class="muted-text">${esc(r.recipe_name)} (pour ${esc(fmtQty(r.output_quantity))})</span>
+                          <ul style="margin:6px 0 0;padding-left:18px;font-size:12px;color:var(--text-secondary);">
                             ${(r.ingredients || [])
                               .map((ing) => `<li>${esc(ing.ingredientName)} : <span class="mono">${esc(fmtQty(ing.quantityRequired))} ${esc(ing.unit)}</span></li>`)
                               .join('')}
@@ -1012,12 +1146,12 @@ function addRecipeIngredientRow() {
   const row = document.createElement('div');
   row.className = 'field-row recipe-ing-row';
   row.innerHTML = `
-    <select class="ing-select" required>
+    <select class="ing-select input-inline" required>
       <option value="">Ingrédient...</option>
       ${state.products.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (${esc(p.unit)})</option>`).join('')}
     </select>
     <div style="display:flex;gap:6px;">
-      <input class="ing-qty" type="number" step="0.0001" min="0.0001" required placeholder="Qté requise" />
+      <input class="ing-qty input-inline" type="number" step="0.0001" min="0.0001" required placeholder="Qté requise" />
       <button type="button" class="btn btn-danger btn-sm btn-rem-ing">&times;</button>
     </div>
   `;
@@ -1171,21 +1305,21 @@ function renderInventory() {
 
       <div class="card">
         <div class="section-head"><h3>Derniers mouvements de stock</h3></div>
-        <div class="table-wrap" style="max-height:300px;">
-          <table>
+        <div class="table-wrap">
+          <table class="responsive-table">
             <thead><tr><th>Produit</th><th>Type</th><th>Delta</th><th>Notes</th></tr></thead>
             <tbody>
               ${
                 state.movements.length === 0
-                  ? '<tr><td colspan="4" class="kpi-foot">Aucun mouvement enregistré.</td></tr>'
+                  ? '<tr><td colspan="4" class="muted-text">Aucun mouvement enregistré.</td></tr>'
                   : state.movements
-                      .slice(0, 12)
+                      .slice(0, 10)
                       .map(
                         (m) => `<tr>
-                          <td><strong>${esc(m.product_name)}</strong></td>
-                          <td><span class="status-pill status-info">${esc(m.movement_type)}</span></td>
-                          <td class="mono">${parseFloat(m.quantity_delta) > 0 ? '+' : ''}${esc(fmtQty(m.quantity_delta))} ${esc(m.unit)}</td>
-                          <td class="kpi-foot">${esc(m.notes || m.source_type || '—')}</td>
+                          <td data-label="Produit"><strong>${esc(m.product_name)}</strong></td>
+                          <td data-label="Type"><span class="status-pill status-info">${esc(m.movement_type)}</span></td>
+                          <td data-label="Delta" class="mono">${parseFloat(m.quantity_delta) > 0 ? '+' : ''}${esc(fmtQty(m.quantity_delta))} ${esc(m.unit)}</td>
+                          <td data-label="Notes" class="muted-text">${esc(m.notes || m.source_type || '—')}</td>
                         </tr>`
                       )
                       .join('')
@@ -1200,29 +1334,29 @@ function renderInventory() {
       <div class="section-head">
         <h3>État détaillé des stocks</h3>
         <div class="toolbar">
-          <input id="inv-search" type="search" placeholder="Filtrer..." value="${esc(state.invFilter.search)}" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;" />
-          <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
-            <input id="inv-low-only" type="checkbox" ${state.invFilter.lowStockOnly ? 'checked' : ''} />
+          <input id="inv-search" class="input-inline" type="search" placeholder="Filtrer..." value="${esc(state.invFilter.search)}" style="max-width:220px;" />
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;min-height:44px;cursor:pointer;">
+            <input id="inv-low-only" type="checkbox" ${state.invFilter.lowStockOnly ? 'checked' : ''} style="width:18px;height:18px;" />
             Alertes uniquement
           </label>
         </div>
       </div>
       <div class="table-wrap">
-        <table>
+        <table class="responsive-table">
           <thead><tr><th>Produit</th><th>Quantité</th><th>Seuil alerte</th><th>PMP</th><th>Valorisation</th><th>Statut</th></tr></thead>
           <tbody>
             ${
               filtered.length === 0
-                ? '<tr><td colspan="6" class="kpi-foot">Aucun niveau de stock enregistré.</td></tr>'
+                ? '<tr><td colspan="6" class="muted-text">Aucun niveau de stock enregistré.</td></tr>'
                 : filtered
                     .map(
                       (lv) => `<tr>
-                        <td><strong>${esc(lv.product_name)}</strong></td>
-                        <td class="mono">${esc(fmtQty(lv.current_quantity))} ${esc(lv.unit)}</td>
-                        <td class="mono">${esc(fmtQty(lv.min_stock_alert))}</td>
-                        <td class="mono">${esc(fmtMoney(lv.pmp, cur))}</td>
-                        <td class="mono">${esc(fmtMoney(lv.stock_valuation, cur))}</td>
-                        <td>${
+                        <td data-label="Produit"><strong>${esc(lv.product_name)}</strong></td>
+                        <td data-label="Quantité" class="mono">${esc(fmtQty(lv.current_quantity))} ${esc(lv.unit)}</td>
+                        <td data-label="Seuil" class="mono">${esc(fmtQty(lv.min_stock_alert))}</td>
+                        <td data-label="PMP" class="mono">${esc(fmtMoney(lv.pmp, cur))}</td>
+                        <td data-label="Valorisation" class="mono">${esc(fmtMoney(lv.stock_valuation, cur))}</td>
+                        <td data-label="Statut">${
                           lv.is_low_stock
                             ? '<span class="status-pill status-critical">Alerte</span>'
                             : '<span class="status-pill status-open">OK</span>'
@@ -1289,7 +1423,7 @@ function renderPurchases() {
     ${
       sub === 'orders'
         ? `<div class="two-col">
-            <div style="display:flex;flex-direction:column;gap:16px;">
+            <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
               <div class="card">
                 <div class="section-head"><h3>Nouvelle commande fournisseur</h3></div>
                 <form id="purchase-create-form" class="form-stack">
@@ -1317,20 +1451,20 @@ function renderPurchases() {
               <div class="card">
                 <div class="section-head"><h3>Commandes enregistrées</h3></div>
                 <div class="table-wrap">
-                  <table>
-                    <thead><tr><th>Réf.</th><th>Fournisseur</th><th>Total</th><th>Statut</th><th></th></tr></thead>
+                  <table class="responsive-table">
+                    <thead><tr><th>Réf.</th><th>Fournisseur</th><th>Total</th><th>Statut</th><th>Action</th></tr></thead>
                     <tbody>
                       ${
                         state.purchases.length === 0
-                          ? '<tr><td colspan="5" class="kpi-foot">Aucune commande d\'achat.</td></tr>'
+                          ? '<tr><td colspan="5" class="muted-text">Aucune commande d\'achat.</td></tr>'
                           : state.purchases
                               .map(
                                 (p) => `<tr>
-                                  <td class="mono">${esc(p.reference)}</td>
-                                  <td>${esc(p.supplier_name || '—')}</td>
-                                  <td class="mono">${esc(fmtMoney(p.total_amount, cur))}</td>
-                                  <td>${statusBadge(p.status)}</td>
-                                  <td><button class="btn btn-outline btn-sm" data-open-purch="${esc(p.id)}" type="button">Gérer</button></td>
+                                  <td data-label="Référence" class="mono"><strong>${esc(p.reference)}</strong></td>
+                                  <td data-label="Fournisseur">${esc(p.supplier_name || '—')}</td>
+                                  <td data-label="Total" class="mono">${esc(fmtMoney(p.total_amount, cur))}</td>
+                                  <td data-label="Statut">${statusBadge(p.status)}</td>
+                                  <td data-label="Action"><button class="btn btn-outline btn-sm" data-open-purch="${esc(p.id)}" type="button">Gérer</button></td>
                                 </tr>`
                               )
                               .join('')
@@ -1341,35 +1475,39 @@ function renderPurchases() {
               </div>
             </div>
 
-            <div class="card">
+            <div id="purchase-detail-card" class="card">
               <div class="section-head">
                 <h3>${ap ? `Commande ${esc(ap.reference)}` : 'Détail commande'}</h3>
                 ${ap ? statusBadge(ap.status) : ''}
               </div>
               ${
                 !ap
-                  ? '<p class="kpi-foot">Sélectionnez ou créez une commande pour y ajouter des articles et la réceptionner (calcul du PMP).</p>'
+                  ? '<p class="muted-text">Sélectionnez ou créez une commande pour y ajouter des articles et la réceptionner (calcul du PMP).</p>'
                   : `
-                    <p class="kpi-foot">Fournisseur : <strong>${esc(ap.supplier_name || 'Non spécifié')}</strong> • Total : <strong class="mono">${esc(fmtMoney(ap.total_amount, cur))}</strong></p>
+                    <p class="muted-text" style="margin-bottom:12px;">Fournisseur : <strong>${esc(ap.supplier_name || 'Non spécifié')}</strong> • Total : <strong class="mono">${esc(fmtMoney(ap.total_amount, cur))}</strong></p>
                     <div class="table-wrap" style="margin-bottom:14px;">
-                      <table>
+                      <table class="responsive-table">
                         <thead><tr><th>Produit</th><th>Qté</th><th>Coût unit.</th><th>Sous-total</th><th></th></tr></thead>
                         <tbody>
-                          ${(ap.items || [])
-                            .map(
-                              (it) => `<tr>
-                                <td>${esc(it.product_name)}</td>
-                                <td class="mono">${esc(fmtQty(it.quantity))} ${esc(it.unit)}</td>
-                                <td class="mono">${esc(fmtMoney(it.unit_cost, cur))}</td>
-                                <td class="mono">${esc(fmtMoney(it.subtotal, cur))}</td>
-                                <td>${
-                                  ap.status === 'ordered' || ap.status === 'draft'
-                                    ? `<button class="btn btn-danger btn-sm" data-del-purch-item="${esc(it.id)}" type="button">&times;</button>`
-                                    : ''
-                                }</td>
-                              </tr>`
-                            )
-                            .join('')}
+                          ${
+                            (ap.items || []).length === 0
+                              ? '<tr><td colspan="5" class="muted-text">Aucune ligne ajoutée.</td></tr>'
+                              : ap.items
+                                  .map(
+                                    (it) => `<tr>
+                                      <td data-label="Produit"><strong>${esc(it.product_name)}</strong></td>
+                                      <td data-label="Qté" class="mono">${esc(fmtQty(it.quantity))} ${esc(it.unit)}</td>
+                                      <td data-label="Coût unit." class="mono">${esc(fmtMoney(it.unit_cost, cur))}</td>
+                                      <td data-label="Sous-total" class="mono">${esc(fmtMoney(it.subtotal, cur))}</td>
+                                      <td data-label="Action">${
+                                        ap.status === 'ordered' || ap.status === 'draft'
+                                          ? `<button class="btn btn-danger btn-sm" data-del-purch-item="${esc(it.id)}" type="button">&times;</button>`
+                                          : '—'
+                                      }</td>
+                                    </tr>`
+                                  )
+                                  .join('')
+                          }
                         </tbody>
                       </table>
                     </div>
@@ -1393,11 +1531,11 @@ function renderPurchases() {
                             </div>
                             <button type="submit" class="btn btn-outline">+ Ajouter ligne</button>
                           </form>
-                          <div class="toolbar">
-                            <button id="btn-receive-purch" type="button" class="btn btn-success" style="flex:1;" ${(ap.items || []).length === 0 ? 'disabled' : ''}>Réceptionner (PMP + Stock)</button>
+                          <div class="field-row">
+                            <button id="btn-receive-purch" type="button" class="btn btn-success" ${(ap.items || []).length === 0 ? 'disabled' : ''}>Réceptionner (PMP + Stock)</button>
                             <button id="btn-cancel-purch" type="button" class="btn btn-danger">Annuler</button>
                           </div>`
-                        : '<p class="kpi-foot">Commande clôturée — ses lignes sont immuables.</p>'
+                        : '<p class="muted-text">Commande clôturée — ses lignes sont verrouillées et immuables.</p>'
                     }
                   `
               }
@@ -1419,19 +1557,23 @@ function renderPurchases() {
             <div class="card">
               <div class="section-head"><h3>Fournisseurs</h3></div>
               <div class="table-wrap">
-                <table>
+                <table class="responsive-table">
                   <thead><tr><th>Nom</th><th>Contact</th><th>Cmd reçues</th><th>Total achats</th></tr></thead>
                   <tbody>
-                    ${state.suppliers
-                      .map(
-                        (s) => `<tr>
-                          <td><strong>${esc(s.name)}</strong></td>
-                          <td class="kpi-foot">${esc(s.phone || s.email || '—')}</td>
-                          <td class="mono">${esc(s.total_orders_count)}</td>
-                          <td class="mono">${esc(fmtMoney(s.total_spend, cur))}</td>
-                        </tr>`
-                      )
-                      .join('')}
+                    ${
+                      state.suppliers.length === 0
+                        ? '<tr><td colspan="4" class="muted-text">Aucun fournisseur.</td></tr>'
+                        : state.suppliers
+                            .map(
+                              (s) => `<tr>
+                                <td data-label="Nom"><strong>${esc(s.name)}</strong></td>
+                                <td data-label="Contact" class="muted-text">${esc(s.phone || s.email || '—')}</td>
+                                <td data-label="Cmd reçues" class="mono">${esc(s.total_orders_count)}</td>
+                                <td data-label="Total achats" class="mono">${esc(fmtMoney(s.total_spend, cur))}</td>
+                              </tr>`
+                            )
+                            .join('')
+                    }
                   </tbody>
                 </table>
               </div>
@@ -1494,6 +1636,7 @@ function bindPurchases() {
         const res = await apiFetch(`/api/purchases/${btn.dataset.openPurch}`);
         state.activePurchase = res.data;
         renderRoute();
+        document.getElementById('purchase-detail-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       } catch (err) {
         showToast(err.message, 'error');
       }
@@ -1565,7 +1708,7 @@ function renderCash() {
       !cs
         ? `<div class="card" style="max-width:520px;">
             <div class="section-head"><h3>Ouvrir une session de caisse</h3></div>
-            <p class="kpi-foot">Aucune session active. Saisissez le fond de caisse initial pour démarrer les encaissements en espèces.</p>
+            <p class="muted-text" style="margin-bottom:14px;">Aucune session active. Saisissez le fond de caisse initial pour encaisser en espèces.</p>
             <form id="cash-open-form" class="form-stack">
               <div class="field">
                 <label>Fond de caisse initial (${esc(cur)})</label>
@@ -1599,7 +1742,7 @@ function renderCash() {
 
           <div class="two-col">
             <div class="card">
-              <div class="section-head"><h3>Enregistrer une dépense de caisse</h3></div>
+              <div class="section-head"><h3>Enregistrer une dépense</h3></div>
               <form id="expense-create-form" class="form-stack">
                 <div class="field-row">
                   <div class="field">
@@ -1626,7 +1769,7 @@ function renderCash() {
                   <label>Montant réel compté dans le tiroir (${esc(cur)})</label>
                   <input id="cash-actual-amount" type="number" step="0.01" min="0" required value="${cs.metrics.theoreticalCashInDrawer}" />
                 </div>
-                <p class="kpi-foot">Solde théorique attendu : <strong class="mono">${esc(fmtMoney(cs.metrics.theoreticalCashInDrawer, cur))}</strong></p>
+                <p class="muted-text">Solde théorique attendu : <strong class="mono">${esc(fmtMoney(cs.metrics.theoreticalCashInDrawer, cur))}</strong></p>
                 <button type="submit" class="btn btn-danger">Clôturer définitivement la caisse</button>
               </form>
             </div>
@@ -1637,21 +1780,21 @@ function renderCash() {
       <div class="card">
         <div class="section-head"><h3>Historique des sessions</h3></div>
         <div class="table-wrap">
-          <table>
+          <table class="responsive-table">
             <thead><tr><th>Ouverture</th><th>Attendu</th><th>Réel</th><th>Écart</th><th>Statut</th><th></th></tr></thead>
             <tbody>
               ${
                 state.cashSessions.length === 0
-                  ? '<tr><td colspan="6" class="kpi-foot">Aucune session.</td></tr>'
+                  ? '<tr><td colspan="6" class="muted-text">Aucune session.</td></tr>'
                   : state.cashSessions
                       .map(
                         (s) => `<tr>
-                          <td>${esc(fmtDate(s.opened_at))}</td>
-                          <td class="mono">${s.expected_closing_amount !== null ? esc(fmtMoney(s.expected_closing_amount, cur)) : '—'}</td>
-                          <td class="mono">${s.actual_closing_amount !== null ? esc(fmtMoney(s.actual_closing_amount, cur)) : '—'}</td>
-                          <td class="mono">${s.difference_amount !== null ? esc(fmtMoney(s.difference_amount, cur)) : '—'}</td>
-                          <td>${statusBadge(s.status)}</td>
-                          <td><button class="btn btn-outline btn-sm" data-cash-detail="${esc(s.id)}" type="button">Détail</button></td>
+                          <td data-label="Ouverture">${esc(fmtDate(s.opened_at))}</td>
+                          <td data-label="Attendu" class="mono">${s.expected_closing_amount !== null ? esc(fmtMoney(s.expected_closing_amount, cur)) : '—'}</td>
+                          <td data-label="Réel" class="mono">${s.actual_closing_amount !== null ? esc(fmtMoney(s.actual_closing_amount, cur)) : '—'}</td>
+                          <td data-label="Écart" class="mono">${s.difference_amount !== null ? esc(fmtMoney(s.difference_amount, cur)) : '—'}</td>
+                          <td data-label="Statut">${statusBadge(s.status)}</td>
+                          <td data-label="Détail"><button class="btn btn-outline btn-sm" data-cash-detail="${esc(s.id)}" type="button">Détail</button></td>
                         </tr>`
                       )
                       .join('')
@@ -1664,19 +1807,19 @@ function renderCash() {
       <div class="card">
         <div class="section-head"><h3>Dépenses récentes</h3></div>
         <div class="table-wrap">
-          <table>
+          <table class="responsive-table">
             <thead><tr><th>Catégorie</th><th>Montant</th><th>Motif</th><th>Date</th></tr></thead>
             <tbody>
               ${
                 state.expenses.length === 0
-                  ? '<tr><td colspan="4" class="kpi-foot">Aucune dépense enregistrée.</td></tr>'
+                  ? '<tr><td colspan="4" class="muted-text">Aucune dépense enregistrée.</td></tr>'
                   : state.expenses
                       .map(
                         (ex) => `<tr>
-                          <td><strong>${esc(ex.category)}</strong></td>
-                          <td class="mono">${esc(fmtMoney(ex.amount, cur))}</td>
-                          <td>${esc(ex.description)}</td>
-                          <td>${esc(fmtDate(ex.created_at))}</td>
+                          <td data-label="Catégorie"><strong>${esc(ex.category)}</strong></td>
+                          <td data-label="Montant" class="mono">${esc(fmtMoney(ex.amount, cur))}</td>
+                          <td data-label="Motif">${esc(ex.description)}</td>
+                          <td data-label="Date">${esc(fmtDate(ex.created_at))}</td>
                         </tr>`
                       )
                       .join('')
@@ -1775,8 +1918,9 @@ function bindCash() {
 // -------------------------------------------------------------
 async function runQuickDemo() {
   const btn = document.getElementById('btn-demo-quickstart');
+  const orig = btn.innerHTML;
   btn.disabled = true;
-  btn.textContent = 'Création de votre espace démo...';
+  btn.textContent = 'Création en cours...';
   try {
     const suffix = Date.now().toString().slice(-6);
     const reg = await apiFetch('/api/auth/register', {
@@ -1918,7 +2062,7 @@ async function runQuickDemo() {
     showToast(err.message, 'error');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Lancer la Démo Interactive';
+    btn.innerHTML = orig;
   }
 }
 
@@ -1942,9 +2086,8 @@ async function init() {
     btn.addEventListener('click', () => setRoute(btn.dataset.route));
   });
 
-  document.getElementById('btn-mobile-menu')?.addEventListener('click', () => {
-    document.querySelector('.sidebar')?.classList.toggle('open');
-  });
+  document.getElementById('btn-mobile-menu')?.addEventListener('click', () => toggleSidebar());
+  document.getElementById('sidebar-backdrop')?.addEventListener('click', () => toggleSidebar(false));
 
   document.getElementById('modal-close')?.addEventListener('click', closeModal);
   document.getElementById('modal-backdrop')?.addEventListener('click', (e) => {
@@ -1965,6 +2108,7 @@ async function init() {
     state.company = null;
     state.activeSale = null;
     state.activePurchase = null;
+    toggleSidebar(false);
     showAuthView();
     showToast('Déconnecté en toute sécurité', 'success');
   });

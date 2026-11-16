@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { config } from './config/env.js';
+import { adminPool, ensureDatabaseReady } from './db/pool.js';
 import { authRouter } from './modules/auth/auth.router.js';
 import { catalogRouter } from './modules/catalog/catalog.router.js';
 import { salesRouter } from './modules/sales/sales.router.js';
@@ -32,7 +33,7 @@ if (publicDir) {
 
 const databaseMode =
   config.databaseType === 'postgres'
-    ? 'postgresql'
+    ? 'postgres'
     : process.env.VERCEL
       ? 'pglite-ephemeral'
       : 'pglite-local';
@@ -65,13 +66,21 @@ app.get('/api', (_req, res) => {
   res.json(apiInfoPayload());
 });
 
-app.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'RESTOGEST API V1',
-    database: databaseMode,
-    timestamp: new Date().toISOString(),
-  });
+app.get('/health', async (_req, res, next) => {
+  try {
+    if (config.databaseType === 'postgres') {
+      await ensureDatabaseReady();
+      await adminPool.query('SELECT 1');
+    }
+    res.json({
+      status: 'ok',
+      service: 'RESTOGEST API V1',
+      database: databaseMode,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Enregistrement des modules API

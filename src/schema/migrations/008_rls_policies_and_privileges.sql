@@ -261,5 +261,36 @@ BEGIN
         ALTER FUNCTION public.trg_expense_cash_session() OWNER TO restogest_admin;
         ALTER FUNCTION public.close_cash_session(UUID, NUMERIC) OWNER TO restogest_admin;
         ALTER FUNCTION public.trg_audit_log_change() OWNER TO restogest_admin;
+    ELSE
+        -- Environnement cloud managé sans SUPERUSER (ex: Neon / Supabase) :
+        -- autoriser le rôle propriétaire courant à exécuter SET LOCAL ROLE restogest_app
+        EXECUTE format('GRANT restogest_app TO %I', current_user);
+
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user AND rolbypassrls = TRUE) THEN
+            -- Sans BYPASSRLS disponible, désactiver uniquement FORCE sur le propriétaire DDL
+            -- afin que les fonctions SECURITY DEFINER fonctionnent tout en maintenant RLS pour restogest_app
+            ALTER TABLE public.companies NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.users NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.roles NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.company_users NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.categories NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.products NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.recipes NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.recipe_ingredients NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.stock_levels NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.stock_movements NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.sales NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.sale_items NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.payments NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.refunds NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.suppliers NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.purchases NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.purchase_items NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.expenses NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.cash_sessions NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.customers NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.company_subscriptions NO FORCE ROW LEVEL SECURITY;
+            ALTER TABLE public.audit_logs NO FORCE ROW LEVEL SECURITY;
+        END IF;
     END IF;
 END $$;

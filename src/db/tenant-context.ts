@@ -1,11 +1,13 @@
 import type { IDbClient } from './pool.js';
-import { appPool } from './pool.js';
+import { appPool, ensureDatabaseReady } from './pool.js';
 import { config } from '../config/env.js';
 
 export interface TenantContext {
   tokenHash: string;
   companyId: string;
 }
+
+let cachedDropToAppRole: boolean | null = config.databaseType === 'embedded' ? true : null;
 
 /**
  * Exécute une opération métier dans une transaction hermétique,
@@ -16,13 +18,28 @@ export async function withTenantContext<T>(
   context: TenantContext,
   operation: (client: IDbClient) => Promise<T>
 ): Promise<T> {
+  await ensureDatabaseReady();
   const client = await appPool.connect();
 
   try {
     await client.query('BEGIN');
 
-    // En mode PGlite embarqué (mono-connexion), forcer l'abaissement des privilèges vers restogest_app
-    if (config.databaseType === 'embedded') {
+    if (cachedDropToAppRole === null) {
+      const roleCheck = await client.query(
+        `SELECT (
+           current_user <> 'restogest_app'
+           AND EXISTS (
+             SELECT 1 FROM pg_catalog.pg_roles
+             WHERE rolname = 'restogest_app'
+               AND pg_has_role(current_user, oid, 'MEMBER')
+           )
+         ) AS should_drop`
+      );
+      cachedDropToAppRole = Boolean(roleCheck.rows[0]?.should_drop);
+    }
+
+    // Abaissement des privilèges vers restogest_app (PGlite ou connexion cloud neondb_owner)
+    if (cachedDropToAppRole) {
       await client.query('SET LOCAL ROLE restogest_app');
     }
 

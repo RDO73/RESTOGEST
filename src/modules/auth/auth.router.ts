@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { adminPool, appPool } from '../../db/pool.js';
+import { adminPool, appPool, ensureDatabaseReady } from '../../db/pool.js';
 import { withTenantContext } from '../../db/tenant-context.js';
 import { hashPassword, verifyPassword } from '../../auth/password.js';
 import { generateSessionToken } from '../../auth/jwt.js';
@@ -26,6 +26,7 @@ const LoginSchema = z.object({
 // Inscription Entreprise + Propriétaire
 authRouter.post('/register', async (req, res, next) => {
   try {
+    await ensureDatabaseReady();
     const data = RegisterSchema.parse(req.body);
     const passwordHash = await hashPassword(data.password);
 
@@ -72,6 +73,7 @@ authRouter.post('/register', async (req, res, next) => {
 // Connexion
 authRouter.post('/login', async (req, res, next) => {
   try {
+    await ensureDatabaseReady();
     const data = LoginSchema.parse(req.body);
 
     // Recherche de l'utilisateur et de son mot de passe haché (via adminPool)
@@ -179,6 +181,7 @@ authRouter.get('/me', requireAuth, async (req, res, next) => {
 // Déconnexion et révocation immédiate de la session en base
 authRouter.post('/logout', requireAuth, async (req, res, next) => {
   try {
+    await ensureDatabaseReady();
     await adminPool.query(
       `UPDATE public.user_sessions
        SET revoked_at = NOW()
