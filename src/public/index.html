@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RestoGest V1 — POS, Stocks &amp; Gestion Restaurant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=JetBrains+Mono:wght@500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- ÉCRAN AUTHENTIFICATION -->
+  <div id="auth-view" class="auth-shell hidden">
+    <div class="auth-grid">
+      <section class="auth-hero">
+        <div class="brand-pill">
+          <span class="brand-dot"></span>
+          RestoGest SaaS V1
+        </div>
+        <h1>Pilotez votre restaurant, fournil et caisse en temps réel.</h1>
+        <p class="auth-subtitle">
+          Caisse POS atomique, déstockage automatique par fiches recettes, calcul exact du Prix Moyen Pondéré (PMP) et isolation multi-entreprises PostgreSQL (RLS forcée).
+        </p>
+
+        <div class="hero-features">
+          <div class="hero-feature">
+            <strong>POS &amp; Caisse Sécurisée</strong>
+            <span>Encaissement multi-modes, contrôle d'écart de caisse et ticket de caisse imprimable.</span>
+          </div>
+          <div class="hero-feature">
+            <strong>Recettes &amp; Stocks 3 Modes</strong>
+            <span>Suivi direct, consommation d'ingrédients à la vente, alertes seuils et anti-cycles SQL.</span>
+          </div>
+          <div class="hero-feature">
+            <strong>Achats &amp; Valorisation PMP</strong>
+            <span>Commandes fournisseurs, réception verrouillée et journal d'audit immuable.</span>
+          </div>
+        </div>
+
+        <div class="auth-demo-card">
+          <div>
+            <strong>Tester immédiatement sans saisie manuelle</strong>
+            <p>Crée un établissement de démonstration complet (catégories, produits, recette, achat reçu + caisse ouverte).</p>
+          </div>
+          <button id="btn-demo-quickstart" type="button" class="btn btn-amber">
+            Lancer la Démo Interactive
+          </button>
+        </div>
+
+        <div id="auth-env-badge" class="env-status-bar">
+          Vérification de l'API en cours...
+        </div>
+      </section>
+
+      <section class="auth-panel">
+        <div class="tabs-segmented" role="tablist">
+          <button id="tab-login" type="button" class="seg-btn active" data-auth-tab="login">Connexion</button>
+          <button id="tab-register" type="button" class="seg-btn" data-auth-tab="register">Créer une entreprise</button>
+        </div>
+
+        <form id="login-form" class="form-stack">
+          <div class="field">
+            <label for="login-email">Adresse e-mail</label>
+            <input id="login-email" type="email" required placeholder="chef@monresto.sn" autocomplete="email" />
+          </div>
+          <div class="field">
+            <label for="login-password">Mot de passe</label>
+            <input id="login-password" type="password" required placeholder="••••••••" autocomplete="current-password" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Se connecter</button>
+        </form>
+
+        <form id="register-form" class="form-stack hidden">
+          <div class="field-row">
+            <div class="field">
+              <label for="reg-company">Nom de l'établissement</label>
+              <input id="reg-company" type="text" required minlength="2" placeholder="Le Palais Gourmand" />
+            </div>
+            <div class="field">
+              <label for="reg-type">Activité</label>
+              <select id="reg-type">
+                <option value="both">Restaurant &amp; Pâtisserie</option>
+                <option value="restaurant">Restaurant</option>
+                <option value="pastry_shop">Pâtisserie / Boulangerie</option>
+              </select>
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="reg-fullname">Nom complet du gérant</label>
+              <input id="reg-fullname" type="text" required minlength="2" placeholder="Mamadou Kane" />
+            </div>
+            <div class="field">
+              <label for="reg-currency">Devise</label>
+              <select id="reg-currency">
+                <option value="XOF">XOF (FCFA)</option>
+                <option value="EUR">EUR (€)</option>
+                <option value="USD">USD ($)</option>
+                <option value="MAD">MAD (DH)</option>
+                <option value="CAD">CAD ($)</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="reg-email">E-mail professionnel</label>
+            <input id="reg-email" type="email" required placeholder="contact@palaisgourmand.sn" autocomplete="email" />
+          </div>
+          <div class="field">
+            <label for="reg-password">Mot de passe (8 caractères min.)</label>
+            <input id="reg-password" type="password" required minlength="8" placeholder="Minimum 8 caractères" autocomplete="new-password" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Créer mon espace RestoGest</button>
+        </form>
+      </section>
+    </div>
+  </div>
+
+  <!-- APPLICATION PRINCIPALE -->
+  <div id="app-view" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-mark">RG</div>
+        <div>
+          <div class="logo-title">RestoGest</div>
+          <div id="sidebar-company-name" class="logo-sub">Chargement...</div>
+        </div>
+      </div>
+
+      <nav class="nav-list" aria-label="Navigation principale">
+        <button class="nav-item active" data-route="dashboard" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+          <span>Tableau de bord</span>
+        </button>
+        <button class="nav-item" data-route="pos" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+          <span>Caisse &amp; Ventes POS</span>
+        </button>
+        <button class="nav-item" data-route="catalog" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+          <span>Catalogue &amp; Recettes</span>
+        </button>
+        <button class="nav-item" data-route="inventory" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+          <span>Stocks &amp; Alertes</span>
+        </button>
+        <button class="nav-item" data-route="purchases" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
+          <span>Achats &amp; Fournisseurs</span>
+        </button>
+        <button class="nav-item" data-route="cash" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>
+          <span>Trésorerie &amp; Caisse</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div id="sidebar-db-pill" class="db-badge">Vérification DB...</div>
+        <div class="user-card">
+          <div class="user-avatar" id="user-avatar">RG</div>
+          <div class="user-meta">
+            <div id="user-fullname" class="user-name">Utilisateur</div>
+            <div id="user-email" class="user-mail">...</div>
+          </div>
+        </div>
+        <button id="btn-logout" type="button" class="btn btn-ghost btn-full">Déconnexion</button>
+      </div>
+    </aside>
+
+    <div class="main-area">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="btn-mobile-menu" type="button" class="icon-btn mobile-only" aria-label="Menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <div>
+            <h2 id="page-title">Tableau de bord</h2>
+            <p id="page-subtitle" class="topbar-sub">Vue d'ensemble en temps réel</p>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <span id="cash-status-pill" class="status-pill status-neutral">Caisse : —</span>
+          <button id="btn-refresh-all" type="button" class="btn btn-outline">Actualiser</button>
+        </div>
+      </header>
+
+      <div id="ephemeral-banner" class="ephemeral-banner hidden">
+        <span><strong>Mode Démo Éphémère (PGlite) :</strong> Les données de cette session sont stockées en mémoire serveur temporaire. Pour la persistance durable multi-instances, configurez une base PostgreSQL (Neon / Supabase) dans les variables Vercel.</span>
+      </div>
+
+      <main id="main-content" class="content-pad"></main>
+    </div>
+
+    <!-- NAVIGATION MOBILE BAS DE PAGE -->
+    <nav class="mobile-bottom-nav" aria-label="Navigation mobile">
+      <button class="mobile-nav-item active" data-route="dashboard" type="button">Accueil</button>
+      <button class="mobile-nav-item" data-route="pos" type="button">POS</button>
+      <button class="mobile-nav-item" data-route="catalog" type="button">Catalogue</button>
+      <button class="mobile-nav-item" data-route="inventory" type="button">Stocks</button>
+      <button class="mobile-nav-item" data-route="purchases" type="button">Achats</button>
+      <button class="mobile-nav-item" data-route="cash" type="button">Caisse</button>
+    </nav>
+  </div>
+
+  <!-- MODALE GÉNÉRIQUE -->
+  <div id="modal-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modal-title">Détail</h3>
+        <button id="modal-close" type="button" class="icon-btn" aria-label="Fermer">&times;</button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

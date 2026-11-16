@@ -71,7 +71,8 @@ npm start
 
 ## Endpoints API Principaux
 
-- `GET /` & `GET /health` — Présentation & état du service
+- `GET /` — Interface Web complète RestoGest (POS, Catalogue, Stocks, Achats, Caisse)
+- `GET /api` & `GET /health` — Index JSON de l'API & état du moteur PostgreSQL/PGlite
 - `/api/auth` — `POST /register`, `POST /login`, `GET /me`, `POST /logout` (révocation immédiate en base)
 - `/api/catalog` — Catégories, produits et recettes (`GET`/`POST`)
 - `/api/inventory` — Niveaux, alertes, valorisation (`GET /summary`), mouvements et ajustements (`POST /adjustments`)

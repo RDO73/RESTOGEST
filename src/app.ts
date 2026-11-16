@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { config } from './config/env.js';
 import { authRouter } from './modules/auth/auth.router.js';
@@ -8,9 +11,24 @@ import { inventoryRouter } from './modules/inventory/inventory.router.js';
 import { cashRouter } from './modules/cash/cash.router.js';
 import { errorHandler } from './middlewares/error-handler.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 export const app = express();
 
 app.use(express.json());
+
+const publicCandidates = [
+  path.resolve(__dirname, './public'),
+  path.resolve(__dirname, '../src/public'),
+  path.resolve(process.cwd(), 'dist/public'),
+  path.resolve(process.cwd(), 'src/public'),
+];
+const publicDir = publicCandidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
+
+if (publicDir) {
+  app.use(express.static(publicDir));
+}
 
 const databaseMode =
   config.databaseType === 'postgres'
@@ -19,22 +37,32 @@ const databaseMode =
       ? 'pglite-ephemeral'
       : 'pglite-local';
 
-// Endpoint racine & santé
+const apiInfoPayload = () => ({
+  service: 'RESTOGEST API V1',
+  status: 'ok',
+  database: databaseMode,
+  health: '/health',
+  endpoints: [
+    '/api/auth',
+    '/api/catalog',
+    '/api/sales',
+    '/api/purchases',
+    '/api/inventory',
+    '/api/cash',
+  ],
+});
+
+// Interface Web principale sur /
 app.get('/', (_req, res) => {
-  res.json({
-    service: 'RESTOGEST API V1',
-    status: 'ok',
-    database: databaseMode,
-    health: '/health',
-    endpoints: [
-      '/api/auth',
-      '/api/catalog',
-      '/api/sales',
-      '/api/purchases',
-      '/api/inventory',
-      '/api/cash',
-    ],
-  });
+  if (publicDir) {
+    res.sendFile(path.join(publicDir, 'index.html'));
+    return;
+  }
+  res.json(apiInfoPayload());
+});
+
+app.get('/api', (_req, res) => {
+  res.json(apiInfoPayload());
 });
 
 app.get('/health', (_req, res) => {

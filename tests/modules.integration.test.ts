@@ -101,16 +101,34 @@ afterAll(async () => {
 });
 
 describe('Modules Métiers Backend RESTOGEST V1', () => {
-  it('0. ENDPOINTS PUBLICS : / et /health répondent 200', async () => {
+  it('0. ENDPOINTS PUBLICS : / (HTML), /api (JSON) et /health (JSON) répondent 200', async () => {
     const rootRes = await fetch(`${baseUrl}/`);
-    const rootData = await rootRes.json();
+    const rootHtml = await rootRes.text();
     expect(rootRes.status).toBe(200);
-    expect(rootData.status).toBe('ok');
+    expect(rootRes.headers.get('content-type') || '').toMatch(/text\/html/i);
+    expect(rootHtml).toContain('RestoGest');
+
+    const apiRes = await fetch(`${baseUrl}/api`);
+    const apiData = await apiRes.json();
+    expect(apiRes.status).toBe(200);
+    expect(apiData.status).toBe('ok');
 
     const healthRes = await fetch(`${baseUrl}/health`);
     const healthData = await healthRes.json();
     expect(healthRes.status).toBe(200);
     expect(healthData.status).toBe('ok');
+
+    // Vérifier aussi la sérialisation de requêtes parallèles en mode PGlite/Postgres
+    const [rCat, rSales, rCash, rInv] = await Promise.all([
+      fetch(`${baseUrl}/api/catalog/products`, { headers: { Authorization: `Bearer ${authToken}` } }),
+      fetch(`${baseUrl}/api/sales`, { headers: { Authorization: `Bearer ${authToken}` } }),
+      fetch(`${baseUrl}/api/cash/sessions/current`, { headers: { Authorization: `Bearer ${authToken}` } }),
+      fetch(`${baseUrl}/api/inventory/levels`, { headers: { Authorization: `Bearer ${authToken}` } }),
+    ]);
+    expect(rCat.status).toBe(200);
+    expect(rSales.status).toBe(200);
+    expect(rCash.status).toBe(200);
+    expect(rInv.status).toBe(200);
   });
 
   it('1. SESSIONS DE CAISSE : Ouverture, Dépense, Suivi théorique et Clôture', async () => {

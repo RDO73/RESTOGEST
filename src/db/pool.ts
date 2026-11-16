@@ -22,6 +22,7 @@ export interface IDbPool {
 class PGlitePoolAdapter implements IDbPool {
   private pgliteInstance: PGlite | null = null;
   private initPromise: Promise<PGlite> | null = null;
+  private mutexChain: Promise<void> = Promise.resolve();
   private readonly dataDir: string;
 
   constructor(dataDir: string) {
@@ -29,6 +30,24 @@ class PGlitePoolAdapter implements IDbPool {
     if (!fs.existsSync(this.dataDir)) {
       fs.mkdirSync(this.dataDir, { recursive: true });
     }
+  }
+
+  private acquireMutex(): Promise<() => void> {
+    let releaseNext!: () => void;
+    const nextPromise = new Promise<void>((resolve) => {
+      releaseNext = resolve;
+    });
+    const prev = this.mutexChain;
+    this.mutexChain = prev.then(() => nextPromise);
+    return prev.then(() => {
+      let released = false;
+      return () => {
+        if (!released) {
+          released = true;
+          releaseNext();
+        }
+      };
+    });
   }
 
   private async getInstance(): Promise<PGlite> {
@@ -76,20 +95,31 @@ class PGlitePoolAdapter implements IDbPool {
 
   async query(text: string, params?: any[]): Promise<{ rows: any[]; rowCount?: number }> {
     const db = await this.getInstance();
-    const res = await db.query(text, params);
-    return {
-      rows: res.rows,
-      rowCount: res.rows.length,
-    };
+    const release = await this.acquireMutex();
+    try {
+      const res = await db.query(text, params);
+      return {
+        rows: res.rows,
+        rowCount: res.rows.length,
+      };
+    } finally {
+      release();
+    }
   }
 
   async exec(sql: string): Promise<void> {
     const db = await this.getInstance();
-    await db.exec(sql);
+    const release = await this.acquireMutex();
+    try {
+      await db.exec(sql);
+    } finally {
+      release();
+    }
   }
 
   async connect(): Promise<IDbClient> {
     const db = await this.getInstance();
+    const release = await this.acquireMutex();
     return {
       query: async (text: string, params?: any[]) => {
         const res = await db.query(text, params);
@@ -98,9 +128,7 @@ class PGlitePoolAdapter implements IDbPool {
           rowCount: res.rows.length,
         };
       },
-      release: () => {
-        // En mode embarqué, pas de déconnexion physique nécessaire
-      },
+      release,
     };
   }
 
