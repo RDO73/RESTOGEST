@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && node -e \"require('node:fs').cpSync('src/schema', 'dist/schema', { recursive: true })\"",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:schema": "node tests/validate_restogest.mjs",

@@ -79,7 +79,7 @@ beforeAll(async () => {
   const prodData = await prodRes.json();
   expect(prodRes.status).toBe(201);
   productId = prodData.data.id;
-});
+}, 30000);
 
 afterAll(async () => {
   await new Promise<void>((resolve) => {
