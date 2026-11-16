@@ -56,34 +56,35 @@ class PGlitePoolAdapter implements IDbPool {
     }
     if (!this.initPromise) {
       this.initPromise = (async () => {
+        if (!fs.existsSync(this.dataDir)) {
+          fs.mkdirSync(this.dataDir, { recursive: true });
+        }
         const db = new PGlite(this.dataDir);
         await db.waitReady;
 
-        if (process.env.VERCEL) {
-          const reg = await db.query<{ reg: string | null }>(
-            "SELECT to_regclass('public.schema_migrations') AS reg"
-          );
-          if (!reg.rows[0]?.reg) {
-            const bootstrapPool: IDbPool & { exec: (sql: string) => Promise<void> } = {
+        const reg = await db.query<{ mig: string | null; comp: string | null }>(
+          "SELECT to_regclass('public.schema_migrations') AS mig, to_regclass('public.companies') AS comp"
+        );
+        if (!reg.rows[0]?.mig || !reg.rows[0]?.comp) {
+          const bootstrapPool: IDbPool & { exec: (sql: string) => Promise<void> } = {
+            query: async (text: string, params?: any[]) => {
+              const res = await db.query(text, params);
+              return { rows: res.rows, rowCount: res.rows.length };
+            },
+            exec: async (sql: string) => {
+              await db.exec(sql);
+            },
+            connect: async () => ({
               query: async (text: string, params?: any[]) => {
                 const res = await db.query(text, params);
                 return { rows: res.rows, rowCount: res.rows.length };
               },
-              exec: async (sql: string) => {
-                await db.exec(sql);
-              },
-              connect: async () => ({
-                query: async (text: string, params?: any[]) => {
-                  const res = await db.query(text, params);
-                  return { rows: res.rows, rowCount: res.rows.length };
-                },
-                release: () => {},
-              }),
-              end: async () => {},
-            };
-            const { applyMigrations } = await import('./migrate.js');
-            await applyMigrations(bootstrapPool);
-          }
+              release: () => {},
+            }),
+            end: async () => {},
+          };
+          const { applyMigrations } = await import('./migrate.js');
+          await applyMigrations(bootstrapPool);
         }
 
         this.pgliteInstance = db;
@@ -140,6 +141,14 @@ class PGlitePoolAdapter implements IDbPool {
     }
   }
 
+  async resetColdStart(): Promise<void> {
+    await this.end();
+    if (fs.existsSync(this.dataDir)) {
+      fs.rmSync(this.dataDir, { recursive: true, force: true });
+    }
+    fs.mkdirSync(this.dataDir, { recursive: true });
+  }
+
   on(_event: string, _handler: (err: any) => void): void {
     // Événements d'erreur de pool simulés
   }
@@ -187,6 +196,7 @@ let pgReadyPromise: Promise<void> | null = null;
  */
 export async function ensureDatabaseReady(): Promise<void> {
   if (config.databaseType !== 'postgres') {
+    await appPoolInstance.query('SELECT 1');
     return;
   }
   if (!pgReadyPromise) {
@@ -218,6 +228,13 @@ export async function ensureDatabaseReady(): Promise<void> {
     })();
   }
   return pgReadyPromise;
+}
+
+export async function resetEmbeddedDatabaseForColdStartSimulation(): Promise<void> {
+  pgReadyPromise = null;
+  if (appPoolInstance instanceof PGlitePoolAdapter) {
+    await appPoolInstance.resetColdStart();
+  }
 }
 
 export const appPool = appPoolInstance;

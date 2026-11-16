@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { hashJti, generateSessionToken, verifySessionToken } from '../src/auth/jwt.js';
+import {
+  hashJti,
+  generateSessionToken,
+  verifySessionToken,
+  getSessionCookieOptions,
+} from '../src/auth/jwt.js';
 import { hashPassword, verifyPassword } from '../src/auth/password.js';
 
 describe('Authentification et Sécurité des Sessions RESTOGEST', () => {
@@ -27,8 +32,36 @@ describe('Authentification et Sécurité des Sessions RESTOGEST', () => {
     const verified = verifySessionToken(token);
     expect(verified.userId).toBe(userId);
     expect(verified.companyId).toBe(companyId);
+    expect(verified.tenantId).toBe(companyId);
+    expect(verified.role).toBe('owner');
+    expect(verified.isDemo).toBe(false);
     expect(verified.jti).toBe(jti);
     expect(verified.tokenHash).toBe(tokenHash);
+  });
+
+  it('generateSessionToken démo et options de cookie Vercel (stateless HMAC-SHA256)', () => {
+    const userId = '00000000-0000-4000-8000-000000000002';
+    const tenantId = '00000000-0000-4000-8000-000000000001';
+    const { token } = generateSessionToken(userId, tenantId, {
+      tenantId,
+      role: 'owner',
+      email: 'demo@restogest.sn',
+      isDemo: true,
+    });
+
+    const verified = verifySessionToken(token);
+    expect(verified.userId).toBe(userId);
+    expect(verified.tenantId).toBe(tenantId);
+    expect(verified.companyId).toBe(tenantId);
+    expect(verified.role).toBe('owner');
+    expect(verified.email).toBe('demo@restogest.sn');
+    expect(verified.isDemo).toBe(true);
+
+    const cookieOpts = getSessionCookieOptions();
+    expect(cookieOpts.path).toBe('/');
+    expect(cookieOpts.sameSite).toBe('lax');
+    expect(cookieOpts.httpOnly).toBe(true);
+    expect(cookieOpts.secure).toBe(process.env.NODE_ENV === 'production');
   });
 
   it('hashPassword et verifyPassword doivent hacher et valider correctement les mots de passe', async () => {

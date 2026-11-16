@@ -1,9 +1,22 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 import { adminPool, appPool, ensureDatabaseReady } from '../../db/pool.js';
 import { withTenantContext } from '../../db/tenant-context.js';
+import {
+  DEMO_COMPANY_NAME,
+  DEMO_EMAIL,
+  DEMO_FULL_NAME,
+  DEMO_TENANT_ID,
+  DEMO_USER_ID,
+  ensureDemoEnvironment,
+} from '../../db/demo-seed.js';
 import { hashPassword, verifyPassword } from '../../auth/password.js';
-import { generateSessionToken } from '../../auth/jwt.js';
+import {
+  clearSessionCookie,
+  generateSessionToken,
+  markTokenRevoked,
+  setSessionCookie,
+} from '../../auth/jwt.js';
 import { requireAuth } from '../../middlewares/auth-middleware.js';
 
 export const authRouter = Router();
@@ -23,12 +36,57 @@ const LoginSchema = z.object({
   companyId: z.string().uuid().optional(),
 });
 
+async function issueDemoSessionResponse(res: Response, statusCode: number): Promise<void> {
+  const session = generateSessionToken(DEMO_USER_ID, DEMO_TENANT_ID, {
+    tenantId: DEMO_TENANT_ID,
+    role: 'owner',
+    email: DEMO_EMAIL,
+    fullName: DEMO_FULL_NAME,
+    companyName: DEMO_COMPANY_NAME,
+    businessType: 'both',
+    currency: 'XOF',
+    isDemo: true,
+  });
+
+  await ensureDemoEnvironment(session.tokenHash);
+  setSessionCookie(res, session.token);
+
+  res.status(statusCode).json({
+    success: true,
+    data: {
+      token: session.token,
+      companyId: DEMO_TENANT_ID,
+      tenantId: DEMO_TENANT_ID,
+      userId: DEMO_USER_ID,
+      role: 'owner',
+      email: DEMO_EMAIL,
+      isDemo: true,
+    },
+  });
+}
+
+// Lancement immédiat de l'environnement de démonstration (stateless + auto-seed déterministe)
+authRouter.post('/demo', async (_req, res, next) => {
+  try {
+    await ensureDatabaseReady();
+    await issueDemoSessionResponse(res, 200);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Inscription Entreprise + Propriétaire
 authRouter.post('/register', async (req, res, next) => {
   try {
     await ensureDatabaseReady();
+    if (req.body?.isDemo === true) {
+      await issueDemoSessionResponse(res, 201);
+      return;
+    }
+
     const data = RegisterSchema.parse(req.body);
     const passwordHash = await hashPassword(data.password);
+    const normalizedEmail = data.email.toLowerCase();
 
     // Exécution de la fonction PostgreSQL SECURITY DEFINER
     const result = await appPool.query(
@@ -39,7 +97,7 @@ authRouter.post('/register', async (req, res, next) => {
         data.companyName,
         data.businessType,
         data.currency,
-        data.email.toLowerCase(),
+        normalizedEmail,
         passwordHash,
         data.fullName,
       ]
@@ -47,8 +105,17 @@ authRouter.post('/register', async (req, res, next) => {
 
     const { company_id, user_id } = result.rows[0];
 
-    // Génération de la session initiale
-    const session = generateSessionToken(user_id, company_id);
+    // Génération de la session auto-porteuse signée HMAC-SHA256
+    const session = generateSessionToken(user_id, company_id, {
+      tenantId: company_id,
+      role: 'owner',
+      email: normalizedEmail,
+      fullName: data.fullName,
+      companyName: data.companyName,
+      businessType: data.businessType,
+      currency: data.currency,
+      isDemo: false,
+    });
 
     // Insertion du token_hash dans user_sessions via adminPool
     await adminPool.query(
@@ -57,12 +124,16 @@ authRouter.post('/register', async (req, res, next) => {
       [user_id, company_id, session.tokenHash]
     );
 
+    setSessionCookie(res, session.token);
+
     res.status(201).json({
       success: true,
       data: {
         token: session.token,
         companyId: company_id,
+        tenantId: company_id,
         userId: user_id,
+        isDemo: false,
       },
     });
   } catch (error) {
@@ -104,7 +175,7 @@ authRouter.post('/login', async (req, res, next) => {
 
     // Sélection de l'entreprise
     let companyQuery = `
-      SELECT cu.company_id, c.name AS company_name
+      SELECT cu.company_id, c.name AS company_name, c.business_type, c.currency
       FROM public.company_users cu
       JOIN public.companies c ON c.id = cu.company_id
       WHERE cu.user_id = $1 AND cu.is_active = TRUE AND c.is_active = TRUE
@@ -122,10 +193,21 @@ authRouter.post('/login', async (req, res, next) => {
       return;
     }
 
-    const targetCompanyId = companyResult.rows[0].company_id;
+    const targetCompany = companyResult.rows[0];
+    const targetCompanyId = targetCompany.company_id;
+    const isDemo = targetCompanyId === DEMO_TENANT_ID;
 
-    // Création session & token
-    const session = generateSessionToken(user.id, targetCompanyId);
+    // Création session & token auto-porteur
+    const session = generateSessionToken(user.id, targetCompanyId, {
+      tenantId: targetCompanyId,
+      role: 'owner',
+      email: user.email,
+      fullName: user.full_name,
+      companyName: targetCompany.company_name,
+      businessType: targetCompany.business_type,
+      currency: targetCompany.currency,
+      isDemo,
+    });
 
     await adminPool.query(
       `INSERT INTO public.user_sessions (user_id, company_id, token_hash, expires_at)
@@ -133,10 +215,13 @@ authRouter.post('/login', async (req, res, next) => {
       [user.id, targetCompanyId, session.tokenHash]
     );
 
+    setSessionCookie(res, session.token);
+
     res.json({
       success: true,
       data: {
         token: session.token,
+        isDemo,
         user: {
           id: user.id,
           email: user.email,
@@ -144,7 +229,7 @@ authRouter.post('/login', async (req, res, next) => {
         },
         company: {
           id: targetCompanyId,
-          name: companyResult.rows[0].company_name,
+          name: targetCompany.company_name,
         },
       },
     });
@@ -182,6 +267,9 @@ authRouter.get('/me', requireAuth, async (req, res, next) => {
 authRouter.post('/logout', requireAuth, async (req, res, next) => {
   try {
     await ensureDatabaseReady();
+    markTokenRevoked(req.auth!.tokenHash);
+    clearSessionCookie(res);
+
     await adminPool.query(
       `UPDATE public.user_sessions
        SET revoked_at = NOW()

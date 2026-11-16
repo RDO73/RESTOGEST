@@ -1,5 +1,10 @@
 import type { Request, Response, NextFunction } from 'express';
-import { verifySessionToken, type VerifiedSession } from '../auth/jwt.js';
+import {
+  extractTokenFromCookieHeader,
+  isTokenRevoked,
+  verifySessionToken,
+  type VerifiedSession,
+} from '../auth/jwt.js';
 
 declare global {
   namespace Express {
@@ -11,18 +16,31 @@ declare global {
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  let token: string | null = null;
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7).trim();
+  } else {
+    token = extractTokenFromCookieHeader(req.headers.cookie);
+  }
+
+  if (!token) {
     res.status(401).json({
       success: false,
-      error: 'Authentification requise : Jeton Bearer manquant',
+      error: 'Authentification requise : Jeton Bearer ou Cookie de session manquant',
     });
     return;
   }
 
-  const token = authHeader.substring(7);
-
   try {
     const session = verifySessionToken(token);
+    if (isTokenRevoked(session.tokenHash)) {
+      res.status(401).json({
+        success: false,
+        error: 'Session révoquée',
+      });
+      return;
+    }
     req.auth = session;
     next();
   } catch (error: any) {

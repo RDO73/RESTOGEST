@@ -518,4 +518,86 @@ describe('Modules Métiers Backend RESTOGEST V1', () => {
     });
     expect(revokedMeRes.status).toBe(401);
   });
+
+  it('8. MODE DÉMO STATELESS & RÉSILIENCE COLD-START (pglite-ephemeral reset entre POST et GET)', async () => {
+    const demoRes = await fetch(`${baseUrl}/api/auth/demo`, {
+      method: 'POST',
+    });
+    const demoJson = await demoRes.json();
+    expect(demoRes.status).toBe(200);
+    expect(demoJson.data.isDemo).toBe(true);
+    expect(demoJson.data.token).toBeTruthy();
+
+    const setCookieHeader = demoRes.headers.get('set-cookie') || '';
+    expect(setCookieHeader).toContain('restogest_session=');
+    expect(setCookieHeader).toContain('Path=/');
+    expect(setCookieHeader).toContain('HttpOnly');
+    expect(setCookieHeader).toMatch(/SameSite=Lax/i);
+
+    const cookiePair = setCookieHeader.split(';')[0];
+
+    // Simulation d'un cold start Serverless : suppression totale de l'instance PGlite entre le POST et les GET
+    if (process.env.DATABASE_TYPE !== 'postgres') {
+      const [{ resetEmbeddedDatabaseForColdStartSimulation }, { resetTenantRoleCache }] =
+        await Promise.all([
+          import('../src/db/pool.js'),
+          import('../src/db/tenant-context.js'),
+        ]);
+      await resetEmbeddedDatabaseForColdStartSimulation();
+      resetTenantRoleCache();
+    }
+
+    // Reprise immédiate du tableau de bord via Cookie HTTPOnly seul, sans aucun 401
+    const cookieHeaders = { Cookie: cookiePair };
+    const [meRes, catRes, prodRes, recRes, lvlRes, purRes, cashRes] = await Promise.all([
+      fetch(`${baseUrl}/api/auth/me`, { headers: cookieHeaders }),
+      fetch(`${baseUrl}/api/catalog/categories`, { headers: cookieHeaders }),
+      fetch(`${baseUrl}/api/catalog/products`, { headers: cookieHeaders }),
+      fetch(`${baseUrl}/api/catalog/recipes`, { headers: cookieHeaders }),
+      fetch(`${baseUrl}/api/inventory/levels`, { headers: cookieHeaders }),
+      fetch(`${baseUrl}/api/purchases`, { headers: cookieHeaders }),
+      fetch(`${baseUrl}/api/cash/sessions/current`, { headers: cookieHeaders }),
+    ]);
+
+    expect(meRes.status).toBe(200);
+    expect(catRes.status).toBe(200);
+    expect(prodRes.status).toBe(200);
+    expect(recRes.status).toBe(200);
+    expect(lvlRes.status).toBe(200);
+    expect(purRes.status).toBe(200);
+    expect(cashRes.status).toBe(200);
+
+    const [meData, catData, prodData, recData, lvlData, purData, cashData] = await Promise.all([
+      meRes.json(),
+      catRes.json(),
+      prodRes.json(),
+      recRes.json(),
+      lvlRes.json(),
+      purRes.json(),
+      cashRes.json(),
+    ]);
+
+    expect(meData.data.company.name).toBe('Le Palais Gourmand (Démo)');
+    expect(catData.data.length).toBeGreaterThanOrEqual(3);
+    expect(prodData.data.map((p: any) => p.name)).toContain('Café Espresso');
+    expect(prodData.data.map((p: any) => p.name)).toContain('Croissant Pur Beurre');
+    expect(recData.data.map((r: any) => r.recipe_name)).toContain('Extraction Espresso 20g');
+    expect(purData.data.some((p: any) => p.reference === 'ACH-DEMO-INIT-001' && p.status === 'received')).toBe(true);
+
+    const croissantLvl = lvlData.data.find((l: any) => l.product_name === 'Croissant Pur Beurre');
+    expect(Number(croissantLvl?.current_quantity)).toBe(30);
+
+    const grainLvl = lvlData.data.find((l: any) => l.product_name === 'Grains Café Arabica');
+    expect(Number(grainLvl?.current_quantity)).toBe(10);
+    expect(Number(grainLvl?.pmp)).toBe(8500);
+
+    expect(cashData.data.status).toBe('open');
+    expect(Number(cashData.data.opening_amount)).toBe(50000);
+
+    // Vérification complémentaire avec Bearer header
+    const bearerMeRes = await fetch(`${baseUrl}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${demoJson.data.token}` },
+    });
+    expect(bearerMeRes.status).toBe(200);
+  });
 });

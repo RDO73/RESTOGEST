@@ -1,24 +1,28 @@
 import type { IDbClient } from './pool.js';
 import { appPool, ensureDatabaseReady } from './pool.js';
 import { config } from '../config/env.js';
+import { ensureSessionHydrated, type StatelessHydrationContext } from './demo-seed.js';
 
-export interface TenantContext {
-  tokenHash: string;
-  companyId: string;
-}
+export type TenantContext = StatelessHydrationContext;
 
 let cachedDropToAppRole: boolean | null = config.databaseType === 'embedded' ? true : null;
 
+export function resetTenantRoleCache(): void {
+  cachedDropToAppRole = config.databaseType === 'embedded' ? true : null;
+}
+
 /**
  * Exécute une opération métier dans une transaction hermétique,
- * avec initialisation stricte des variables de session via set_session_context()
- * et exécution forcée sous le rôle non privilégié restogest_app.
+ * avec réhydratation stateless (cold-start démo / cookie JWT), initialisation stricte
+ * des variables de session via set_session_context() et exécution forcée sous restogest_app.
  */
 export async function withTenantContext<T>(
   context: TenantContext,
   operation: (client: IDbClient) => Promise<T>
 ): Promise<T> {
   await ensureDatabaseReady();
+  await ensureSessionHydrated(context);
+
   const client = await appPool.connect();
 
   try {
