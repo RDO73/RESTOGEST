@@ -56,3 +56,5 @@ app.use('/api/cash', cashRouter);
 
 // Gestionnaire global d'erreurs
 app.use(errorHandler);
+
+export default app;
