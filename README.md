@@ -71,7 +71,7 @@ npm start
 
 ## Endpoints API Principaux
 
-- `GET /health` — État du service
+- `GET /` & `GET /health` — Présentation & état du service
 - `/api/auth` — `POST /register`, `POST /login`, `GET /me`, `POST /logout` (révocation immédiate en base)
 - `/api/catalog` — Catégories, produits et recettes (`GET`/`POST`)
 - `/api/inventory` — Niveaux, alertes, valorisation (`GET /summary`), mouvements et ajustements (`POST /adjustments`)
@@ -99,4 +99,24 @@ psql -U restogest_admin -d restogest_test -v ON_ERROR_STOP=1 -f tests/test_suite
 
 # Tests de concurrence parallèles sur PostgreSQL TCP (6 scénarios multi-sessions)
 npm run test:concurrency
+```
+
+---
+
+## Déploiement Vercel (`.vercel.app`)
+
+Le dépôt inclut l'adaptateur Serverless Express ([api/index.ts](api/index.ts)) et [vercel.json](vercel.json) :
+
+1. Configurer une base **PostgreSQL 14+ managée** (Neon, Supabase, RDS...) et y appliquer `npm run db:migrate`.
+2. Définir les variables d'environnement dans le projet Vercel (Production & Preview) :
+   - `NODE_ENV=production`
+   - `DATABASE_TYPE=postgres`
+   - `DATABASE_URL` (`restogest_app`)
+   - `DATABASE_ADMIN_URL` (`restogest_admin`)
+   - `JWT_SECRET` (secret aléatoire robuste)
+3. Connecter le CLI et déployer en production :
+
+```bash
+vercel login
+vercel --prod
 ```

@@ -1,11 +1,13 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+const defaultPgliteDir = process.env.VERCEL ? '/tmp/restogest-pglite' : './data/pglite';
+
 export const config = {
   port: parseInt(process.env.PORT || '4000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   databaseType: (process.env.DATABASE_TYPE || 'embedded') as 'embedded' | 'postgres',
-  pgliteDir: process.env.PGLITE_DATA_DIR || './data/pglite',
+  pgliteDir: process.env.PGLITE_DATA_DIR || defaultPgliteDir,
   databaseUrl: process.env.DATABASE_URL || 'postgresql://restogest_app:app_secure_password@localhost:5432/restogest',
   databaseAdminUrl: process.env.DATABASE_ADMIN_URL || 'postgresql://restogest_admin:admin_secure_password@localhost:5432/restogest',
   jwt: {

@@ -13,8 +13,9 @@ dist/
 data/
 *.log
 
-# OS / IDE / Test caches
+# OS / IDE / Test caches / Vercel
 .DS_Store
 Thumbs.db
 coverage/
 .vitest/
+.vercel/

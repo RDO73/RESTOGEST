@@ -11,7 +11,23 @@ export const app = express();
 
 app.use(express.json());
 
-// Endpoint de santé
+// Endpoint racine & santé
+app.get('/', (_req, res) => {
+  res.json({
+    service: 'RESTOGEST API V1',
+    status: 'ok',
+    health: '/health',
+    endpoints: [
+      '/api/auth',
+      '/api/catalog',
+      '/api/sales',
+      '/api/purchases',
+      '/api/inventory',
+      '/api/cash',
+    ],
+  });
+});
+
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',

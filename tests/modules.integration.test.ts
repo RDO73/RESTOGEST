@@ -101,6 +101,18 @@ afterAll(async () => {
 });
 
 describe('Modules Métiers Backend RESTOGEST V1', () => {
+  it('0. ENDPOINTS PUBLICS : / et /health répondent 200', async () => {
+    const rootRes = await fetch(`${baseUrl}/`);
+    const rootData = await rootRes.json();
+    expect(rootRes.status).toBe(200);
+    expect(rootData.status).toBe('ok');
+
+    const healthRes = await fetch(`${baseUrl}/health`);
+    const healthData = await healthRes.json();
+    expect(healthRes.status).toBe(200);
+    expect(healthData.status).toBe('ok');
+  });
+
   it('1. SESSIONS DE CAISSE : Ouverture, Dépense, Suivi théorique et Clôture', async () => {
     // A. Ouverture de caisse avec 50 000 XOF
     const openRes = await fetch(`${baseUrl}/api/cash/sessions/open`, {
