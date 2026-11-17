@@ -22,7 +22,7 @@ async function withAdminTransaction<T>(fn: (client: IDbClient) => Promise<T>): P
     await client.query('COMMIT');
     return res;
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
+    await client.query('ROLLBACK').catch(() => { });
     throw err;
   } finally {
     client.release();
@@ -1213,13 +1213,48 @@ subscriptionsRouter.get('/invoices/:id', async (req, res, next) => {
 // -------------------------------------------------------------
 // 7. SUPER-ADMIN : ESPACE « FINANCES RESTOGEST » (SECTIONS 8, 9, 10)
 // -------------------------------------------------------------
+function resolveActorUserId(auth: any): string | null {
+  if (!auth?.userId || auth.userId === '00000000-0000-0000-0000-000000000001' || auth.role === 'SUPER_ADMIN') {
+    return null;
+  }
+  return auth.userId;
+}
+
+async function safeAuditLog(
+  client: IDbClient,
+  opts: {
+    companyId: string;
+    userId: string | null;
+    action: string;
+    tableName: string;
+    recordId?: string | null;
+    newValues: any;
+  }
+): Promise<void> {
+  if (!opts.companyId || opts.companyId === '00000000-0000-0000-0000-000000000000') {
+    return;
+  }
+  await client.query(
+    `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, record_id, new_values)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+    [
+      opts.companyId,
+      opts.userId,
+      opts.action,
+      opts.tableName,
+      opts.recordId || null,
+      JSON.stringify(opts.newValues),
+    ]
+  );
+}
+
 function ensurePlatformAdminAccess(req: any, res: any): boolean {
   const roleUpper = String(req.auth?.role || '').toUpperCase();
-  if (!req.auth || !['SUPER_ADMIN', 'OWNER', 'ADMIN'].includes(roleUpper)) {
+  if (!req.auth || roleUpper !== 'SUPER_ADMIN') {
     res.status(403).json({
       error: {
         code: 'SUPER_ADMIN_REQUIRED',
-        message: 'Seul le propriétaire / Super-Administrateur peut accéder à Finances RESTOGEST.',
+        message: 'Accès réservé au Propriétaire / Super-Administrateur (/admin).',
       },
     });
     return false;
@@ -1528,20 +1563,18 @@ subscriptionsRouter.post('/admin/transactions/:id/confirm', async (req, res, nex
 
       const confirmed = await confirmSaasTransactionAndActivateSubscription(client, txRes.rows[0], {
         providerTransactionId: `ADMIN-VALIDATED-${Date.now()}`,
-        confirmedByUserId: req.auth!.userId,
+        confirmedByUserId: resolveActorUserId(req.auth),
         isWebhook: false,
       });
 
-      await client.query(
-        `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, record_id, new_values)
-         VALUES ($1, $2, 'SAAS_TRANSACTION_MANUALLY_CONFIRMED', 'saas_subscription_transactions', $3, $4::jsonb)`,
-        [
-          txRes.rows[0].company_id,
-          req.auth!.userId,
-          txRes.rows[0].id,
-          JSON.stringify({ note, transactionRef: txRes.rows[0].transaction_ref }),
-        ]
-      );
+      await safeAuditLog(client, {
+        companyId: txRes.rows[0].company_id,
+        userId: resolveActorUserId(req.auth),
+        action: 'SAAS_TRANSACTION_MANUALLY_CONFIRMED',
+        tableName: 'saas_subscription_transactions',
+        recordId: txRes.rows[0].id,
+        newValues: { note, transactionRef: txRes.rows[0].transaction_ref },
+      });
 
       await client.query('COMMIT');
       res.json({ data: confirmed });
@@ -1590,11 +1623,14 @@ subscriptionsRouter.post('/admin/transactions/:id/reject', async (req, res, next
         [txId, reason]
       );
 
-      await client.query(
-        `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, record_id, new_values)
-         VALUES ($1, $2, 'SAAS_TRANSACTION_REJECTED', 'saas_subscription_transactions', $3, $4::jsonb)`,
-        [txRes.rows[0].company_id, req.auth!.userId, txId, JSON.stringify({ reason })]
-      );
+      await safeAuditLog(client, {
+        companyId: txRes.rows[0].company_id,
+        userId: resolveActorUserId(req.auth),
+        action: 'SAAS_TRANSACTION_REJECTED',
+        tableName: 'saas_subscription_transactions',
+        recordId: txId,
+        newValues: { reason },
+      });
 
       await client.query('COMMIT');
       res.json({ data: updRes.rows[0] });
@@ -1655,21 +1691,19 @@ subscriptionsRouter.post('/admin/subscriptions/:id/status', async (req, res, nex
         [subId, nextStatus, nextPeriodEnd.toISOString()]
       );
 
-      await client.query(
-        `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, record_id, new_values)
-         VALUES ($1, $2, 'SAAS_SUBSCRIPTION_ADMIN_OVERRIDE', 'company_subscriptions', $3, $4::jsonb)`,
-        [
-          sub.company_id,
-          req.auth!.userId,
-          subId,
-          JSON.stringify({
-            previousStatus: sub.status,
-            newStatus: nextStatus,
-            extendDays: parsed.extendDays || 0,
-            reason: parsed.reason,
-          }),
-        ]
-      );
+      await safeAuditLog(client, {
+        companyId: sub.company_id,
+        userId: resolveActorUserId(req.auth),
+        action: 'SAAS_SUBSCRIPTION_ADMIN_OVERRIDE',
+        tableName: 'company_subscriptions',
+        recordId: subId,
+        newValues: {
+          previousStatus: sub.status,
+          newStatus: nextStatus,
+          extendDays: parsed.extendDays || 0,
+          reason: parsed.reason,
+        },
+      });
 
       await client.query('COMMIT');
       res.json({ data: updRes.rows[0] });
@@ -1724,7 +1758,7 @@ subscriptionsRouter.post('/admin/payouts', async (req, res, next) => {
           parsed.status,
           settledAtIso,
           parsed.notes || null,
-          req.auth!.userId,
+          resolveActorUserId(req.auth),
         ]
       );
       res.status(201).json({ data: insRes.rows[0] });
@@ -1847,11 +1881,14 @@ subscriptionsRouter.post('/admin/transactions/:id/refund', async (req, res, next
         [txId, reason]
       );
 
-      await client.query(
-        `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, record_id, new_values)
-         VALUES ($1, $2, 'SAAS_TRANSACTION_REFUNDED', 'saas_subscription_transactions', $3, $4::jsonb)`,
-        [tx.company_id, req.auth!.userId, txId, JSON.stringify({ reason, transactionRef: tx.transaction_ref })]
-      );
+      await safeAuditLog(client, {
+        companyId: tx.company_id,
+        userId: resolveActorUserId(req.auth),
+        action: 'SAAS_TRANSACTION_REFUNDED',
+        tableName: 'saas_subscription_transactions',
+        recordId: txId,
+        newValues: { reason, transactionRef: tx.transaction_ref },
+      });
 
       await client.query('COMMIT');
       res.json({ data: updRes.rows[0] });
@@ -1921,11 +1958,13 @@ subscriptionsRouter.post('/admin/countries', async (req, res, next) => {
         ]
       );
 
-      await client.query(
-        `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, new_values)
-         VALUES ($1, $2, 'SAAS_COUNTRY_UPSERTED', 'saas_countries', $3::jsonb)`,
-        [req.auth!.companyId, req.auth!.userId, JSON.stringify({ code, currencyCode, commercialStatus: parsed.commercialStatus })]
-      );
+      await safeAuditLog(client, {
+        companyId: req.auth!.companyId,
+        userId: resolveActorUserId(req.auth),
+        action: 'SAAS_COUNTRY_UPSERTED',
+        tableName: 'saas_countries',
+        newValues: { code, currencyCode, commercialStatus: parsed.commercialStatus },
+      });
 
       res.status(201).json({ data: resRow.rows[0] });
     } finally {
@@ -1983,11 +2022,13 @@ subscriptionsRouter.put('/admin/country-prices', async (req, res, next) => {
         ]
       );
 
-      await client.query(
-        `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, new_values)
-         VALUES ($1, $2, 'SAAS_COUNTRY_PRICE_UPDATED', 'saas_country_plan_prices', $3::jsonb)`,
-        [req.auth!.companyId, req.auth!.userId, JSON.stringify({ countryCode, planCode: parsed.planCode, billingPeriod: parsed.billingPeriod, localPrice: parsed.localPrice, currencyCode })]
-      );
+      await safeAuditLog(client, {
+        companyId: req.auth!.companyId,
+        userId: resolveActorUserId(req.auth),
+        action: 'SAAS_COUNTRY_PRICE_UPDATED',
+        tableName: 'saas_country_plan_prices',
+        newValues: { countryCode, planCode: parsed.planCode, billingPeriod: parsed.billingPeriod, localPrice: parsed.localPrice, currencyCode },
+      });
 
       res.json({ data: resRow.rows[0] });
     } finally {
@@ -2028,14 +2069,16 @@ subscriptionsRouter.put('/admin/exchange-rates', async (req, res, next) => {
       await client.query(
         `INSERT INTO public.saas_exchange_rate_history (base_currency, target_currency, rate, source, recorded_by_user_id)
          VALUES ($1, $2, $3, $4, $5)`,
-        [base, target, parsed.rate, parsed.source.trim(), req.auth!.userId]
+        [base, target, parsed.rate, parsed.source.trim(), resolveActorUserId(req.auth)]
       );
 
-      await client.query(
-        `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, new_values)
-         VALUES ($1, $2, 'SAAS_EXCHANGE_RATE_UPDATED', 'saas_exchange_rates', $3::jsonb)`,
-        [req.auth!.companyId, req.auth!.userId, JSON.stringify({ base, target, rate: parsed.rate, source: parsed.source })]
-      );
+      await safeAuditLog(client, {
+        companyId: req.auth!.companyId,
+        userId: resolveActorUserId(req.auth),
+        action: 'SAAS_EXCHANGE_RATE_UPDATED',
+        tableName: 'saas_exchange_rates',
+        newValues: { base, target, rate: parsed.rate, source: parsed.source },
+      });
 
       await client.query('COMMIT');
       res.json({ data: resRow.rows[0] });
@@ -2099,11 +2142,13 @@ subscriptionsRouter.post('/admin/reception-accounts', async (req, res, next) => 
         ]
       );
 
-      await client.query(
-        `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, new_values)
-         VALUES ($1, $2, 'SAAS_RECEPTION_ACCOUNT_SAVED', 'saas_reception_accounts', $3::jsonb)`,
-        [req.auth!.companyId, req.auth!.userId, JSON.stringify({ countryCode: parsed.countryCode, providerCode: parsed.providerCode })]
-      );
+      await safeAuditLog(client, {
+        companyId: req.auth!.companyId,
+        userId: resolveActorUserId(req.auth),
+        action: 'SAAS_RECEPTION_ACCOUNT_SAVED',
+        tableName: 'saas_reception_accounts',
+        newValues: { countryCode: parsed.countryCode, providerCode: parsed.providerCode },
+      });
 
       res.status(201).json({ data: resRow.rows[0] });
     } finally {
@@ -2155,11 +2200,13 @@ subscriptionsRouter.put('/admin/country-payment-methods', async (req, res, next)
         ]
       );
 
-      await client.query(
-        `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, new_values)
-         VALUES ($1, $2, 'SAAS_COUNTRY_METHOD_UPDATED', 'saas_country_payment_methods', $3::jsonb)`,
-        [req.auth!.companyId, req.auth!.userId, JSON.stringify({ countryCode: parsed.countryCode, methodCode: parsed.methodCode, isActive: parsed.isActive })]
-      );
+      await safeAuditLog(client, {
+        companyId: req.auth!.companyId,
+        userId: resolveActorUserId(req.auth),
+        action: 'SAAS_COUNTRY_METHOD_UPDATED',
+        tableName: 'saas_country_payment_methods',
+        newValues: { countryCode: parsed.countryCode, methodCode: parsed.methodCode, isActive: parsed.isActive },
+      });
 
       res.json({ data: resRow.rows[0] });
     } finally {
@@ -2203,11 +2250,13 @@ subscriptionsRouter.put('/admin/providers/:code', async (req, res, next) => {
         ]
       );
 
-      await client.query(
-        `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, new_values)
-         VALUES ($1, $2, 'SAAS_PROVIDER_UPDATED', 'saas_payment_providers', $3::jsonb)`,
-        [req.auth!.companyId, req.auth!.userId, JSON.stringify({ code, isActive: updRes.rows[0].is_active, mode: updRes.rows[0].mode })]
-      );
+      await safeAuditLog(client, {
+        companyId: req.auth!.companyId,
+        userId: resolveActorUserId(req.auth),
+        action: 'SAAS_PROVIDER_UPDATED',
+        tableName: 'saas_payment_providers',
+        newValues: { code, isActive: updRes.rows[0].is_active, mode: updRes.rows[0].mode },
+      });
 
       res.json({ data: updRes.rows[0] });
     } finally {

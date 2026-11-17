@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Espace Propriétaire / Super-Admin — RESTOGEST Cloud</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .admin-shell {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px 16px 60px;
+    }
+    .admin-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 16px 20px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+    .admin-login-box {
+      max-width: 440px;
+      margin: 60px auto;
+      padding: 28px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+    }
+  </style>
+</head>
+<body>
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- CONNEXION EXCLUSIVE SUPER-ADMIN -->
+  <div id="admin-login-view" class="admin-login-box">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">
+      <div class="logo-mark">SA</div>
+      <div>
+        <h2 style="margin:0;">Accès Propriétaire</h2>
+        <p class="muted-text" style="margin:2px 0 0;font-size:12px;">Administration globale RESTOGEST (Sénégal &amp; Guinée)</p>
+      </div>
+    </div>
+
+    <form id="admin-login-form" class="form-stack">
+      <div class="field">
+        <label for="sa-email">E-mail Propriétaire / Super-Admin</label>
+        <input id="sa-email" type="email" required placeholder="admin@myrestogest.com" autocomplete="email" />
+      </div>
+      <div class="field">
+        <label for="sa-password">Mot de passe Super-Admin</label>
+        <input id="sa-password" type="password" required placeholder="••••••••" autocomplete="current-password" />
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">Connexion Espace Propriétaire</button>
+    </form>
+
+    <div style="margin-top:16px;text-align:center;">
+      <a href="/" class="link-btn" style="text-decoration:none;">← Retour à l'accueil RestoGest</a>
+    </div>
+  </div>
+
+  <!-- TABLEAU DE BORD SUPER-ADMIN -->
+  <div id="admin-app-view" class="admin-shell hidden">
+    <header class="admin-topbar">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div class="logo-mark">SA</div>
+        <div>
+          <h2 style="margin:0;">Super-Admin RESTOGEST — Sénégal (XOF) &amp; Guinée (GNF)</h2>
+          <p class="muted-text" style="margin:2px 0 0;font-size:12px;">
+            Pilotage des établissements inscrits, validation Wave / Orange Money / UBA et finances SaaS
+          </p>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <a href="/" class="btn btn-outline btn-sm">🌐 Accueil Site</a>
+        <button id="btn-sa-refresh" type="button" class="btn btn-outline btn-sm">🔄 Actualiser</button>
+        <button id="btn-sa-logout" type="button" class="btn btn-danger btn-sm">Déconnexion</button>
+      </div>
+    </header>
+
+    <main id="admin-main-content"></main>
+  </div>
+
+  <script type="module" src="/js/admin.js"></script>
+</body>
+</html>

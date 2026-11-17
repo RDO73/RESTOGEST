@@ -44,4 +44,9 @@ export const config = {
     secret: process.env.JWT_SECRET || 'super_secret_jwt_key_restogest_v1_change_in_production',
     expiresIn: process.env.JWT_EXPIRES_IN || '24h',
   },
+  superAdmin: {
+    email: (process.env.SUPER_ADMIN_EMAIL || 'admin@myrestogest.com').trim().toLowerCase(),
+    password: process.env.SUPER_ADMIN_PASSWORD || 'RestoGestAdmin2026!',
+    fullName: process.env.SUPER_ADMIN_NAME || 'Propriétaire RESTOGEST',
+  },
 };

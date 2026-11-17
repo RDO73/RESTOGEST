@@ -471,10 +471,25 @@ describe('RESTOGEST V1.2 — Extension Menu Digital QR Code, Caisse/Stocks & Fin
     expect(dupWh.body.data.alreadyConfirmed).toBe(true);
     expect(Number(dupWh.body.data.transaction.webhook_confirmations_count)).toBe(2);
 
+    // Un gérant d'établissement ne doit PAS pouvoir accéder à l'espace Super-Admin
+    const forbiddenRes = await api('/api/subscriptions/admin/overview', { token: tokenA });
+    expect(forbiddenRes.status).toBe(403);
+
+    // Authentification exclusive Super-Admin (/api/admin/auth/login)
+    const adminLoginRes = await api('/api/admin/auth/login', {
+      method: 'POST',
+      body: {
+        email: process.env.SUPER_ADMIN_EMAIL || 'admin@myrestogest.com',
+        password: process.env.SUPER_ADMIN_PASSWORD || 'RestoGestAdmin2026!',
+      },
+    });
+    expect(adminLoginRes.status).toBe(200);
+    const superAdminToken = adminLoginRes.body.data.token;
+
     // Espace Super-Admin « Finances RESTOGEST » : KPIs, Payouts & Prolongation auditée
     const payoutRes = await api('/api/subscriptions/admin/payouts', {
       method: 'POST',
-      token: tokenA,
+      token: superAdminToken,
       body: {
         paymentProvider: 'PayDunya',
         destinationAccount: 'UBA Dakar SN08...',
@@ -488,7 +503,7 @@ describe('RESTOGEST V1.2 — Extension Menu Digital QR Code, Caisse/Stocks & Fin
     expect(payoutRes.status).toBe(201);
     expect(Number(payoutRes.body.data.net_settled_amount)).toBe(49000);
 
-    const overviewRes = await api('/api/subscriptions/admin/overview', { token: tokenA });
+    const overviewRes = await api('/api/subscriptions/admin/overview', { token: superAdminToken });
     expect(overviewRes.status).toBe(200);
     expect(Number(overviewRes.body.data.kpis.confirmedGrossRevenue)).toBeGreaterThan(0);
     expect(Number(overviewRes.body.data.kpis.settledPayoutsTotal)).toBeGreaterThanOrEqual(49000);

@@ -65,7 +65,14 @@ class PGlitePoolAdapter implements IDbPool {
         const reg = await db.query<{ mig: string | null; comp: string | null; dt: string | null; sc: string | null }>(
           "SELECT to_regclass('public.schema_migrations') AS mig, to_regclass('public.companies') AS comp, to_regclass('public.dining_tables') AS dt, to_regclass('public.saas_countries') AS sc"
         );
-        if (!reg.rows[0]?.mig || !reg.rows[0]?.comp || !reg.rows[0]?.dt || !reg.rows[0]?.sc) {
+        let has011 = false;
+        if (reg.rows[0]?.mig) {
+          const m011 = await db.query(
+            "SELECT 1 FROM public.schema_migrations WHERE filename = '011_sn_gn_focus_and_superadmin.sql' LIMIT 1"
+          );
+          has011 = m011.rows.length > 0;
+        }
+        if (!reg.rows[0]?.mig || !reg.rows[0]?.comp || !reg.rows[0]?.dt || !reg.rows[0]?.sc || !has011) {
           const bootstrapPool: IDbPool & { exec: (sql: string) => Promise<void> } = {
             query: async (text: string, params?: any[]) => {
               const res = await db.query(text, params);
@@ -206,7 +213,12 @@ export async function ensureDatabaseReady(): Promise<void> {
           "SELECT to_regclass('public.schema_migrations') AS mig, to_regclass('public.companies') AS comp, to_regclass('public.dining_tables') AS dt, to_regclass('public.saas_countries') AS sc"
         );
         if (probe.rows[0]?.mig && probe.rows[0]?.comp && probe.rows[0]?.dt && probe.rows[0]?.sc) {
-          return;
+          const m011 = await adminPoolInstance.query(
+            "SELECT 1 FROM public.schema_migrations WHERE filename = '011_sn_gn_focus_and_superadmin.sql' LIMIT 1"
+          );
+          if (m011.rows.length > 0) {
+            return;
+          }
         }
 
         const lockClient = await adminPoolInstance.connect();

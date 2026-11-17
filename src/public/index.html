@@ -58,9 +58,9 @@
           </div>
         </div>
 
-        <h1>La plateforme tout-en-un pour votre restaurant, café &amp; fournil.</h1>
+        <h1>La plateforme SaaS dédiée aux restaurants &amp; pâtisseries au Sénégal et en Guinée.</h1>
         <p class="auth-subtitle">
-          Encaissez plus vite au comptoir ou en salle, pilotez vos livraisons WhatsApp, maîtrisez vos fiches recettes anti-coulage et contrôlez chaque clôture Z de caisse en XOF ou GNF.
+          Encaissez plus vite au comptoir ou en salle, pilotez vos menus QR Code &amp; livraisons WhatsApp, maîtrisez vos fiches recettes anti-coulage et contrôlez chaque clôture Z de caisse en <strong>XOF (Sénégal)</strong> ou <strong>GNF (Guinée)</strong>.
         </p>
 
         <div class="hero-features">
@@ -69,8 +69,8 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
             </div>
             <div>
-              <strong>Caisse POS, Plan de Salle &amp; Livraison WhatsApp</strong>
-              <span>Tables en temps réel, paiements Wave / Orange Money / Cash et ticket client en 1 clic.</span>
+              <strong>Caisse POS, Menu QR Code &amp; Livraison WhatsApp</strong>
+              <span>Tables en temps réel, paiements locaux Sénégal (Wave, Orange Money, Carte UBA) &amp; Guinée (Orange Money Guinée, Virement, Carte UBA).</span>
             </div>
           </div>
           <div class="hero-feature">
@@ -87,30 +87,45 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg>
             </div>
             <div>
-              <strong>Sécurité &amp; Confidentialité Bancaire</strong>
+              <strong>Sécurité &amp; Isolation Multi-Établissements</strong>
               <span>Vos chiffres, stocks et recettes sont 100 % isolés, chiffrés et sauvegardés en temps réel.</span>
             </div>
           </div>
         </div>
 
-        <div class="auth-demo-card">
+        <div class="auth-demo-card" style="margin-bottom:12px;">
           <div class="auth-demo-copy">
-            <strong>Tester l'application complète en 1 clic</strong>
-            <p>Ouvre immédiatement un établissement de démonstration avec tables, carte produits, livraison, caisse ouverte et rapport Z.</p>
+            <strong>Espace Client (Gérants &amp; Équipes)</strong>
+            <p>Accédez à votre caisse, vos tables QR Code et votre abonnement en XOF ou GNF, ou testez la démo complète.</p>
           </div>
-          <button id="btn-demo-quickstart" type="button" class="btn btn-amber">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            Lancer la Démo
-          </button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button id="btn-focus-client-login" type="button" class="btn btn-primary">
+              Connexion Établissement
+            </button>
+            <button id="btn-demo-quickstart" type="button" class="btn btn-amber">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Lancer la Démo
+            </button>
+          </div>
+        </div>
+
+        <div class="auth-demo-card" style="background:rgba(15,23,42,0.75);border-color:rgba(148,163,184,0.28);">
+          <div class="auth-demo-copy">
+            <strong>Accès Propriétaire Plateforme</strong>
+            <p>Interface Super-Admin dédiée : suivi des établissements (Sénégal &amp; Guinée) et validation des paiements Wave / Orange Money / UBA.</p>
+          </div>
+          <a href="/admin" class="btn btn-outline" style="text-decoration:none;white-space:nowrap;">
+            Espace Propriétaire / Super-Admin →
+          </a>
         </div>
       </section>
 
-      <section class="auth-panel">
+      <section id="client-auth-panel" class="auth-panel">
         <div class="auth-panel-head">
           <div class="logo-mark">RG</div>
           <div>
-            <h2>Accès Établissement</h2>
-            <p class="muted-text">Connectez-vous ou créez votre compte RestoGest Cloud</p>
+            <h2>Espace Client • Connexion Établissement</h2>
+            <p class="muted-text">Connectez-vous ou créez votre compte RestoGest (Sénégal XOF / Guinée GNF)</p>
           </div>
         </div>
 
@@ -159,8 +174,6 @@
               <select id="reg-country">
                 <option value="SN" data-currency="XOF">🇸🇳 Sénégal (XOF — FCFA)</option>
                 <option value="GN" data-currency="GNF">🇬🇳 Guinée (GNF — FG)</option>
-                <option value="CI" data-currency="XOF">🇨🇮 Côte d'Ivoire (XOF — FCFA)</option>
-                <option value="CM" data-currency="XAF">🇨🇲 Cameroun (XAF — FCFA)</option>
               </select>
               <input id="reg-currency" type="hidden" value="XOF" />
             </div>
@@ -229,10 +242,6 @@
         <button class="nav-item" data-route="subscription" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 6.2L22 9.2l-5 4.9L18.2 21 12 17.8 5.8 21 7 14.1l-5-4.9 7-1L12 2z"/></svg>
           <span>Abonnement &amp; Licence</span>
-        </button>
-        <button class="nav-item" id="nav-saas-admin" data-route="saas-admin" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-          <span>Finances RESTOGEST</span>
         </button>
       </nav>
 

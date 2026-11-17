@@ -1587,7 +1587,7 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
                           <td class="mono"><strong>${esc(tx.transaction_ref)}</strong><div class="muted-text" style="font-size:10px;">${esc(fmtDate(tx.created_at))}</div></td>
                           <td>${esc(tx.plan_code)} (${esc(tx.billing_period)})</td>
                           <td class="mono">${esc(fmtMoney(tx.gross_amount, tx.currency))}</td>
-                          <td><span class="status-pill ${tx.status === 'confirmed' ? 'status-open' : tx.status === 'pending' ? 'status-pending' : 'status-closed'}">${tx.status === 'pending' ? 'En attente de vérification' : esc(tx.status)}</span></td>
+                          <td><span class="status-pill ${tx.status === 'confirmed' ? 'status-open' : tx.status === 'pending' ? 'status-pending' : 'status-closed'}">${tx.status === 'pending' ? 'En attente de validation' : esc(tx.status)}</span></td>
                           <td>${inv ? `<button type="button" class="btn btn-outline btn-sm" data-print-saas-inv="${esc(inv.id)}">🖨️ Facture</button>` : '<span class="muted-text">—</span>'}</td>
                         </tr>`;
                       })
@@ -1763,8 +1763,8 @@ export function bindSubscriptionModuleV12(state, { cur, openModal, closeModal, r
           </div>
 
           <div class="field" id="wiz-manual-ref-wrap">
-            <label>Référence de transaction / virement (Obligatoire pour validation manuelle)</label>
-            <input id="wiz-manual-ref" placeholder="Ex: TX-WAVE-88412 ou VIR-UBA-99281" />
+            <label>Référence de transaction (Wave / Orange Money / Carte UBA / Virement)</label>
+            <input id="wiz-manual-ref" placeholder="Ex: TX-WAVE-88412, OM-224-9910 ou VIR-UBA-99281" />
           </div>
 
           <div class="field">
@@ -1773,10 +1773,10 @@ export function bindSubscriptionModuleV12(state, { cur, openModal, closeModal, r
           </div>
 
           <p class="muted-text" style="font-size:11px;">
-            🔒 Sécurité bancaire : Votre abonnement n'est activé qu'après confirmation réelle de la réception du paiement.
+            🔒 Validation propriétaire : Votre paiement est transmis directement à l'espace Super-Admin RESTOGEST pour activation rapide.
           </p>
 
-          <button type="submit" class="btn btn-success btn-full">Soumettre le paiement pour vérification</button>
+          <button type="submit" class="btn btn-success btn-full">Envoyer le paiement pour validation</button>
         </form>`
       );
 
@@ -1784,7 +1784,7 @@ export function bindSubscriptionModuleV12(state, { cur, openModal, closeModal, r
       const manualWrap = document.getElementById('wiz-manual-ref-wrap');
       const syncManualVisibility = () => {
         const opt = methodSel?.options[methodSel.selectedIndex];
-        const isManual = opt?.dataset?.manual === '1' || ['bank_transfer', 'manual'].includes(methodSel?.value);
+        const isManual = opt?.dataset?.manual === '1' || ['bank_transfer', 'manual', 'wave', 'orange_money', 'card_visa_uba'].includes(methodSel?.value);
         if (manualWrap) manualWrap.style.display = isManual ? 'block' : 'none';
       };
       methodSel?.addEventListener('change', syncManualVisibility);
@@ -1796,7 +1796,7 @@ export function bindSubscriptionModuleV12(state, { cur, openModal, closeModal, r
           const opt = methodSel?.options[methodSel.selectedIndex];
           const paymentMethod = methodSel.value;
           const providerCode = opt?.dataset?.provider || null;
-          const isManual = opt?.dataset?.manual === '1' || ['bank_transfer', 'manual'].includes(paymentMethod);
+          const isManual = opt?.dataset?.manual === '1' || ['bank_transfer', 'manual', 'wave', 'orange_money', 'card_visa_uba'].includes(paymentMethod);
 
           const res = await apiFetch('/api/subscriptions/transactions', {
             method: 'POST',
@@ -1816,7 +1816,7 @@ export function bindSubscriptionModuleV12(state, { cur, openModal, closeModal, r
           if (res.data.mode === 'confirmed') {
             showToast(`Abonnement ${plan.name} activé et facture générée !`, 'success');
           } else {
-            showToast('Paiement enregistré « En attente de vérification » — activation après contrôle réel.', 'info');
+            showToast('Paiement transmis au propriétaire RESTOGEST — validation rapide depuis l’espace Super-Admin.', 'info');
           }
           await refreshAllData();
         } catch (err) {

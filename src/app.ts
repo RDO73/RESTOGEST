@@ -13,6 +13,7 @@ import { cashRouter } from './modules/cash/cash.router.js';
 import { subscriptionsRouter } from './modules/subscriptions/subscriptions.router.js';
 import { qrPublicRouter } from './modules/qr/qr-public.router.js';
 import { qrAdminRouter } from './modules/qr/qr-admin.router.js';
+import { superAdminRouter } from './modules/admin/super-admin.router.js';
 import { errorHandler } from './middlewares/error-handler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -88,6 +89,15 @@ app.get('/', (_req, res) => {
   res.json(apiInfoPayload());
 });
 
+// Interface Super-Admin Propriétaire sur /admin
+app.get('/admin', (_req, res) => {
+  if (publicDir && fs.existsSync(path.join(publicDir, 'admin.html'))) {
+    res.sendFile(path.join(publicDir, 'admin.html'));
+    return;
+  }
+  res.status(404).json({ error: { code: 'ADMIN_UI_NOT_FOUND', message: 'Interface Super-Admin introuvable' } });
+});
+
 // Interface Menu Digital Client sur /menu/:qrToken
 app.get('/menu/:qrToken', (_req, res) => {
   if (publicDir && fs.existsSync(path.join(publicDir, 'menu.html'))) {
@@ -119,6 +129,7 @@ app.get('/health', async (_req, res, next) => {
 });
 
 // Enregistrement des modules API
+app.use('/api/admin', superAdminRouter);
 app.use('/api/public/qr', qrPublicRouter);
 app.use('/api/qr', qrAdminRouter);
 app.use('/api/auth', authRouter);

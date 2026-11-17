@@ -346,9 +346,6 @@ async function refreshAllData() {
     apiFetch('/api/qr/options'),
     apiFetch('/api/qr/orders?limit=60'),
     apiFetch(`/api/qr/analytics?period=${encodeURIComponent(state.qrAnalyticsPeriod || 'month')}`),
-    apiFetch(
-      `/api/subscriptions/admin/overview?period=${encodeURIComponent(state.saasAdminFilters?.period || 'all')}&countryCode=${encodeURIComponent(state.saasAdminFilters?.countryCode || '')}&currency=${encodeURIComponent(state.saasAdminFilters?.currency || '')}&provider=${encodeURIComponent(state.saasAdminFilters?.provider || '')}&reportingCurrency=${encodeURIComponent(state.saasAdminFilters?.reportingCurrency || 'XOF')}`
-    ),
   ]);
 
   const val = (idx, fallback = null) =>
@@ -2963,6 +2960,13 @@ async function init() {
 
   document.getElementById('btn-refresh-all')?.addEventListener('click', () => refreshAllData());
   document.getElementById('btn-demo-quickstart')?.addEventListener('click', runQuickDemo);
+  document.getElementById('btn-focus-client-login')?.addEventListener('click', () => {
+    const panel = document.getElementById('client-auth-panel');
+    const loginTab = document.querySelector('#auth-tabs [data-tab="login"]');
+    if (loginTab) loginTab.click();
+    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => document.getElementById('login-email')?.focus(), 200);
+  });
 
   document.getElementById('btn-toggle-qr-sound')?.addEventListener('click', () => {
     state.qrSoundEnabled = !state.qrSoundEnabled;
