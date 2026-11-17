@@ -11,6 +11,8 @@ import { purchasesRouter } from './modules/purchases/purchases.router.js';
 import { inventoryRouter } from './modules/inventory/inventory.router.js';
 import { cashRouter } from './modules/cash/cash.router.js';
 import { subscriptionsRouter } from './modules/subscriptions/subscriptions.router.js';
+import { qrPublicRouter } from './modules/qr/qr-public.router.js';
+import { qrAdminRouter } from './modules/qr/qr-admin.router.js';
 import { errorHandler } from './middlewares/error-handler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -52,6 +54,8 @@ const apiInfoPayload = () => ({
     '/api/inventory',
     '/api/cash',
     '/api/subscriptions',
+    '/api/public/qr',
+    '/api/qr',
   ],
 });
 
@@ -84,6 +88,15 @@ app.get('/', (_req, res) => {
   res.json(apiInfoPayload());
 });
 
+// Interface Menu Digital Client sur /menu/:qrToken
+app.get('/menu/:qrToken', (_req, res) => {
+  if (publicDir && fs.existsSync(path.join(publicDir, 'menu.html'))) {
+    res.sendFile(path.join(publicDir, 'menu.html'));
+    return;
+  }
+  res.status(404).json({ error: { code: 'MENU_UI_NOT_FOUND', message: 'Interface menu introuvable' } });
+});
+
 app.get('/api', (_req, res) => {
   res.json(apiInfoPayload());
 });
@@ -106,6 +119,8 @@ app.get('/health', async (_req, res, next) => {
 });
 
 // Enregistrement des modules API
+app.use('/api/public/qr', qrPublicRouter);
+app.use('/api/qr', qrAdminRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/catalog', catalogRouter);
 app.use('/api/sales', salesRouter);

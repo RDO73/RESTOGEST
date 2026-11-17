@@ -200,7 +200,12 @@
         </button>
         <button class="nav-item" data-route="tables" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M7 20v-4"/><path d="M17 20v-4"/><path d="M3 10h18"/></svg>
-          <span>Plan de Salle</span>
+          <span>Tables &amp; QR Codes</span>
+        </button>
+        <button class="nav-item" data-route="qr-orders" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3z"/><path d="M17 17h4v4h-4z"/></svg>
+          <span>Commandes QR &amp; Cuisine</span>
+          <span id="qr-pending-badge" class="status-pill status-open hidden" style="margin-left:auto;padding:2px 7px;font-size:0.7rem;">0</span>
         </button>
         <button class="nav-item" data-route="pos" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
@@ -225,6 +230,10 @@
         <button class="nav-item" data-route="subscription" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 6.2L22 9.2l-5 4.9L18.2 21 12 17.8 5.8 21 7 14.1l-5-4.9 7-1L12 2z"/></svg>
           <span>Abonnement &amp; Licence</span>
+        </button>
+        <button class="nav-item" id="nav-saas-admin" data-route="saas-admin" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          <span>Finances RESTOGEST</span>
         </button>
       </nav>
 
@@ -256,6 +265,10 @@
           </div>
         </div>
         <div class="topbar-actions">
+          <button id="btn-toggle-qr-sound" type="button" class="btn btn-outline btn-refresh" title="Activer/Désactiver l'alerte sonore des commandes QR">
+            <span id="qr-sound-icon">🔔</span>
+            <span class="hide-xs" id="qr-sound-label">Son QR : Actif</span>
+          </button>
           <span id="license-status-pill" class="status-pill status-open hide-xs">Essai Cloud</span>
           <span id="cash-status-pill" class="status-pill status-neutral">Caisse : —</span>
           <button id="btn-refresh-all" type="button" class="btn btn-outline btn-refresh" aria-label="Actualiser">
@@ -276,15 +289,15 @@
       </button>
       <button class="mobile-nav-item" data-route="tables" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M7 20v-4"/><path d="M17 20v-4"/><path d="M3 10h18"/></svg>
-        <span>Salle</span>
+        <span>Tables/QR</span>
+      </button>
+      <button class="mobile-nav-item" data-route="qr-orders" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3z"/></svg>
+        <span>Cuisine QR</span>
       </button>
       <button class="mobile-nav-item" data-route="pos" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
         <span>POS</span>
-      </button>
-      <button class="mobile-nav-item" data-route="inventory" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/></svg>
-        <span>Stocks</span>
       </button>
       <button class="mobile-nav-item" data-route="cash" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/></svg>

@@ -9,6 +9,17 @@ import {
   setToken,
   showToast,
 } from './api.js';
+import {
+  playQrNotificationSound,
+  renderTablesAndQrModule,
+  bindTablesAndQrModule,
+  renderQrOrdersAndKdsModule,
+  bindQrOrdersAndKdsModule,
+  renderSubscriptionModuleV12,
+  bindSubscriptionModuleV12,
+  renderSaasFinancesAdminModule,
+  bindSaasFinancesAdminModule,
+} from './qr-and-saas-ui.js';
 
 const FLOOR_TABLES = [
   ...Array.from({ length: 12 }, (_, idx) => ({
@@ -40,6 +51,9 @@ const state = {
   subtabs: {
     catalog: 'products',
     purchases: 'orders',
+    tables: 'floor',
+    qrOrders: 'live',
+    saasAdmin: 'transactions',
   },
   tableZone: 'all',
   billingCycle: 'monthly',
@@ -59,6 +73,17 @@ const state = {
   cashCurrent: null,
   cashSessions: [],
   expenses: [],
+  qrTables: [],
+  qrSettings: {},
+  qrOptions: [],
+  qrOrders: [],
+  qrServiceRequests: [],
+  qrAnalytics: null,
+  qrAnalyticsPeriod: 'month',
+  qrOrderStatusFilter: 'active',
+  qrSoundEnabled: true,
+  knownQrOrderIds: null,
+  saasAdminOverview: null,
   posFilter: { search: '', categoryId: '' },
   invFilter: { search: '', lowStockOnly: false },
   payChannel: 'cash',
@@ -66,22 +91,25 @@ const state = {
 
 const ROUTE_META = {
   dashboard: { title: 'Tableau de bord', sub: 'Indicateurs clés et alertes en temps réel' },
-  tables: { title: 'Plan de Salle', sub: 'Statut des tables en direct, commandes et additions' },
+  tables: { title: 'Tables & QR Codes', sub: 'Plan de salle, QR Codes par table, menu digital et options produits' },
+  'qr-orders': { title: 'Commandes QR & Cuisine', sub: 'Réception en direct, écran cuisine (KDS), encaissement et statistiques' },
   pos: { title: 'Caisse & POS', sub: 'Prise de commande, livraison WhatsApp et encaissement' },
   catalog: { title: 'Catalogue & Recettes', sub: 'Catégories, articles et fiches recettes anti-coulage' },
   inventory: { title: 'Stocks & Alertes', sub: 'Niveaux, valorisation PMP, alertes et ajustements' },
   purchases: { title: 'Achats & Fournisseurs', sub: 'Approvisionnement, réception et calcul automatique du PMP' },
   cash: { title: 'Trésorerie & Caisse', sub: 'Ouverture, dépenses et clôture Z détaillée' },
-  subscription: { title: 'Abonnement & Licence', sub: 'Paramètres XOF / GNF et plans RestoGest Cloud' },
+  subscription: { title: 'Abonnement & Licence', sub: 'Comparateur des plans, souscription SaaS et factures XOF / GNF' },
+  'saas-admin': { title: 'Finances RESTOGEST', sub: 'Pilotage des revenus SaaS, abonnements clients, factures et reversements' },
 };
 
-const CURRENCY = () => state.company?.currency || state.subscriptionData?.company?.currency || 'XOF';
+const CURRENCY = () => state.company?.currency || state.subscriptionData?.settings?.currency || state.subscriptionData?.company?.currency || 'XOF';
 
 function statusBadge(status) {
   const labels = {
     open: 'Ouverte',
     closed: 'Clôturée',
     pending: 'En attente',
+    pending_payment: 'Paiement en attente',
     completed: 'Validée',
     cancelled: 'Annulée',
     ordered: 'Commandée',
@@ -89,7 +117,8 @@ function statusBadge(status) {
     draft: 'Brouillon',
     trial: 'Essai gratuit',
     active: 'Actif',
-    past_due: 'Expiré',
+    past_due: 'Impayé',
+    expired: 'Expiré',
     suspended: 'Suspendu',
   };
   return `<span class="status-pill status-${esc(status)}">${esc(labels[status] || status)}</span>`;
@@ -312,6 +341,12 @@ async function refreshAllData() {
     apiFetch('/api/cash/sessions?limit=20'),
     apiFetch('/api/cash/expenses?limit=30'),
     apiFetch('/api/subscriptions/current'),
+    apiFetch('/api/qr/tables'),
+    apiFetch('/api/qr/settings'),
+    apiFetch('/api/qr/options'),
+    apiFetch('/api/qr/orders?limit=60'),
+    apiFetch(`/api/qr/analytics?period=${encodeURIComponent(state.qrAnalyticsPeriod || 'month')}`),
+    apiFetch('/api/subscriptions/admin/overview'),
   ]);
 
   const val = (idx, fallback = null) =>
@@ -336,6 +371,35 @@ async function refreshAllData() {
   state.cashSessions = val(12, []);
   state.expenses = val(13, []);
   state.subscriptionData = val(14, null);
+  state.qrTables = val(15, []);
+  state.qrSettings = val(16, {});
+  state.qrOptions = val(17, []);
+
+  const qrOrdersData = val(18, { orders: [], serviceRequests: [] });
+  const incomingOrders = qrOrdersData?.orders || [];
+  const incomingReqs = qrOrdersData?.serviceRequests || [];
+
+  // Notification sonore lors d'une nouvelle commande QR reçue
+  const receivedIds = incomingOrders.filter((o) => o.status === 'received').map((o) => o.id);
+  if (state.knownQrOrderIds !== null && state.qrSoundEnabled) {
+    const hasBrandNew = receivedIds.some((id) => !state.knownQrOrderIds.has(id));
+    if (hasBrandNew) {
+      playQrNotificationSound();
+      showToast('🔔 Nouvelle commande QR reçue depuis une table !', 'info');
+    }
+  }
+  state.knownQrOrderIds = new Set(receivedIds);
+  state.qrOrders = incomingOrders;
+  state.qrServiceRequests = incomingReqs;
+  state.qrAnalytics = val(19, null);
+  state.saasAdminOverview = val(20, null);
+
+  const badgeEl = document.getElementById('qr-pending-badge');
+  const pendingCount = receivedIds.length + incomingReqs.length;
+  if (badgeEl) {
+    badgeEl.textContent = String(pendingCount);
+    badgeEl.classList.toggle('hidden', pendingCount === 0);
+  }
 
   if (state.activeSale) {
     try {
@@ -372,14 +436,30 @@ function renderRoute() {
   const root = document.getElementById('main-content');
   if (!root) return;
 
+  const uiHelpers = {
+    cur: CURRENCY(),
+    statusBadge,
+    parseSaleMeta,
+    serializeSaleMeta,
+    openModal,
+    closeModal,
+    refreshAllData,
+    renderRoute,
+    setRoute,
+  };
+
   switch (state.route) {
     case 'dashboard':
       root.innerHTML = renderDashboard();
       bindDashboard();
       break;
     case 'tables':
-      root.innerHTML = renderTables();
-      bindTables();
+      root.innerHTML = renderTablesAndQrModule(state, uiHelpers);
+      bindTablesAndQrModule(state, uiHelpers);
+      break;
+    case 'qr-orders':
+      root.innerHTML = renderQrOrdersAndKdsModule(state, uiHelpers);
+      bindQrOrdersAndKdsModule(state, uiHelpers);
       break;
     case 'pos':
       root.innerHTML = renderPos();
@@ -402,8 +482,12 @@ function renderRoute() {
       bindCash();
       break;
     case 'subscription':
-      root.innerHTML = renderSubscription();
-      bindSubscription();
+      root.innerHTML = renderSubscriptionModuleV12(state, uiHelpers);
+      bindSubscriptionModuleV12(state, uiHelpers);
+      break;
+    case 'saas-admin':
+      root.innerHTML = renderSaasFinancesAdminModule(state, uiHelpers);
+      bindSaasFinancesAdminModule(state, uiHelpers);
       break;
   }
 }
@@ -2920,6 +3004,26 @@ async function init() {
 
   document.getElementById('btn-refresh-all')?.addEventListener('click', () => refreshAllData());
   document.getElementById('btn-demo-quickstart')?.addEventListener('click', runQuickDemo);
+
+  document.getElementById('btn-toggle-qr-sound')?.addEventListener('click', () => {
+    state.qrSoundEnabled = !state.qrSoundEnabled;
+    const iconEl = document.getElementById('qr-sound-icon');
+    const lblEl = document.getElementById('qr-sound-label');
+    if (iconEl) iconEl.textContent = state.qrSoundEnabled ? '🔔' : '🔕';
+    if (lblEl) lblEl.textContent = state.qrSoundEnabled ? 'Son QR : Actif' : 'Son QR : Muet';
+    if (state.qrSoundEnabled) {
+      playQrNotificationSound();
+      showToast('Alerte sonore des commandes QR activée', 'info');
+    } else {
+      showToast('Alerte sonore des commandes QR désactivée', 'info');
+    }
+  });
+
+  setInterval(() => {
+    if (getToken() && !document.hidden) {
+      refreshAllData();
+    }
+  }, 12000);
 
   document.getElementById('btn-forgot-password')?.addEventListener('click', () => {
     openModal(

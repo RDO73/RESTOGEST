@@ -62,10 +62,10 @@ class PGlitePoolAdapter implements IDbPool {
         const db = new PGlite(this.dataDir);
         await db.waitReady;
 
-        const reg = await db.query<{ mig: string | null; comp: string | null }>(
-          "SELECT to_regclass('public.schema_migrations') AS mig, to_regclass('public.companies') AS comp"
+        const reg = await db.query<{ mig: string | null; comp: string | null; dt: string | null }>(
+          "SELECT to_regclass('public.schema_migrations') AS mig, to_regclass('public.companies') AS comp, to_regclass('public.dining_tables') AS dt"
         );
-        if (!reg.rows[0]?.mig || !reg.rows[0]?.comp) {
+        if (!reg.rows[0]?.mig || !reg.rows[0]?.comp || !reg.rows[0]?.dt) {
           const bootstrapPool: IDbPool & { exec: (sql: string) => Promise<void> } = {
             query: async (text: string, params?: any[]) => {
               const res = await db.query(text, params);
@@ -203,9 +203,9 @@ export async function ensureDatabaseReady(): Promise<void> {
     pgReadyPromise = (async () => {
       try {
         const probe = await adminPoolInstance.query(
-          "SELECT to_regclass('public.schema_migrations') AS mig, to_regclass('public.companies') AS comp"
+          "SELECT to_regclass('public.schema_migrations') AS mig, to_regclass('public.companies') AS comp, to_regclass('public.dining_tables') AS dt"
         );
-        if (probe.rows[0]?.mig && probe.rows[0]?.comp) {
+        if (probe.rows[0]?.mig && probe.rows[0]?.comp && probe.rows[0]?.dt) {
           return;
         }
 
