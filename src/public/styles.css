@@ -314,14 +314,43 @@ html, body {
 }
 
 .env-chip {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: #94a3b8;
-  background: rgba(15, 23, 42, 0.5);
-  padding: 5px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.14);
+  padding: 6px 12px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.32);
 }
+
+.status-dot-ok {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+}
+
+.auth-forgot-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -4px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 6px 4px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+}
+.link-btn:hover { text-decoration: underline; }
 
 .auth-hero h1 {
   font-family: var(--font-display);
@@ -1123,11 +1152,219 @@ tbody tr:hover {
 .mobile-only { display: none; }
 .mobile-bottom-nav { display: none; }
 
+/* ---------------- V1.1 : PLAN DE SALLE, LIVRAISON WHATSAPP, RAPPORT Z & ABONNEMENTS ---------------- */
+.btn-whatsapp {
+  background: #16a34a;
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(22, 163, 74, 0.3);
+}
+.btn-whatsapp:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.floor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 14px;
+  min-width: 0;
+}
+
+.table-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 15px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 154px;
+  box-shadow: var(--shadow-xs);
+  transition: transform 0.14s ease, box-shadow 0.14s ease;
+  min-width: 0;
+}
+.table-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+.table-card.is-free {
+  border-top: 4px solid var(--success);
+  background: linear-gradient(180deg, #ffffff 0%, #f0fdf4 100%);
+}
+.table-card.is-occupied {
+  border-top: 4px solid var(--primary);
+  background: linear-gradient(180deg, #ffffff 0%, #fff7ed 100%);
+}
+.table-card.is-bill {
+  border-top: 4px solid var(--info);
+  background: linear-gradient(180deg, #ffffff 0%, #f0f9ff 100%);
+}
+
+.table-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.table-card-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text-main);
+}
+.table-card-zone {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.table-card-amount {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.table-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.service-mode-pills {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.service-pill {
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #f8fafc;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.service-pill.active {
+  background: var(--bg-sidebar);
+  border-color: var(--bg-sidebar);
+  color: #fff;
+}
+
+.delivery-box {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.z-report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.z-stat-box {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.z-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.z-stat-val {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-top: 2px;
+}
+
+.z-breakdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.z-breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.license-hero {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  color: #f8fafc;
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+
+.pricing-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+.pricing-card.is-recommended {
+  border: 2px solid var(--primary);
+  box-shadow: var(--shadow-md);
+}
+.pricing-price {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+.pricing-features {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  flex: 1;
+}
+.pricing-features li::before {
+  content: '✓ ';
+  color: var(--success);
+  font-weight: 700;
+}
+
 /* ---------------- BREAKPOINTS TABLETTE & MOBILE ---------------- */
 @media (max-width: 1024px) {
   .auth-grid { grid-template-columns: 1fr; }
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .two-col, .pos-grid { grid-template-columns: 1fr; }
+  .two-col, .pos-grid, .pricing-grid { grid-template-columns: 1fr; }
   .ticket-panel { position: static; }
 }
 
@@ -1164,9 +1401,10 @@ tbody tr:hover {
   }
 
   .card { padding: 14px; border-radius: var(--radius-md); }
-  .field-row, .kpi-grid, .method-pills { grid-template-columns: 1fr; }
+  .field-row, .kpi-grid, .method-pills, .z-report-grid { grid-template-columns: 1fr; }
   .method-pills { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .service-mode-pills { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .product-grid, .floor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 
   .mobile-pos-jump {
     display: flex;
@@ -1279,4 +1517,8 @@ tbody tr:hover {
   body * { visibility: hidden; }
   .modal-card, .modal-card * { visibility: visible; }
   .modal-card { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none; }
+}
+
+@media (max-width: 520px) {
+  .floor-grid { grid-template-columns: 1fr; }
 }

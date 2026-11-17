@@ -2,10 +2,142 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
+import type { IDbClient } from '../../db/pool.js';
 
 export const cashRouter = Router();
 
 cashRouter.use(requireAuth);
+
+async function buildZReportForSession(client: IDbClient, sessionRow: any) {
+  const paymentsRes = await client.query(
+    `SELECT payment_method, COALESCE(reference, '') AS reference, COALESCE(amount, 0) AS amount
+     FROM public.payments
+     WHERE cash_session_id = $1`,
+    [sessionRow.id]
+  );
+
+  const paymentMap: Record<string, number> = {
+    cash: 0,
+    card: 0,
+    mobile_money: 0,
+    transfer: 0,
+    check: 0,
+    other: 0,
+  };
+
+  let wave = 0;
+  let orangeMoney = 0;
+  let otherMobileMoney = 0;
+
+  for (const row of paymentsRes.rows) {
+    const amt = parseFloat(row.amount || 0);
+    const method = String(row.payment_method || 'other');
+    const ref = String(row.reference || '').toLowerCase();
+
+    paymentMap[method] = (paymentMap[method] || 0) + amt;
+
+    if (method === 'mobile_money') {
+      if (ref.includes('wave')) {
+        wave += amt;
+      } else if (ref.includes('orange') || ref.includes('om')) {
+        orangeMoney += amt;
+      } else {
+        otherMobileMoney += amt;
+      }
+    }
+  }
+
+  const refRes = await client.query(
+    `SELECT COALESCE(SUM(amount), 0) as total_cash_refunds
+     FROM public.refunds
+     WHERE cash_session_id = $1 AND refund_method = 'cash' AND status = 'completed'`,
+    [sessionRow.id]
+  );
+  const totalCashRefunds = parseFloat(refRes.rows[0].total_cash_refunds);
+
+  const expRes = await client.query(
+    `SELECT COALESCE(SUM(amount), 0) as total_expenses
+     FROM public.expenses
+     WHERE cash_session_id = $1`,
+    [sessionRow.id]
+  );
+  const totalExpenses = parseFloat(expRes.rows[0].total_expenses);
+
+  const salesRes = await client.query(
+    `SELECT
+       COUNT(*) FILTER (WHERE status = 'completed')::INT AS tickets_count,
+       COUNT(*) FILTER (WHERE status = 'cancelled')::INT AS cancelled_count,
+       COALESCE(SUM(subtotal) FILTER (WHERE status = 'completed'), 0) AS gross_sales,
+       COALESCE(SUM(discount_amount) FILTER (WHERE status = 'completed'), 0) AS total_discounts,
+       COALESCE(SUM(tax_amount) FILTER (WHERE status = 'completed'), 0) AS total_tax,
+       COALESCE(SUM(total_amount) FILTER (WHERE status = 'completed'), 0) AS net_sales
+     FROM public.sales
+     WHERE cash_session_id = $1`,
+    [sessionRow.id]
+  );
+  const sStats = salesRes.rows[0] || {};
+
+  const openingAmount = parseFloat(sessionRow.opening_amount || 0);
+  const theoreticalCash = openingAmount + paymentMap.cash - totalCashRefunds - totalExpenses;
+  const totalCollected =
+    paymentMap.cash +
+    paymentMap.card +
+    paymentMap.mobile_money +
+    paymentMap.transfer +
+    paymentMap.check +
+    paymentMap.other;
+
+  const actualClosingAmount =
+    sessionRow.actual_closing_amount !== null && sessionRow.actual_closing_amount !== undefined
+      ? parseFloat(sessionRow.actual_closing_amount)
+      : null;
+  const differenceAmount =
+    sessionRow.difference_amount !== null && sessionRow.difference_amount !== undefined
+      ? parseFloat(sessionRow.difference_amount)
+      : null;
+
+  return {
+    openingAmount,
+    metrics: {
+      cashIn: paymentMap.cash,
+      cardIn: paymentMap.card,
+      mobileMoneyIn: paymentMap.mobile_money,
+      transferIn: paymentMap.transfer,
+      checkIn: paymentMap.check,
+      cashRefunds: totalCashRefunds,
+      totalExpenses,
+      theoreticalCashInDrawer: theoreticalCash,
+    },
+    zReport: {
+      sessionId: sessionRow.id,
+      status: sessionRow.status,
+      openedAt: sessionRow.opened_at,
+      closedAt: sessionRow.closed_at || null,
+      openingAmount,
+      expectedCashInDrawer: theoreticalCash,
+      actualClosingAmount,
+      differenceAmount,
+      ticketsCount: Number(sStats.tickets_count || 0),
+      cancelledCount: Number(sStats.cancelled_count || 0),
+      grossSales: parseFloat(sStats.gross_sales || 0),
+      totalDiscounts: parseFloat(sStats.total_discounts || 0),
+      totalTax: parseFloat(sStats.total_tax || 0),
+      netSales: parseFloat(sStats.net_sales || 0),
+      totalCollected,
+      cashRefunds: totalCashRefunds,
+      totalExpenses,
+      paymentBreakdown: {
+        especes: paymentMap.cash,
+        wave,
+        orangeMoney,
+        otherMobileMoney,
+        mobileMoneyTotal: paymentMap.mobile_money,
+        carteBancaire: paymentMap.card,
+        virementChequeAutres: paymentMap.transfer + paymentMap.check + paymentMap.other,
+      },
+    },
+  };
+}
 
 // -------------------------------------------------------------
 // 1. SESSION ACTIVE AVEC CALCULS EN TEMPS RÉEL
@@ -27,64 +159,11 @@ cashRouter.get('/sessions/current', async (req, res, next) => {
       }
 
       const activeSession = sRes.rows[0];
-
-      // Totaux par mode de règlement
-      const paymentsRes = await client.query(
-        `SELECT payment_method, COALESCE(SUM(amount), 0) as total_amount
-         FROM public.payments
-         WHERE cash_session_id = $1
-         GROUP BY payment_method`,
-        [activeSession.id]
-      );
-
-      const paymentMap: Record<string, number> = {
-        cash: 0,
-        card: 0,
-        mobile_money: 0,
-        transfer: 0,
-        check: 0,
-        other: 0,
-      };
-
-      for (const row of paymentsRes.rows) {
-        paymentMap[row.payment_method] = parseFloat(row.total_amount);
-      }
-
-      // Remboursements espèces décaissés
-      const refRes = await client.query(
-        `SELECT COALESCE(SUM(amount), 0) as total_cash_refunds
-         FROM public.refunds
-         WHERE cash_session_id = $1 AND refund_method = 'cash' AND status = 'completed'`,
-        [activeSession.id]
-      );
-      const totalCashRefunds = parseFloat(refRes.rows[0].total_cash_refunds);
-
-      // Dépenses sorties de caisse
-      const expRes = await client.query(
-        `SELECT COALESCE(SUM(amount), 0) as total_expenses
-         FROM public.expenses
-         WHERE cash_session_id = $1`,
-        [activeSession.id]
-      );
-      const totalExpenses = parseFloat(expRes.rows[0].total_expenses);
-
-      // Solde théorique en espèces
-      const openingAmount = parseFloat(activeSession.opening_amount);
-      const theoreticalCash = openingAmount + paymentMap.cash - totalCashRefunds - totalExpenses;
+      const computed = await buildZReportForSession(client, activeSession);
 
       return {
         ...activeSession,
-        openingAmount,
-        metrics: {
-          cashIn: paymentMap.cash,
-          cardIn: paymentMap.card,
-          mobileMoneyIn: paymentMap.mobile_money,
-          transferIn: paymentMap.transfer,
-          checkIn: paymentMap.check,
-          cashRefunds: totalCashRefunds,
-          totalExpenses,
-          theoreticalCashInDrawer: theoreticalCash,
-        },
+        ...computed,
       };
     });
 
@@ -187,8 +266,11 @@ cashRouter.get('/sessions/:id', async (req, res, next) => {
         [sessionId]
       );
 
+      const computed = await buildZReportForSession(client, sRes.rows[0]);
+
       return {
         ...sRes.rows[0],
+        ...computed,
         payments: paymentsRes.rows,
         expenses: expensesRes.rows,
       };
@@ -265,7 +347,11 @@ cashRouter.post('/sessions/:id/close', async (req, res, next) => {
         `SELECT * FROM public.cash_sessions WHERE id = $1`,
         [sessionId]
       );
-      return sRes.rows[0];
+      const computed = await buildZReportForSession(client, sRes.rows[0]);
+      return {
+        ...sRes.rows[0],
+        ...computed,
+      };
     });
 
     res.json({

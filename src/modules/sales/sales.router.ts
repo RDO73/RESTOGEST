@@ -16,9 +16,9 @@ salesRouter.get('/', async (req, res, next) => {
 
     const sales = await withTenantContext(req.auth!, async (client) => {
       let query = `
-        SELECT s.id, s.invoice_number, s.status, s.subtotal, s.tax_amount,
+        SELECT s.id, s.invoice_number, s.status, s.notes, s.subtotal, s.tax_amount,
                s.discount_amount, s.total_amount, s.created_at, s.completed_at,
-               c.id as customer_id, c.full_name as customer_name,
+               c.id as customer_id, c.full_name as customer_name, c.phone as customer_phone,
                u.full_name as server_name,
                cs.id as cash_session_id,
                COALESCE((SELECT SUM(amount) FROM public.payments WHERE sale_id = s.id), 0) as paid_amount,
@@ -57,7 +57,7 @@ salesRouter.get('/', async (req, res, next) => {
         query += ` AND s.created_at <= $${params.length}`;
       }
 
-      query += ` GROUP BY s.id, c.id, c.full_name, u.full_name, cs.id ORDER BY s.created_at DESC`;
+      query += ` GROUP BY s.id, s.notes, c.id, c.full_name, c.phone, u.full_name, cs.id ORDER BY s.created_at DESC`;
 
       params.push(parseInt(limit as string, 10));
       query += ` LIMIT $${params.length}`;
@@ -419,7 +419,7 @@ salesRouter.get('/:id/receipt', async (req, res, next) => {
       const company = compRes.rows[0];
 
       const saleRes = await client.query(
-        `SELECT s.*, u.full_name as server_name, c.full_name as customer_name
+        `SELECT s.*, u.full_name as server_name, c.full_name as customer_name, c.phone as customer_phone
          FROM public.sales s
          LEFT JOIN public.users u ON u.id = s.user_id
          LEFT JOIN public.customers c ON c.id = s.customer_id
@@ -454,6 +454,8 @@ salesRouter.get('/:id/receipt', async (req, res, next) => {
           date: sale.completed_at || sale.created_at,
           serverName: sale.server_name,
           customerName: sale.customer_name || 'Client Comptoir',
+          customerPhone: sale.customer_phone || null,
+          notes: sale.notes || null,
           status: sale.status,
         },
         items: itemsRes.rows.map((it) => ({

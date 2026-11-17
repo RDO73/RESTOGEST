@@ -27,6 +27,8 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@electric-sql/pglite": "^0.5.16",
+    "@neon/config": "^1.14.1",
+    "@neon/env": "^2.1.4",
     "argon2": "^0.41.1",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",

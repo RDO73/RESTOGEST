@@ -17,7 +17,8 @@ let adminPoolRef: IDbPool | null = null;
 let appPoolRef: IDbPool | null = null;
 
 beforeAll(async () => {
-  if (process.env.DATABASE_TYPE !== 'postgres') {
+  if (process.env.RUN_INTEGRATION_ON_POSTGRES !== 'true') {
+    process.env.DATABASE_TYPE = 'embedded';
     tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'restogest-int-'));
     process.env.PGLITE_DATA_DIR = tempDataDir;
   }
@@ -599,5 +600,134 @@ describe('Modules Métiers Backend RESTOGEST V1', () => {
       headers: { Authorization: `Bearer ${demoJson.data.token}` },
     });
     expect(bearerMeRes.status).toBe(200);
+  });
+
+  it('9. FONCTIONNALITÉS V1.1 : ABONNEMENTS SaaS (XOF/GNF), RAPPORT Z DÉTAILLÉ (WAVE/OM) & MOT DE PASSE OUBLIÉ', async () => {
+    const regRes = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        companyName: 'Conakry Saveurs V1.1',
+        businessType: 'restaurant',
+        currency: 'XOF',
+        email: `v11_${Date.now()}@myrestogest.com`,
+        password: 'PasswordV11!',
+        fullName: 'Ibrahima Diallo',
+      }),
+    });
+    const regJson = await regRes.json();
+    expect(regRes.status).toBe(201);
+    const v11Headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${regJson.data.token}`,
+    };
+
+    // A. Abonnement courant -> essai gratuit + 3 plans
+    const subRes = await fetch(`${baseUrl}/api/subscriptions/current`, { headers: v11Headers });
+    const subJson = await subRes.json();
+    expect(subRes.status).toBe(200);
+    expect(subJson.data.subscription.status).toBe('trial');
+    expect(subJson.data.plans).toHaveLength(3);
+    const proPlan = subJson.data.plans.find((p: any) => p.name === 'Pro Cloud Restaurant');
+    expect(proPlan).toBeDefined();
+
+    // B. Multi-devises XOF -> GNF -> XOF
+    const gnfRes = await fetch(`${baseUrl}/api/subscriptions/company-settings`, {
+      method: 'PUT',
+      headers: v11Headers,
+      body: JSON.stringify({ currency: 'GNF' }),
+    });
+    const gnfJson = await gnfRes.json();
+    expect(gnfRes.status).toBe(200);
+    expect(gnfJson.data.currency).toBe('GNF');
+
+    const xofRes = await fetch(`${baseUrl}/api/subscriptions/company-settings`, {
+      method: 'PUT',
+      headers: v11Headers,
+      body: JSON.stringify({ currency: 'XOF' }),
+    });
+    expect(xofRes.status).toBe(200);
+
+    // C. Checkout Wave -> activation licence
+    const checkoutRes = await fetch(`${baseUrl}/api/subscriptions/checkout`, {
+      method: 'POST',
+      headers: v11Headers,
+      body: JSON.stringify({
+        planId: proPlan.id,
+        billingPeriod: 'yearly',
+        paymentMethod: 'wave',
+        payerReference: '+221770000001',
+      }),
+    });
+    const checkoutJson = await checkoutRes.json();
+    expect(checkoutRes.status).toBe(201);
+    expect(checkoutJson.data.subscription.status).toBe('active');
+    expect(checkoutJson.data.licenseReference).toMatch(/^LIC-RG-/);
+
+    // D. Rapport Z détaillé (Wave + Orange Money)
+    await fetch(`${baseUrl}/api/cash/sessions/open`, {
+      method: 'POST',
+      headers: v11Headers,
+      body: JSON.stringify({ openingAmount: 25000 }),
+    });
+
+    const pRes = await fetch(`${baseUrl}/api/catalog/products`, {
+      method: 'POST',
+      headers: v11Headers,
+      body: JSON.stringify({
+        name: 'Thiéboudienne Royal',
+        productType: 'service',
+        inventoryTracking: 'none',
+        unit: 'plat',
+        sellingPrice: 5000,
+      }),
+    });
+    const pJson = await pRes.json();
+
+    const saleRes = await fetch(`${baseUrl}/api/sales`, {
+      method: 'POST',
+      headers: v11Headers,
+      body: JSON.stringify({ notes: 'RG_META:{"serviceMode":"dine_in","tableCode":"T1","tableName":"Table 1"}' }),
+    });
+    const saleJson = await saleRes.json();
+
+    await fetch(`${baseUrl}/api/sales/${saleJson.data.id}/items`, {
+      method: 'POST',
+      headers: v11Headers,
+      body: JSON.stringify({ productId: pJson.data.id, quantity: 2 }),
+    });
+
+    await fetch(`${baseUrl}/api/sales/${saleJson.data.id}/payments`, {
+      method: 'POST',
+      headers: v11Headers,
+      body: JSON.stringify({ amount: 6000, paymentMethod: 'mobile_money', reference: 'Wave' }),
+    });
+    await fetch(`${baseUrl}/api/sales/${saleJson.data.id}/payments`, {
+      method: 'POST',
+      headers: v11Headers,
+      body: JSON.stringify({ amount: 4000, paymentMethod: 'mobile_money', reference: 'Orange Money' }),
+    });
+    await fetch(`${baseUrl}/api/sales/${saleJson.data.id}/complete`, {
+      method: 'POST',
+      headers: v11Headers,
+    });
+
+    const curCashRes = await fetch(`${baseUrl}/api/cash/sessions/current`, { headers: v11Headers });
+    const curCashJson = await curCashRes.json();
+    expect(curCashRes.status).toBe(200);
+    expect(curCashJson.data.zReport).toBeDefined();
+    expect(curCashJson.data.zReport.ticketsCount).toBe(1);
+    expect(curCashJson.data.zReport.paymentBreakdown.wave).toBe(6000);
+    expect(curCashJson.data.zReport.paymentBreakdown.orangeMoney).toBe(4000);
+    expect(curCashJson.data.zReport.paymentBreakdown.especes).toBe(0);
+    expect(curCashJson.data.zReport.paymentBreakdown.carteBancaire).toBe(0);
+
+    // E. Mot de passe oublié
+    const forgotRes = await fetch(`${baseUrl}/api/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'patron@myrestogest.com' }),
+    });
+    expect(forgotRes.status).toBe(200);
   });
 });

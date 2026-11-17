@@ -281,3 +281,21 @@ authRouter.post('/logout', requireAuth, async (req, res, next) => {
     next(error);
   }
 });
+
+// Demande de réinitialisation de mot de passe (sans fuite d'existence de compte)
+authRouter.post('/forgot-password', async (req, res, next) => {
+  try {
+    const schema = z.object({
+      email: z.string().email(),
+    });
+    schema.parse(req.body);
+
+    res.json({
+      success: true,
+      message:
+        'Si un compte est associé à cette adresse e-mail, les instructions de réinitialisation ont été envoyées.',
+    });
+  } catch (error) {
+    next(error);
+  }
+});

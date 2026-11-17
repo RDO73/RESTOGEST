@@ -10,15 +10,40 @@ import {
   showToast,
 } from './api.js';
 
+const FLOOR_TABLES = [
+  ...Array.from({ length: 12 }, (_, idx) => ({
+    code: `T${idx + 1}`,
+    name: `Table ${idx + 1}`,
+    zone: 'Salle',
+    seats: idx < 4 ? 2 : idx < 10 ? 4 : 6,
+  })),
+  { code: 'TER1', name: 'Terrasse 1', zone: 'Terrasse', seats: 4 },
+  { code: 'TER2', name: 'Terrasse 2', zone: 'Terrasse', seats: 6 },
+  { code: 'CPT1', name: 'Comptoir 1', zone: 'Comptoir', seats: 2 },
+  { code: 'CPT2', name: 'Comptoir 2', zone: 'Comptoir', seats: 2 },
+];
+
+const PAYMENT_CHANNELS = [
+  { id: 'cash', apiMethod: 'cash', label: 'Espèces', ref: 'Espèces' },
+  { id: 'wave', apiMethod: 'mobile_money', label: 'Wave', ref: 'Wave' },
+  { id: 'orange_money', apiMethod: 'mobile_money', label: 'Orange Money', ref: 'Orange Money' },
+  { id: 'card', apiMethod: 'card', label: 'Carte Bancaire', ref: 'Carte Bancaire' },
+  { id: 'transfer', apiMethod: 'transfer', label: 'Virement / Chèque', ref: 'Virement' },
+];
+
 const state = {
   health: null,
   user: null,
   company: null,
+  subscriptionData: null,
   route: 'dashboard',
   subtabs: {
     catalog: 'products',
     purchases: 'orders',
   },
+  tableZone: 'all',
+  billingCycle: 'monthly',
+  checkoutMethod: 'wave',
   categories: [],
   products: [],
   recipes: [],
@@ -36,19 +61,21 @@ const state = {
   expenses: [],
   posFilter: { search: '', categoryId: '' },
   invFilter: { search: '', lowStockOnly: false },
-  payMethod: 'cash',
+  payChannel: 'cash',
 };
 
 const ROUTE_META = {
   dashboard: { title: 'Tableau de bord', sub: 'Indicateurs clés et alertes en temps réel' },
-  pos: { title: 'Caisse & POS', sub: 'Prise de commande, encaissement et déstockage atomique' },
-  catalog: { title: 'Catalogue & Recettes', sub: 'Catégories, articles et fiches techniques anti-cycle' },
+  tables: { title: 'Plan de Salle', sub: 'Statut des tables en direct, commandes et additions' },
+  pos: { title: 'Caisse & POS', sub: 'Prise de commande, livraison WhatsApp et encaissement' },
+  catalog: { title: 'Catalogue & Recettes', sub: 'Catégories, articles et fiches recettes anti-coulage' },
   inventory: { title: 'Stocks & Alertes', sub: 'Niveaux, valorisation PMP, alertes et ajustements' },
   purchases: { title: 'Achats & Fournisseurs', sub: 'Approvisionnement, réception et calcul automatique du PMP' },
-  cash: { title: 'Trésorerie & Caisse', sub: 'Ouverture, dépenses et clôture réconciliée' },
+  cash: { title: 'Trésorerie & Caisse', sub: 'Ouverture, dépenses et clôture Z détaillée' },
+  subscription: { title: 'Abonnement & Licence', sub: 'Paramètres XOF / GNF et plans RestoGest Cloud' },
 };
 
-const CURRENCY = () => state.company?.currency || 'XOF';
+const CURRENCY = () => state.company?.currency || state.subscriptionData?.company?.currency || 'XOF';
 
 function statusBadge(status) {
   const labels = {
@@ -60,21 +87,91 @@ function statusBadge(status) {
     ordered: 'Commandée',
     received: 'Réceptionnée',
     draft: 'Brouillon',
+    trial: 'Essai gratuit',
+    active: 'Actif',
+    past_due: 'Expiré',
+    suspended: 'Suspendu',
   };
   return `<span class="status-pill status-${esc(status)}">${esc(labels[status] || status)}</span>`;
 }
 
-function methodLabel(m) {
+function methodLabel(m, ref = '') {
+  if (m === 'mobile_money') {
+    const low = String(ref || '').toLowerCase();
+    if (low.includes('wave')) return 'Wave';
+    if (low.includes('orange') || low.includes('om')) return 'Orange Money';
+    return 'Mobile Money';
+  }
   return (
     {
       cash: 'Espèces',
-      card: 'Carte',
+      card: 'Carte Bancaire',
       mobile_money: 'Mobile Money',
       transfer: 'Virement',
       check: 'Chèque',
       other: 'Autre',
     }[m] || m
   );
+}
+
+// -------------------------------------------------------------
+// MÉTADONNÉES COMMANDES (TABLE, SERVICE, LIVRAISON)
+// -------------------------------------------------------------
+const META_PREFIX = 'RG_META:';
+
+function parseSaleMeta(notes) {
+  const defaults = {
+    serviceMode: 'dine_in',
+    tableCode: '',
+    tableName: '',
+    tableState: 'occupied',
+    customerName: '',
+    customerPhone: '',
+    deliveryZone: '',
+    deliveryFee: 0,
+    courierName: '',
+    freeNote: '',
+  };
+  if (!notes || typeof notes !== 'string') return defaults;
+  if (notes.startsWith(META_PREFIX)) {
+    try {
+      const parsed = JSON.parse(notes.slice(META_PREFIX.length));
+      return { ...defaults, ...parsed, deliveryFee: Number(parsed?.deliveryFee || 0) };
+    } catch {
+      return { ...defaults, freeNote: notes };
+    }
+  }
+  return { ...defaults, freeNote: notes };
+}
+
+function serializeSaleMeta(meta) {
+  const clean = {
+    serviceMode: meta.serviceMode || 'dine_in',
+    tableCode: meta.tableCode || '',
+    tableName: meta.tableName || '',
+    tableState: meta.tableState || 'occupied',
+    customerName: meta.customerName || '',
+    customerPhone: meta.customerPhone || '',
+    deliveryZone: meta.deliveryZone || '',
+    deliveryFee: Number(meta.deliveryFee || 0),
+    courierName: meta.courierName || '',
+    freeNote: meta.freeNote || '',
+  };
+  return `${META_PREFIX}${JSON.stringify(clean)}`;
+}
+
+function serviceModeSummary(meta) {
+  if (meta.serviceMode === 'delivery') {
+    return `Livraison${meta.deliveryZone ? ` (${meta.deliveryZone})` : ''}`;
+  }
+  if (meta.serviceMode === 'takeaway') {
+    return 'À emporter';
+  }
+  return meta.tableName ? `Sur place • ${meta.tableName}` : 'Sur place';
+}
+
+function cleanWaDigits(phone) {
+  return String(phone || '').replace(/[^0-9]/g, '');
 }
 
 // -------------------------------------------------------------
@@ -157,36 +254,43 @@ function renderChrome() {
     cashPill.textContent = 'Caisse fermée';
   }
 
-  const dbType = state.health?.database;
-  const isPermanentPg = dbType === 'postgres';
-  const dbPill = document.getElementById('sidebar-db-pill');
-  dbPill.textContent = isPermanentPg
-    ? 'PostgreSQL Permanent'
-    : dbType === 'pglite-ephemeral'
-      ? 'Démo Éphémère (PGlite)'
-      : 'Base Locale (PGlite)';
-  dbPill.classList.toggle('is-ephemeral', !isPermanentPg);
+  const licPill = document.getElementById('license-status-pill');
+  if (licPill) {
+    const sub = state.subscriptionData?.subscription;
+    if (sub?.status === 'active') {
+      licPill.className = 'status-pill status-open hide-xs';
+      licPill.textContent = `Licence : ${sub.plan_name}`;
+    } else if (sub?.status === 'trial') {
+      licPill.className = 'status-pill status-pending hide-xs';
+      licPill.textContent = `Essai • ${sub.plan_name}`;
+    } else {
+      licPill.className = 'status-pill status-neutral hide-xs';
+      licPill.textContent = 'RestoGest Cloud';
+    }
+  }
 
-  document.getElementById('ephemeral-banner').classList.toggle(
-    'hidden',
-    dbType !== 'pglite-ephemeral'
-  );
+  const dbPill = document.getElementById('sidebar-db-pill');
+  if (dbPill) {
+    dbPill.textContent = 'Système Cloud Opérationnel';
+    dbPill.classList.remove('is-ephemeral');
+  }
 }
 
 // -------------------------------------------------------------
 // CHARGEMENT DES DONNÉES
 // -------------------------------------------------------------
 async function loadHealth() {
+  const badge = document.getElementById('auth-env-badge');
   try {
     const h = await apiFetch('/health', { skipAuth: true, ignoreUnauthorized: true });
     state.health = h;
-    const badge = document.getElementById('auth-env-badge');
     if (badge) {
-      badge.textContent = `API OK • DB: ${h.database || 'postgres'}`;
+      badge.innerHTML = '<span class="status-dot-ok"></span><span>Système Cloud Opérationnel</span>';
     }
   } catch {
-    const badge = document.getElementById('auth-env-badge');
-    if (badge) badge.textContent = 'API inaccessible';
+    if (badge) {
+      badge.innerHTML = '<span>Connexion Cloud en veille</span>';
+    }
   }
 }
 
@@ -203,10 +307,11 @@ async function refreshAllData() {
     apiFetch('/api/inventory/movements?limit=50'),
     apiFetch('/api/purchases/suppliers'),
     apiFetch('/api/purchases?limit=30'),
-    apiFetch('/api/sales?limit=30'),
+    apiFetch('/api/sales?limit=50'),
     apiFetch('/api/cash/sessions/current'),
     apiFetch('/api/cash/sessions?limit=20'),
     apiFetch('/api/cash/expenses?limit=30'),
+    apiFetch('/api/subscriptions/current'),
   ]);
 
   const val = (idx, fallback = null) =>
@@ -230,6 +335,7 @@ async function refreshAllData() {
   state.cashCurrent = val(11, null);
   state.cashSessions = val(12, []);
   state.expenses = val(13, []);
+  state.subscriptionData = val(14, null);
 
   if (state.activeSale) {
     try {
@@ -271,6 +377,10 @@ function renderRoute() {
       root.innerHTML = renderDashboard();
       bindDashboard();
       break;
+    case 'tables':
+      root.innerHTML = renderTables();
+      bindTables();
+      break;
     case 'pos':
       root.innerHTML = renderPos();
       bindPos();
@@ -291,6 +401,10 @@ function renderRoute() {
       root.innerHTML = renderCash();
       bindCash();
       break;
+    case 'subscription':
+      root.innerHTML = renderSubscription();
+      bindSubscription();
+      break;
   }
 }
 
@@ -298,8 +412,12 @@ function renderRoute() {
 function renderDashboard() {
   const cur = CURRENCY();
   const completedSales = state.sales.filter((s) => s.status === 'completed');
+  const pendingSales = state.sales.filter((s) => s.status === 'pending');
   const totalSalesAmount = completedSales.reduce((acc, s) => acc + parseFloat(s.total_amount || 0), 0);
   const cashBalance = state.cashCurrent ? state.cashCurrent.metrics?.theoreticalCashInDrawer : null;
+  const occupiedTablesCount = FLOOR_TABLES.filter((t) =>
+    pendingSales.some((s) => parseSaleMeta(s.notes).tableCode === t.code)
+  ).length;
 
   return `
     <div class="kpi-grid">
@@ -322,7 +440,7 @@ function renderDashboard() {
           </span>
         </div>
         <div class="kpi-value">${esc(fmtMoney(totalSalesAmount, cur))}</div>
-        <div class="kpi-foot">${state.sales.filter((s) => s.status === 'pending').length} ticket(s) en attente</div>
+        <div class="kpi-foot">${pendingSales.length} commande(s) ouverte(s) • ${occupiedTablesCount} table(s)</div>
       </div>
 
       <div class="card kpi-card">
@@ -353,10 +471,12 @@ function renderDashboard() {
         <h3>Raccourcis opérationnels</h3>
       </div>
       <div class="toolbar">
-        <button class="btn btn-primary" data-jump="pos" type="button">Ouvrir Caisse POS</button>
-        <button class="btn btn-amber" data-jump="purchases" type="button">Nouvel Achat</button>
+        <button class="btn btn-primary" data-jump="tables" type="button">Plan de Salle (${occupiedTablesCount}/${FLOOR_TABLES.length})</button>
+        <button class="btn btn-amber" data-jump="pos" type="button">Ouvrir Caisse POS</button>
         <button class="btn btn-outline" data-jump="catalog" type="button">Catalogue &amp; Recettes</button>
-        <button class="btn btn-outline" data-jump="cash" type="button">${state.cashCurrent ? 'Gérer / Clôturer Caisse' : 'Ouvrir Caisse'}</button>
+        <button class="btn btn-outline" data-jump="purchases" type="button">Achats &amp; Fournisseurs</button>
+        <button class="btn btn-outline" data-jump="cash" type="button">${state.cashCurrent ? 'Rapport Z &amp; Clôture' : 'Ouvrir Caisse'}</button>
+        <button class="btn btn-outline" data-jump="subscription" type="button">Licence (${esc(cur)})</button>
       </div>
     </div>
 
@@ -392,26 +512,27 @@ function renderDashboard() {
 
       <div class="card">
         <div class="section-head">
-          <h3>Dernières ventes</h3>
+          <h3>Dernières commandes</h3>
           <button class="btn btn-outline btn-sm" data-jump="pos" type="button">POS</button>
         </div>
         <div class="table-wrap">
           <table class="responsive-table">
-            <thead><tr><th>Facture</th><th>Montant</th><th>Statut</th><th>Date</th></tr></thead>
+            <thead><tr><th>Facture</th><th>Service / Table</th><th>Montant</th><th>Statut</th></tr></thead>
             <tbody>
               ${
                 state.sales.length === 0
-                  ? '<tr><td colspan="4" class="muted-text">Aucune vente enregistrée.</td></tr>'
+                  ? '<tr><td colspan="4" class="muted-text">Aucune commande enregistrée.</td></tr>'
                   : state.sales
                       .slice(0, 6)
-                      .map(
-                        (s) => `<tr>
+                      .map((s) => {
+                        const m = parseSaleMeta(s.notes);
+                        return `<tr>
                           <td data-label="Facture" class="mono"><strong>${esc(s.invoice_number)}</strong></td>
+                          <td data-label="Service">${esc(serviceModeSummary(m))}</td>
                           <td data-label="Montant" class="mono">${esc(fmtMoney(s.total_amount, cur))}</td>
                           <td data-label="Statut">${statusBadge(s.status)}</td>
-                          <td data-label="Date">${esc(fmtDate(s.created_at))}</td>
-                        </tr>`
-                      )
+                        </tr>`;
+                      })
                       .join('')
               }
             </tbody>
@@ -428,7 +549,197 @@ function bindDashboard() {
   });
 }
 
-// ---------------- 2. POS & VENTES ----------------
+// ---------------- 1B. PLAN DE SALLE VISUEL ----------------
+function mapPendingSalesByTable() {
+  const byTable = new Map();
+  for (const s of state.sales) {
+    if (s.status !== 'pending') continue;
+    const meta = parseSaleMeta(s.notes);
+    if (meta.tableCode && !byTable.has(meta.tableCode)) {
+      byTable.set(meta.tableCode, { sale: s, meta });
+    }
+  }
+  return byTable;
+}
+
+function renderTables() {
+  const cur = CURRENCY();
+  const byTable = mapPendingSalesByTable();
+  const visibleTables =
+    state.tableZone === 'all'
+      ? FLOOR_TABLES
+      : FLOOR_TABLES.filter((t) => t.zone === state.tableZone);
+
+  let occupiedCount = 0;
+  let billCount = 0;
+  let roomTotal = 0;
+
+  for (const t of FLOOR_TABLES) {
+    const entry = byTable.get(t.code);
+    if (entry) {
+      if (entry.meta.tableState === 'bill_requested') {
+        billCount += 1;
+      } else {
+        occupiedCount += 1;
+      }
+      roomTotal += parseFloat(entry.sale.total_amount || 0);
+    }
+  }
+  const freeCount = FLOOR_TABLES.length - occupiedCount - billCount;
+
+  return `
+    <div class="kpi-grid">
+      <div class="card kpi-card">
+        <div class="kpi-label">Tables Libres</div>
+        <div class="kpi-value" style="color:var(--success)">${freeCount}</div>
+        <div class="kpi-foot">Sur ${FLOOR_TABLES.length} emplacements</div>
+      </div>
+      <div class="card kpi-card">
+        <div class="kpi-label">Tables Occupées</div>
+        <div class="kpi-value" style="color:var(--primary)">${occupiedCount}</div>
+        <div class="kpi-foot">Commandes en service</div>
+      </div>
+      <div class="card kpi-card">
+        <div class="kpi-label">Additions en cours</div>
+        <div class="kpi-value" style="color:var(--info)">${billCount}</div>
+        <div class="kpi-foot">En attente d'encaissement</div>
+      </div>
+      <div class="card kpi-card">
+        <div class="kpi-label">Encours Salle</div>
+        <div class="kpi-value">${esc(fmtMoney(roomTotal, cur))}</div>
+        <div class="kpi-foot">Total des tables ouvertes</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-head">
+        <h3>Plan de Salle Visuel</h3>
+        <div class="category-strip" style="margin:0;padding:0;">
+          ${['all', 'Salle', 'Terrasse', 'Comptoir']
+            .map(
+              (z) =>
+                `<button type="button" class="cat-chip ${state.tableZone === z ? 'active' : ''}" data-table-zone="${z}">${z === 'all' ? 'Toutes les zones' : z}</button>`
+            )
+            .join('')}
+        </div>
+      </div>
+
+      <div class="floor-grid">
+        ${visibleTables
+          .map((t) => {
+            const entry = byTable.get(t.code);
+            const isBill = entry?.meta.tableState === 'bill_requested';
+            const cardCls = !entry ? 'is-free' : isBill ? 'is-bill' : 'is-occupied';
+            const statusText = !entry ? 'Libre' : isBill ? 'Addition en cours' : 'Occupée';
+            const pillCls = !entry ? 'status-open' : isBill ? 'status-info' : 'status-pending';
+            const amount = entry ? parseFloat(entry.sale.total_amount || 0) : 0;
+
+            return `<div class="table-card ${cardCls}">
+              <div>
+                <div class="table-card-head">
+                  <div>
+                    <div class="table-card-title">${esc(t.name)}</div>
+                    <div class="table-card-zone">${esc(t.zone)} • ${t.seats} pl.</div>
+                  </div>
+                  <span class="status-pill ${pillCls}">${esc(statusText)}</span>
+                </div>
+                ${
+                  entry
+                    ? `<div style="margin-top:10px;">
+                        <div class="table-card-amount">${esc(fmtMoney(amount, cur))}</div>
+                        <div class="muted-text mono" style="font-size:11px;">${esc(entry.sale.invoice_number)} • ${esc(entry.sale.total_items_count || 0)} art.</div>
+                      </div>`
+                    : `<div class="muted-text" style="margin-top:12px;">Prête pour de nouveaux clients</div>`
+                }
+              </div>
+
+              <div class="table-card-actions">
+                ${
+                  !entry
+                    ? `<button type="button" class="btn btn-success btn-sm btn-full" data-open-table="${esc(t.code)}">Ouvrir la table</button>`
+                    : `
+                      <button type="button" class="btn btn-primary btn-sm" data-pos-table-sale="${esc(entry.sale.id)}" style="flex:1;">+ Commander / Encaisser</button>
+                      ${
+                        !isBill
+                          ? `<button type="button" class="btn btn-outline btn-sm" data-bill-table="${esc(entry.sale.id)}">Addition</button>`
+                          : `<button type="button" class="btn btn-whatsapp btn-sm" data-wa-sale="${esc(entry.sale.id)}">WhatsApp</button>`
+                      }
+                    `
+                }
+              </div>
+            </div>`;
+          })
+          .join('')}
+      </div>
+    </div>
+  `;
+}
+
+function bindTables() {
+  document.querySelectorAll('[data-table-zone]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.tableZone = btn.dataset.tableZone;
+      renderRoute();
+    });
+  });
+
+  document.querySelectorAll('[data-open-table]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        const table = FLOOR_TABLES.find((t) => t.code === btn.dataset.openTable);
+        if (!table) return;
+        const notes = serializeSaleMeta({
+          serviceMode: 'dine_in',
+          tableCode: table.code,
+          tableName: table.name,
+          tableState: 'occupied',
+        });
+        const res = await apiFetch('/api/sales', { method: 'POST', body: { notes } });
+        state.activeSale = { ...res.data, paidAmount: 0, items: [], payments: [] };
+        showToast(`${table.name} ouverte — ajoutez vos articles`, 'success');
+        await refreshAllData();
+        setRoute('pos');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-pos-table-sale]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        const res = await apiFetch(`/api/sales/${btn.dataset.posTableSale}`);
+        state.activeSale = res.data;
+        setRoute('pos');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-bill-table]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        const detail = await apiFetch(`/api/sales/${btn.dataset.billTable}`);
+        const curMeta = parseSaleMeta(detail.data.notes);
+        await apiFetch(`/api/sales/${btn.dataset.billTable}`, {
+          method: 'PUT',
+          body: { notes: serializeSaleMeta({ ...curMeta, tableState: 'bill_requested' }) },
+        });
+        showToast('Addition demandée pour la table', 'info');
+        await refreshAllData();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-wa-sale]').forEach((btn) => {
+    btn.addEventListener('click', () => openWhatsAppSaleModal(btn.dataset.waSale));
+  });
+}
+
+// ---------------- 2. POS, LIVRAISON & WHATSAPP ----------------
 function computeSaleSummary(sale) {
   const items = sale?.items || [];
   const subtotal = items.reduce((sum, it) => sum + parseFloat(it.subtotal || 0), 0);
@@ -442,6 +753,101 @@ function computeSaleSummary(sale) {
   return { subtotal, discount, taxRate, tax, total, paid, remaining };
 }
 
+function buildWhatsAppReceiptText(payload) {
+  const cur = payload.currency || CURRENCY();
+  const meta = parseSaleMeta(payload.notes);
+  const lines = [
+    `*${payload.companyName || 'RestoGest'}*`,
+    `Facture : *${payload.invoiceNumber}*`,
+    `Mode : ${serviceModeSummary(meta)}`,
+  ];
+  if (meta.customerName) lines.push(`Client : ${meta.customerName}`);
+  if (meta.customerPhone) lines.push(`Tél : ${meta.customerPhone}`);
+  if (meta.serviceMode === 'delivery') {
+    if (meta.deliveryZone) lines.push(`Zone / Adresse : ${meta.deliveryZone}`);
+    if (meta.courierName) lines.push(`Livreur : ${meta.courierName}`);
+  }
+  lines.push('-------------------------');
+  for (const it of payload.items || []) {
+    lines.push(`• ${fmtQty(it.quantity)}x ${it.productName} : ${fmtMoney(it.subtotal, cur)}`);
+  }
+  if (meta.serviceMode === 'delivery' && meta.deliveryFee > 0) {
+    lines.push(`Frais livraison (info) : ${fmtMoney(meta.deliveryFee, cur)}`);
+  }
+  lines.push('-------------------------');
+  if (payload.discount > 0) lines.push(`Remise : -${fmtMoney(payload.discount, cur)}`);
+  lines.push(`*TOTAL : ${fmtMoney(payload.total, cur)}*`);
+  if ((payload.payments || []).length > 0) {
+    const payText = payload.payments
+      .map((p) => `${methodLabel(p.payment_method || p.method, p.reference)} (${fmtMoney(p.amount, cur)})`)
+      .join(', ');
+    lines.push(`Règlement : ${payText}`);
+  }
+  lines.push('Merci pour votre confiance !');
+  return lines.join('\n');
+}
+
+async function openWhatsAppSaleModal(saleId) {
+  try {
+    const res = await apiFetch(`/api/sales/${saleId}`);
+    const s = res.data;
+    const summary = computeSaleSummary(s);
+    const meta = parseSaleMeta(s.notes);
+    const text = buildWhatsAppReceiptText({
+      companyName: state.company?.name,
+      currency: CURRENCY(),
+      invoiceNumber: s.invoice_number,
+      notes: s.notes,
+      items: (s.items || []).map((it) => ({
+        productName: it.product_name,
+        quantity: it.quantity,
+        subtotal: it.subtotal,
+      })),
+      discount: summary.discount,
+      total: summary.total,
+      payments: s.payments || [],
+    });
+
+    const clientDigits = cleanWaDigits(meta.customerPhone || s.customer_phone);
+    const clientWaUrl = clientDigits
+      ? `https://wa.me/${clientDigits}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    const genericWaUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+
+    openModal(
+      `Récapitulatif WhatsApp • ${s.invoice_number}`,
+      `
+        <div class="form-stack">
+          <div class="field">
+            <label>Aperçu du message client / livreur</label>
+            <textarea id="wa-preview-msg" rows="11" class="mono" style="font-size:12px;">${esc(text)}</textarea>
+          </div>
+          <div class="toolbar">
+            <a id="wa-send-client-link" href="${esc(clientWaUrl)}" target="_blank" rel="noopener" class="btn btn-whatsapp" style="text-decoration:none;flex:1;">
+              ${clientDigits ? `Envoyer au Client (${esc(meta.customerPhone)})` : 'Ouvrir WhatsApp'}
+            </a>
+            <a href="${esc(genericWaUrl)}" target="_blank" rel="noopener" class="btn btn-outline" style="text-decoration:none;">
+              Envoyer au Livreur
+            </a>
+            <button id="btn-copy-wa-text" type="button" class="btn btn-outline">Copier</button>
+          </div>
+        </div>
+      `
+    );
+
+    document.getElementById('btn-copy-wa-text')?.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(document.getElementById('wa-preview-msg').value);
+        showToast('Message copié dans le presse-papiers !', 'success');
+      } catch {
+        showToast('Copie manuelle requise dans votre navigateur', 'warning');
+      }
+    });
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
 function renderPos() {
   const cur = CURRENCY();
   const filteredProducts = state.products.filter((p) => {
@@ -453,6 +859,7 @@ function renderPos() {
   });
 
   const sale = state.activeSale;
+  const meta = parseSaleMeta(sale?.notes);
   const summary = computeSaleSummary(sale);
   const qtyByProduct = new Map();
   for (const it of sale?.items || []) {
@@ -526,27 +933,29 @@ function renderPos() {
 
         <div class="card">
           <div class="section-head">
-            <h3>Ventes récentes</h3>
+            <h3>Commandes récentes</h3>
             <button id="btn-new-sale" type="button" class="btn btn-outline btn-sm">+ Nouveau ticket</button>
           </div>
           <div class="table-wrap">
             <table class="responsive-table">
-              <thead><tr><th>Facture</th><th>Articles</th><th>Total</th><th>Encaissé</th><th>Statut</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Facture</th><th>Service</th><th>Total</th><th>Statut</th><th>Actions</th></tr></thead>
               <tbody>
                 ${
                   state.sales.length === 0
-                    ? '<tr><td colspan="6" class="muted-text">Aucune vente enregistrée.</td></tr>'
+                    ? '<tr><td colspan="5" class="muted-text">Aucune commande enregistrée.</td></tr>'
                     : state.sales
-                        .map(
-                          (s) => `<tr>
+                        .slice(0, 15)
+                        .map((s) => {
+                          const sMeta = parseSaleMeta(s.notes);
+                          return `<tr>
                             <td data-label="Facture" class="mono"><strong>${esc(s.invoice_number)}</strong></td>
-                            <td data-label="Articles" class="mono">${esc(s.total_items_count)}</td>
+                            <td data-label="Service">${esc(serviceModeSummary(sMeta))}</td>
                             <td data-label="Total" class="mono">${esc(fmtMoney(s.total_amount, cur))}</td>
-                            <td data-label="Encaissé" class="mono">${esc(fmtMoney(s.paid_amount, cur))}</td>
                             <td data-label="Statut">${statusBadge(s.status)}</td>
                             <td data-label="Actions">
                               <div class="toolbar" style="justify-content:flex-end;">
                                 <button class="btn btn-outline btn-sm" data-select-sale="${esc(s.id)}" type="button">Ouvrir</button>
+                                <button class="btn btn-whatsapp btn-sm" data-wa-sale="${esc(s.id)}" type="button">WhatsApp</button>
                                 ${
                                   s.status === 'completed'
                                     ? `<button class="btn btn-outline btn-sm" data-receipt-sale="${esc(s.id)}" type="button">Ticket</button>`
@@ -559,8 +968,8 @@ function renderPos() {
                                 }
                               </div>
                             </td>
-                          </tr>`
-                        )
+                          </tr>`;
+                        })
                         .join('')
                 }
               </tbody>
@@ -573,19 +982,26 @@ function renderPos() {
         <div class="section-head" style="margin-bottom:0;">
           <div>
             <h3>${sale ? `Ticket ${esc(sale.invoice_number)}` : 'Ticket POS'}</h3>
-            <span class="muted-text">${sale ? statusBadge(sale.status) : 'Sélectionnez un article'}</span>
+            <span class="muted-text">${sale ? `${statusBadge(sale.status)} • ${esc(serviceModeSummary(meta))}` : 'Touchez un article'}</span>
           </div>
-          ${
-            sale && sale.status === 'completed'
-              ? `<button class="btn btn-outline btn-sm" data-receipt-sale="${esc(sale.id)}" type="button">Imprimer Reçu</button>`
-              : ''
-          }
+          <div class="toolbar">
+            ${
+              sale
+                ? `<button class="btn btn-whatsapp btn-sm" data-wa-sale="${esc(sale.id)}" type="button">WhatsApp</button>`
+                : ''
+            }
+            ${
+              sale && sale.status === 'completed'
+                ? `<button class="btn btn-outline btn-sm" data-receipt-sale="${esc(sale.id)}" type="button">Reçu</button>`
+                : ''
+            }
+          </div>
         </div>
 
         ${
           !state.cashCurrent
             ? `<div class="alert-callout">
-                <span>Caisse fermée : requise pour paiements espèces.</span>
+                <span>Caisse fermée : requise pour espèces.</span>
                 <button id="btn-pos-open-cash" type="button" class="btn btn-amber btn-sm">Ouvrir</button>
               </div>`
             : ''
@@ -593,8 +1009,81 @@ function renderPos() {
 
         ${
           !sale
-            ? '<p class="muted-text">Touchez un produit sur la carte pour ouvrir automatiquement une commande.</p>'
+            ? '<p class="muted-text">Touchez un produit sur la carte ou ouvrez une table depuis le Plan de Salle.</p>'
             : `
+              ${
+                sale.status === 'pending'
+                  ? `<div class="delivery-box">
+                      <div class="service-mode-pills">
+                        <button type="button" class="service-pill ${meta.serviceMode === 'dine_in' ? 'active' : ''}" data-service-mode="dine_in">Sur place</button>
+                        <button type="button" class="service-pill ${meta.serviceMode === 'takeaway' ? 'active' : ''}" data-service-mode="takeaway">À emporter</button>
+                        <button type="button" class="service-pill ${meta.serviceMode === 'delivery' ? 'active' : ''}" data-service-mode="delivery">Livraison</button>
+                      </div>
+
+                      ${
+                        meta.serviceMode === 'dine_in'
+                          ? `<div class="field-row">
+                              <div class="field">
+                                <label>Table attribuée</label>
+                                <select id="pos-table-select">
+                                  <option value="">Comptoir / Libre</option>
+                                  ${FLOOR_TABLES.map(
+                                    (t) =>
+                                      `<option value="${esc(t.code)}" ${meta.tableCode === t.code ? 'selected' : ''}>${esc(t.name)} (${esc(t.zone)})</option>`
+                                  ).join('')}
+                                </select>
+                              </div>
+                              <div class="field">
+                                <label>Statut table</label>
+                                <select id="pos-table-state">
+                                  <option value="occupied" ${meta.tableState !== 'bill_requested' ? 'selected' : ''}>Occupée</option>
+                                  <option value="bill_requested" ${meta.tableState === 'bill_requested' ? 'selected' : ''}>Addition en cours</option>
+                                </select>
+                              </div>
+                            </div>`
+                          : `<form id="pos-delivery-form" class="form-stack" style="gap:8px;">
+                              <div class="field-row">
+                                <div class="field">
+                                  <label>Client</label>
+                                  <input id="deliv-name" class="input-inline" placeholder="Nom client" value="${esc(meta.customerName)}" />
+                                </div>
+                                <div class="field">
+                                  <label>Tél WhatsApp (+221 / +224)</label>
+                                  <input id="deliv-phone" class="input-inline" placeholder="+221 77 000 00 00" value="${esc(meta.customerPhone)}" />
+                                </div>
+                              </div>
+                              ${
+                                meta.serviceMode === 'delivery'
+                                  ? `<div class="field-row">
+                                      <div class="field">
+                                        <label>Zone / Quartier</label>
+                                        <input id="deliv-zone" class="input-inline" placeholder="Ex: Almadies / Kaloum" value="${esc(meta.deliveryZone)}" />
+                                      </div>
+                                      <div class="field">
+                                        <label>Frais livraison (${esc(cur)})</label>
+                                        <input id="deliv-fee" class="input-inline" type="number" min="0" step="100" value="${esc(meta.deliveryFee || 0)}" />
+                                      </div>
+                                    </div>
+                                    <div class="field">
+                                      <label>Livreur assigné</label>
+                                      <input id="deliv-courier" class="input-inline" placeholder="Ex: Moussa (Moto 2)" value="${esc(meta.courierName)}" />
+                                    </div>`
+                                  : ''
+                              }
+                              <div class="toolbar">
+                                <button type="submit" class="btn btn-outline btn-sm">Enregistrer infos</button>
+                                ${
+                                  meta.serviceMode === 'delivery'
+                                    ? `<button id="btn-add-deliv-fee" type="button" class="btn btn-amber btn-sm">+ Ajouter frais au ticket</button>`
+                                    : ''
+                                }
+                              </div>
+                            </form>`
+                      }
+                    </div>`
+                  : ''
+              }
+
               <div>
                 ${
                   (sale.items || []).length === 0
@@ -652,7 +1141,7 @@ function renderPos() {
                   ? `<div class="muted-text" style="font-size:12px;">
                       <strong>Règlements :</strong>
                       ${sale.payments
-                        .map((p) => `<div>• ${esc(methodLabel(p.payment_method))} : <span class="mono">${esc(fmtMoney(p.amount, cur))}</span></div>`)
+                        .map((p) => `<div>• ${esc(methodLabel(p.payment_method, p.reference))} : <span class="mono">${esc(fmtMoney(p.amount, cur))}</span></div>`)
                         .join('')}
                     </div>`
                   : ''
@@ -662,13 +1151,12 @@ function renderPos() {
                 sale.status === 'pending'
                   ? `<form id="sale-payment-form" class="form-stack">
                       <div class="field">
-                        <label>Mode de règlement</label>
+                        <label>Mode de règlement (Sénégal / Guinée)</label>
                         <div class="method-pills">
-                          ${['cash', 'card', 'mobile_money', 'transfer', 'check', 'other']
-                            .map(
-                              (m) => `<button type="button" class="method-pill ${state.payMethod === m ? 'active' : ''}" data-pay-method="${m}">${esc(methodLabel(m))}</button>`
-                            )
-                            .join('')}
+                          ${PAYMENT_CHANNELS.map(
+                            (ch) =>
+                              `<button type="button" class="method-pill ${state.payChannel === ch.id ? 'active' : ''}" data-pay-channel="${ch.id}">${esc(ch.label)}</button>`
+                          ).join('')}
                         </div>
                       </div>
                       <div class="field">
@@ -682,7 +1170,9 @@ function renderPos() {
                         </button>
                       </div>
                     </form>`
-                  : ''
+                  : `<button type="button" class="btn btn-whatsapp btn-full" data-wa-sale="${esc(sale.id)}">
+                      Générer Récap WhatsApp
+                    </button>`
               }
             `
         }
@@ -696,6 +1186,8 @@ async function openQuickReceipt(saleId) {
     const res = await apiFetch(`/api/sales/${saleId}/receipt`);
     const r = res.data;
     const cur = r.company.currency || CURRENCY();
+    const meta = parseSaleMeta(r.receiptHeader.notes);
+
     openModal(
       `Ticket de caisse • ${r.receiptHeader.invoiceNumber}`,
       `
@@ -703,6 +1195,7 @@ async function openQuickReceipt(saleId) {
           <div style="text-align:center;margin-bottom:12px;">
             <strong style="font-size:15px;">${esc(r.company.name)}</strong><br/>
             <span>Facture : ${esc(r.receiptHeader.invoiceNumber)}</span><br/>
+            <span>Mode : ${esc(serviceModeSummary(meta))}</span><br/>
             <span>Date : ${esc(fmtDate(r.receiptHeader.date))}</span><br/>
             <span>Serveur : ${esc(r.receiptHeader.serverName || 'Équipe')}</span>
           </div>
@@ -725,20 +1218,45 @@ async function openQuickReceipt(saleId) {
           ${r.payments
             .map(
               (p) => `<div style="display:flex;justify-content:space-between;">
-                <span>${esc(methodLabel(p.method))}</span>
+                <span>${esc(methodLabel(p.method, p.reference))}</span>
                 <span>${esc(fmtMoney(p.amount, cur))}</span>
               </div>`
             )
             .join('')}
         </div>
         <div class="toolbar" style="margin-top:14px;justify-content:flex-end;">
+          <button id="btn-receipt-whatsapp" type="button" class="btn btn-whatsapp">Générer Récap WhatsApp</button>
           <button type="button" class="btn btn-primary" onclick="window.print()">Imprimer</button>
         </div>
       `
     );
+
+    document.getElementById('btn-receipt-whatsapp')?.addEventListener('click', () => {
+      openWhatsAppSaleModal(saleId);
+    });
   } catch (err) {
     showToast(err.message, 'error');
   }
+}
+
+async function ensureDeliveryFeeProduct() {
+  let prod = state.products.find((p) => p.name.toLowerCase() === 'frais de livraison');
+  if (!prod) {
+    const created = await apiFetch('/api/catalog/products', {
+      method: 'POST',
+      body: {
+        name: 'Frais de Livraison',
+        productType: 'service',
+        inventoryTracking: 'none',
+        unit: 'course',
+        sellingPrice: 1500,
+        costPrice: 0,
+        minStockAlert: 0,
+      },
+    });
+    prod = created.data;
+  }
+  return prod;
 }
 
 function bindPos() {
@@ -770,6 +1288,115 @@ function bindPos() {
       const res = await apiFetch('/api/sales', { method: 'POST', body: {} });
       state.activeSale = { ...res.data, paidAmount: 0, items: [], payments: [] };
       showToast(`Ticket ${res.data.invoice_number} créé`, 'success');
+      await refreshAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.querySelectorAll('[data-service-mode]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!state.activeSale) return;
+      try {
+        const curMeta = parseSaleMeta(state.activeSale.notes);
+        const nextMode = btn.dataset.serviceMode;
+        const nextMeta = {
+          ...curMeta,
+          serviceMode: nextMode,
+          ...(nextMode !== 'dine_in' ? { tableCode: '', tableName: '' } : {}),
+        };
+        await apiFetch(`/api/sales/${state.activeSale.id}`, {
+          method: 'PUT',
+          body: { notes: serializeSaleMeta(nextMeta) },
+        });
+        await refreshAllData();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  const saveTableSelection = async () => {
+    if (!state.activeSale) return;
+    try {
+      const code = document.getElementById('pos-table-select')?.value || '';
+      const tState = document.getElementById('pos-table-state')?.value || 'occupied';
+      const table = FLOOR_TABLES.find((t) => t.code === code);
+      const curMeta = parseSaleMeta(state.activeSale.notes);
+      await apiFetch(`/api/sales/${state.activeSale.id}`, {
+        method: 'PUT',
+        body: {
+          notes: serializeSaleMeta({
+            ...curMeta,
+            serviceMode: 'dine_in',
+            tableCode: code,
+            tableName: table ? table.name : '',
+            tableState: tState,
+          }),
+        },
+      });
+      showToast(table ? `Commande liée à ${table.name}` : 'Table mise à jour', 'success');
+      await refreshAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  document.getElementById('pos-table-select')?.addEventListener('change', saveTableSelection);
+  document.getElementById('pos-table-state')?.addEventListener('change', saveTableSelection);
+
+  document.getElementById('pos-delivery-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!state.activeSale) return;
+    try {
+      const curMeta = parseSaleMeta(state.activeSale.notes);
+      const nextMeta = {
+        ...curMeta,
+        customerName: document.getElementById('deliv-name')?.value || '',
+        customerPhone: document.getElementById('deliv-phone')?.value || '',
+        deliveryZone: document.getElementById('deliv-zone')?.value || '',
+        deliveryFee: parseFloat(document.getElementById('deliv-fee')?.value || '0') || 0,
+        courierName: document.getElementById('deliv-courier')?.value || '',
+      };
+      await apiFetch(`/api/sales/${state.activeSale.id}`, {
+        method: 'PUT',
+        body: { notes: serializeSaleMeta(nextMeta) },
+      });
+      showToast('Informations client / livraison enregistrées', 'success');
+      await refreshAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('btn-add-deliv-fee')?.addEventListener('click', async () => {
+    if (!state.activeSale) return;
+    try {
+      const fee = parseFloat(document.getElementById('deliv-fee')?.value || '0');
+      if (!fee || fee <= 0) {
+        showToast('Saisissez des frais de livraison supérieurs à 0', 'warning');
+        return;
+      }
+      const curMeta = parseSaleMeta(state.activeSale.notes);
+      await apiFetch(`/api/sales/${state.activeSale.id}`, {
+        method: 'PUT',
+        body: {
+          notes: serializeSaleMeta({
+            ...curMeta,
+            customerName: document.getElementById('deliv-name')?.value || curMeta.customerName,
+            customerPhone: document.getElementById('deliv-phone')?.value || curMeta.customerPhone,
+            deliveryZone: document.getElementById('deliv-zone')?.value || curMeta.deliveryZone,
+            deliveryFee: fee,
+            courierName: document.getElementById('deliv-courier')?.value || curMeta.courierName,
+          }),
+        },
+      });
+      const feeProd = await ensureDeliveryFeeProduct();
+      await apiFetch(`/api/sales/${state.activeSale.id}/items`, {
+        method: 'POST',
+        body: { productId: feeProd.id, quantity: 1, unitPrice: fee },
+      });
+      showToast(`Frais de livraison (${fmtMoney(fee, CURRENCY())}) ajoutés au ticket`, 'success');
       await refreshAllData();
     } catch (err) {
       showToast(err.message, 'error');
@@ -855,11 +1482,11 @@ function bindPos() {
     });
   });
 
-  document.querySelectorAll('[data-pay-method]').forEach((btn) => {
+  document.querySelectorAll('[data-pay-channel]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.payMethod = btn.dataset.payMethod;
-      document.querySelectorAll('[data-pay-method]').forEach((b) => {
-        b.classList.toggle('active', b.dataset.payMethod === state.payMethod);
+      state.payChannel = btn.dataset.payChannel;
+      document.querySelectorAll('[data-pay-channel]').forEach((b) => {
+        b.classList.toggle('active', b.dataset.payChannel === state.payChannel);
       });
     });
   });
@@ -883,11 +1510,12 @@ function bindPos() {
     e.preventDefault();
     try {
       const amount = parseFloat(document.getElementById('pay-amount').value);
+      const ch = PAYMENT_CHANNELS.find((c) => c.id === state.payChannel) || PAYMENT_CHANNELS[0];
       await apiFetch(`/api/sales/${state.activeSale.id}/payments`, {
         method: 'POST',
-        body: { amount, paymentMethod: state.payMethod },
+        body: { amount, paymentMethod: ch.apiMethod, reference: ch.ref },
       });
-      showToast('Paiement enregistré', 'success');
+      showToast(`Paiement ${ch.label} enregistré`, 'success');
       await refreshAllData();
     } catch (err) {
       showToast(err.message, 'error');
@@ -908,6 +1536,10 @@ function bindPos() {
 
   document.querySelectorAll('[data-receipt-sale]').forEach((btn) => {
     btn.addEventListener('click', () => openQuickReceipt(btn.dataset.receiptSale));
+  });
+
+  document.querySelectorAll('[data-wa-sale]').forEach((btn) => {
+    btn.addEventListener('click', () => openWhatsAppSaleModal(btn.dataset.waSale));
   });
 
   document.querySelectorAll('[data-cancel-sale]').forEach((btn) => {
@@ -994,11 +1626,11 @@ function renderCatalog() {
                 </div>
                 <div class="field-row">
                   <div class="field">
-                    <label>Prix de vente</label>
+                    <label>Prix de vente (${esc(cur)})</label>
                     <input id="prod-sell" type="number" step="0.01" min="0" value="0" />
                   </div>
                   <div class="field">
-                    <label>Coût unitaire initial</label>
+                    <label>Coût unitaire initial (${esc(cur)})</label>
                     <input id="prod-cost" type="number" step="0.01" min="0" value="0" />
                   </div>
                 </div>
@@ -1698,17 +2330,110 @@ function bindPurchases() {
   });
 }
 
-// ---------------- 6. TRÉSORERIE & CAISSE ----------------
+// ---------------- 6. TRÉSORERIE & Z DE CAISSE ----------------
+function formatZReportText(session) {
+  const cur = CURRENCY();
+  const z = session.zReport;
+  const pb = z.paymentBreakdown;
+  const lines = [
+    `RAPPORT Z DE CAISSE — ${state.company?.name || 'RestoGest'}`,
+    `Statut : ${z.status === 'open' ? 'Session en cours' : 'Clôturée'}`,
+    `Ouverture : ${fmtDate(z.openedAt)}`,
+    ...(z.closedAt ? [`Clôture : ${fmtDate(z.closedAt)}`] : []),
+    '--------------------------------',
+    `Tickets validés : ${z.ticketsCount} (Annulés : ${z.cancelledCount})`,
+    `Ventes brutes : ${fmtMoney(z.grossSales, cur)}`,
+    `Remises accordées : -${fmtMoney(z.totalDiscounts, cur)}`,
+    `Chiffre d'affaires NET : ${fmtMoney(z.netSales, cur)}`,
+    '--------------------------------',
+    'VENTILATION PAR MOYEN DE PAIEMENT :',
+    `- Espèces : ${fmtMoney(pb.especes, cur)}`,
+    `- Wave : ${fmtMoney(pb.wave, cur)}`,
+    `- Orange Money : ${fmtMoney(pb.orangeMoney, cur)}`,
+    ...(pb.otherMobileMoney > 0 ? [`- Autre Mobile Money : ${fmtMoney(pb.otherMobileMoney, cur)}`] : []),
+    `- Carte Bancaire : ${fmtMoney(pb.carteBancaire, cur)}`,
+    `- Virement / Chèque / Autres : ${fmtMoney(pb.virementChequeAutres, cur)}`,
+    `Total Encaissé : ${fmtMoney(z.totalCollected, cur)}`,
+    '--------------------------------',
+    `Fond initial : ${fmtMoney(z.openingAmount, cur)}`,
+    `Dépenses sorties caisse : -${fmtMoney(z.totalExpenses, cur)}`,
+    `Remboursements espèces : -${fmtMoney(z.cashRefunds, cur)}`,
+    `Solde théorique tiroir : ${fmtMoney(z.expectedCashInDrawer, cur)}`,
+    ...(z.actualClosingAmount !== null ? [`Montant réel compté : ${fmtMoney(z.actualClosingAmount, cur)}`] : []),
+    ...(z.differenceAmount !== null ? [`ÉCART DE CAISSE : ${fmtMoney(z.differenceAmount, cur)}`] : []),
+  ];
+  return lines.join('\n');
+}
+
+function openZReportModal(session) {
+  const cur = CURRENCY();
+  const z = session.zReport;
+  const pb = z.paymentBreakdown;
+  const textReport = formatZReportText(session);
+  const waHref = `https://wa.me/?text=${encodeURIComponent(textReport)}`;
+  const mailHref = `mailto:?subject=${encodeURIComponent(`Rapport Z de caisse - ${state.company?.name || 'RestoGest'}`)}&body=${encodeURIComponent(textReport)}`;
+
+  openModal(
+    `Rapport Z de Caisse (${z.status === 'open' ? 'Temps réel' : 'Clôturé'})`,
+    `
+      <div class="receipt-paper">
+        <div style="text-align:center;margin-bottom:10px;">
+          <strong style="font-size:15px;">${esc(state.company?.name || 'RestoGest Cloud')}</strong><br/>
+          <span>RAPPORT Z DE CAISSE</span><br/>
+          <span>Ouverte : ${esc(fmtDate(z.openedAt))}</span>
+          ${z.closedAt ? `<br/><span>Clôturée : ${esc(fmtDate(z.closedAt))}</span>` : ''}
+        </div>
+        <hr/>
+        <div style="display:flex;justify-content:space-between;"><span>Tickets validés / annulés</span><span>${z.ticketsCount} / ${z.cancelledCount}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>Chiffre d'affaires NET</span><strong>${esc(fmtMoney(z.netSales, cur))}</strong></div>
+        <div style="display:flex;justify-content:space-between;"><span>Remises accordées</span><span>-${esc(fmtMoney(z.totalDiscounts, cur))}</span></div>
+        <hr/>
+        <div><strong>Ventilation par moyen de paiement :</strong></div>
+        <div style="display:flex;justify-content:space-between;"><span>Espèces</span><span>${esc(fmtMoney(pb.especes, cur))}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>Wave</span><span>${esc(fmtMoney(pb.wave, cur))}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>Orange Money</span><span>${esc(fmtMoney(pb.orangeMoney, cur))}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>Carte Bancaire</span><span>${esc(fmtMoney(pb.carteBancaire, cur))}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>Virement / Autres</span><span>${esc(fmtMoney(pb.virementChequeAutres, cur))}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:700;margin-top:4px;"><span>TOTAL ENCAISSÉ</span><span>${esc(fmtMoney(z.totalCollected, cur))}</span></div>
+        <hr/>
+        <div style="display:flex;justify-content:space-between;"><span>Fond initial</span><span>${esc(fmtMoney(z.openingAmount, cur))}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>Dépenses / Remb. cash</span><span>-${esc(fmtMoney(z.totalExpenses + z.cashRefunds, cur))}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>Solde théorique tiroir</span><strong>${esc(fmtMoney(z.expectedCashInDrawer, cur))}</strong></div>
+        ${z.actualClosingAmount !== null ? `<div style="display:flex;justify-content:space-between;"><span>Montant compté</span><span>${esc(fmtMoney(z.actualClosingAmount, cur))}</span></div>` : ''}
+        ${z.differenceAmount !== null ? `<div style="display:flex;justify-content:space-between;font-weight:700;"><span>ÉCART DE CAISSE</span><span>${esc(fmtMoney(z.differenceAmount, cur))}</span></div>` : ''}
+      </div>
+      <div class="toolbar" style="margin-top:14px;">
+        <button type="button" class="btn btn-primary" onclick="window.print()">Imprimer PDF</button>
+        <button id="btn-download-z-txt" type="button" class="btn btn-outline">Exporter (.TXT)</button>
+        <a href="${esc(waHref)}" target="_blank" rel="noopener" class="btn btn-whatsapp" style="text-decoration:none;">Envoyer WhatsApp</a>
+        <a href="${esc(mailHref)}" class="btn btn-outline" style="text-decoration:none;">Envoyer Email</a>
+      </div>
+    `
+  );
+
+  document.getElementById('btn-download-z-txt')?.addEventListener('click', () => {
+    const blob = new Blob([textReport], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rapport-z-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
 function renderCash() {
   const cur = CURRENCY();
   const cs = state.cashCurrent;
+  const z = cs?.zReport;
+  const pb = z?.paymentBreakdown || {};
 
   return `
     ${
       !cs
         ? `<div class="card" style="max-width:520px;">
             <div class="section-head"><h3>Ouvrir une session de caisse</h3></div>
-            <p class="muted-text" style="margin-bottom:14px;">Aucune session active. Saisissez le fond de caisse initial pour encaisser en espèces.</p>
+            <p class="muted-text" style="margin-bottom:14px;">Aucune session active. Saisissez le fond de caisse initial pour encaisser et générer votre rapport Z.</p>
             <form id="cash-open-form" class="form-stack">
               <div class="field">
                 <label>Fond de caisse initial (${esc(cur)})</label>
@@ -1719,66 +2444,96 @@ function renderCash() {
           </div>`
         : `<div class="kpi-grid">
             <div class="card kpi-card">
-              <div class="kpi-label">Fond initial</div>
-              <div class="kpi-value">${esc(fmtMoney(cs.openingAmount, cur))}</div>
-              <div class="kpi-foot">Ouverte le ${esc(fmtDate(cs.opened_at))}</div>
+              <div class="kpi-label">Chiffre d'affaires Net</div>
+              <div class="kpi-value">${esc(fmtMoney(z?.netSales || 0, cur))}</div>
+              <div class="kpi-foot">${z?.ticketsCount || 0} ticket(s) validé(s)</div>
             </div>
             <div class="card kpi-card">
-              <div class="kpi-label">Encaissements Espèces</div>
-              <div class="kpi-value">${esc(fmtMoney(cs.metrics.cashIn, cur))}</div>
-              <div class="kpi-foot">CB: ${esc(fmtMoney(cs.metrics.cardIn, cur))} • MM: ${esc(fmtMoney(cs.metrics.mobileMoneyIn, cur))}</div>
+              <div class="kpi-label">Total Encaissé</div>
+              <div class="kpi-value">${esc(fmtMoney(z?.totalCollected || 0, cur))}</div>
+              <div class="kpi-foot">Espèces: ${esc(fmtMoney(pb.especes || 0, cur))}</div>
             </div>
             <div class="card kpi-card">
               <div class="kpi-label">Dépenses &amp; Remb. Cash</div>
-              <div class="kpi-value">${esc(fmtMoney(cs.metrics.totalExpenses + cs.metrics.cashRefunds, cur))}</div>
-              <div class="kpi-foot">Dépenses: ${esc(fmtMoney(cs.metrics.totalExpenses, cur))}</div>
+              <div class="kpi-value">${esc(fmtMoney((cs.metrics?.totalExpenses || 0) + (cs.metrics?.cashRefunds || 0), cur))}</div>
+              <div class="kpi-foot">Fond initial : ${esc(fmtMoney(cs.openingAmount, cur))}</div>
             </div>
             <div class="card kpi-card">
               <div class="kpi-label">Solde théorique tiroir</div>
               <div class="kpi-value" style="color:var(--success)">${esc(fmtMoney(cs.metrics.theoreticalCashInDrawer, cur))}</div>
-              <div class="kpi-foot">Calcul réconcilié en direct</div>
+              <div class="kpi-foot">Écart à la clôture : 0 attendu</div>
             </div>
           </div>
 
           <div class="two-col">
             <div class="card">
-              <div class="section-head"><h3>Enregistrer une dépense</h3></div>
-              <form id="expense-create-form" class="form-stack">
-                <div class="field-row">
-                  <div class="field">
-                    <label>Catégorie</label>
-                    <input id="exp-cat" required placeholder="Fournitures / Glaçons" />
-                  </div>
-                  <div class="field">
-                    <label>Montant (${esc(cur)})</label>
-                    <input id="exp-amount" type="number" step="0.01" min="0.01" required />
-                  </div>
+              <div class="section-head">
+                <h3>Rapport Z &amp; Ventilation Paiements</h3>
+                <button id="btn-export-current-z" type="button" class="btn btn-outline btn-sm">Imprimer / Exporter Z</button>
+              </div>
+              <div class="z-report-grid" style="margin-bottom:12px;">
+                <div class="z-stat-box">
+                  <div class="z-stat-label">Tickets validés</div>
+                  <div class="z-stat-val">${z?.ticketsCount || 0}</div>
                 </div>
-                <div class="field">
-                  <label>Description / Motif</label>
-                  <input id="exp-desc" required placeholder="Achat urgent en espèces" />
+                <div class="z-stat-box">
+                  <div class="z-stat-label">Remises accordées</div>
+                  <div class="z-stat-val">${esc(fmtMoney(z?.totalDiscounts || 0, cur))}</div>
                 </div>
-                <button type="submit" class="btn btn-amber">Décaisser dépense</button>
-              </form>
+              </div>
+              <div class="z-breakdown-list">
+                <div class="z-breakdown-row"><span>Espèces</span><strong class="mono">${esc(fmtMoney(pb.especes || 0, cur))}</strong></div>
+                <div class="z-breakdown-row"><span>Wave</span><strong class="mono">${esc(fmtMoney(pb.wave || 0, cur))}</strong></div>
+                <div class="z-breakdown-row"><span>Orange Money</span><strong class="mono">${esc(fmtMoney(pb.orangeMoney || 0, cur))}</strong></div>
+                <div class="z-breakdown-row"><span>Carte Bancaire</span><strong class="mono">${esc(fmtMoney(pb.carteBancaire || 0, cur))}</strong></div>
+                <div class="z-breakdown-row"><span>Virement / Chèque / Autres</span><strong class="mono">${esc(fmtMoney(pb.virementChequeAutres || 0, cur))}</strong></div>
+              </div>
+              <div class="toolbar" style="margin-top:14px;">
+                <a href="${esc(`https://wa.me/?text=${encodeURIComponent(formatZReportText(cs))}`)}" target="_blank" rel="noopener" class="btn btn-whatsapp btn-sm" style="text-decoration:none;flex:1;">Envoyer Z sur WhatsApp</a>
+                <a href="${esc(`mailto:?subject=${encodeURIComponent(`Rapport Z - ${state.company?.name || 'RestoGest'}`)}&body=${encodeURIComponent(formatZReportText(cs))}`)}" class="btn btn-outline btn-sm" style="text-decoration:none;">Envoyer par Email</a>
+              </div>
             </div>
 
-            <div class="card">
-              <div class="section-head"><h3>Clôturer la session de caisse</h3></div>
-              <form id="cash-close-form" class="form-stack">
-                <div class="field">
-                  <label>Montant réel compté dans le tiroir (${esc(cur)})</label>
-                  <input id="cash-actual-amount" type="number" step="0.01" min="0" required value="${cs.metrics.theoreticalCashInDrawer}" />
-                </div>
-                <p class="muted-text">Solde théorique attendu : <strong class="mono">${esc(fmtMoney(cs.metrics.theoreticalCashInDrawer, cur))}</strong></p>
-                <button type="submit" class="btn btn-danger">Clôturer définitivement la caisse</button>
-              </form>
+            <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
+              <div class="card">
+                <div class="section-head"><h3>Enregistrer une dépense</h3></div>
+                <form id="expense-create-form" class="form-stack">
+                  <div class="field-row">
+                    <div class="field">
+                      <label>Catégorie</label>
+                      <input id="exp-cat" required placeholder="Fournitures / Glaçons" />
+                    </div>
+                    <div class="field">
+                      <label>Montant (${esc(cur)})</label>
+                      <input id="exp-amount" type="number" step="0.01" min="0.01" required />
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label>Description / Motif</label>
+                    <input id="exp-desc" required placeholder="Achat urgent en espèces" />
+                  </div>
+                  <button type="submit" class="btn btn-amber">Décaisser dépense</button>
+                </form>
+              </div>
+
+              <div class="card">
+                <div class="section-head"><h3>Clôturer la session de caisse (Z Final)</h3></div>
+                <form id="cash-close-form" class="form-stack">
+                  <div class="field">
+                    <label>Montant réel compté dans le tiroir (${esc(cur)})</label>
+                    <input id="cash-actual-amount" type="number" step="0.01" min="0" required value="${cs.metrics.theoreticalCashInDrawer}" />
+                  </div>
+                  <p class="muted-text">Solde théorique attendu : <strong class="mono">${esc(fmtMoney(cs.metrics.theoreticalCashInDrawer, cur))}</strong></p>
+                  <button type="submit" class="btn btn-danger">Clôturer &amp; Générer le Z définitif</button>
+                </form>
+              </div>
             </div>
           </div>`
     }
 
     <div class="two-col">
       <div class="card">
-        <div class="section-head"><h3>Historique des sessions</h3></div>
+        <div class="section-head"><h3>Historique des Z de caisse</h3></div>
         <div class="table-wrap">
           <table class="responsive-table">
             <thead><tr><th>Ouverture</th><th>Attendu</th><th>Réel</th><th>Écart</th><th>Statut</th><th></th></tr></thead>
@@ -1794,7 +2549,7 @@ function renderCash() {
                           <td data-label="Réel" class="mono">${s.actual_closing_amount !== null ? esc(fmtMoney(s.actual_closing_amount, cur)) : '—'}</td>
                           <td data-label="Écart" class="mono">${s.difference_amount !== null ? esc(fmtMoney(s.difference_amount, cur)) : '—'}</td>
                           <td data-label="Statut">${statusBadge(s.status)}</td>
-                          <td data-label="Détail"><button class="btn btn-outline btn-sm" data-cash-detail="${esc(s.id)}" type="button">Détail</button></td>
+                          <td data-label="Rapport Z"><button class="btn btn-outline btn-sm" data-cash-detail="${esc(s.id)}" type="button">Rapport Z</button></td>
                         </tr>`
                       )
                       .join('')
@@ -1847,6 +2602,10 @@ function bindCash() {
     }
   });
 
+  document.getElementById('btn-export-current-z')?.addEventListener('click', () => {
+    if (state.cashCurrent) openZReportModal(state.cashCurrent);
+  });
+
   document.getElementById('expense-create-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
@@ -1876,6 +2635,9 @@ function bindCash() {
       const diff = parseFloat(res.data.difference_amount || 0);
       showToast(`Caisse clôturée (écart : ${fmtMoney(diff, CURRENCY())})`, 'success');
       await refreshAllData();
+      if (res.data?.zReport) {
+        openZReportModal(res.data);
+      }
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -1885,30 +2647,219 @@ function bindCash() {
     btn.addEventListener('click', async () => {
       try {
         const res = await apiFetch(`/api/cash/sessions/${btn.dataset.cashDetail}`);
-        const d = res.data;
-        const cur = CURRENCY();
-        openModal(
-          `Détail Session (${d.status === 'open' ? 'Ouverte' : 'Clôturée'})`,
-          `<div class="form-stack">
-            <div><strong>Ouverte par :</strong> ${esc(d.opened_by_name || '—')} (${esc(fmtDate(d.opened_at))})</div>
-            <div><strong>Fond initial :</strong> <span class="mono">${esc(fmtMoney(d.opening_amount, cur))}</span></div>
-            <div><strong>Paiements (${(d.payments || []).length}) :</strong></div>
-            <ul style="margin:0;padding-left:18px;font-size:12px;">
-              ${(d.payments || [])
-                .map((p) => `<li>${esc(p.invoice_number || '')} • ${esc(methodLabel(p.payment_method))} : ${esc(fmtMoney(p.amount, cur))}</li>`)
-                .join('') || '<li>Aucun paiement</li>'}
-            </ul>
-            <div><strong>Dépenses (${(d.expenses || []).length}) :</strong></div>
-            <ul style="margin:0;padding-left:18px;font-size:12px;">
-              ${(d.expenses || [])
-                .map((ex) => `<li>${esc(ex.category)} (${esc(ex.description)}) : ${esc(fmtMoney(ex.amount, cur))}</li>`)
-                .join('') || '<li>Aucune dépense</li>'}
-            </ul>
-          </div>`
-        );
+        if (res.data?.zReport) {
+          openZReportModal(res.data);
+        }
       } catch (err) {
         showToast(err.message, 'error');
       }
+    });
+  });
+}
+
+// ---------------- 7. ABONNEMENT SAAS & MULTI-DEVISES XOF / GNF ----------------
+function getPlanPriceInCurrency(plan, cycle, cur) {
+  const f = plan.features || {};
+  if (cur === 'GNF') {
+    return cycle === 'yearly' ? Number(f.gnf_yearly || plan.yearly_price * 15) : Number(f.gnf_monthly || plan.monthly_price * 15);
+  }
+  return cycle === 'yearly' ? Number(plan.yearly_price) : Number(plan.monthly_price);
+}
+
+function renderSubscription() {
+  const cur = CURRENCY();
+  const sub = state.subscriptionData?.subscription;
+  const plans = state.subscriptionData?.plans || [];
+  const comp = state.subscriptionData?.company || state.company || {};
+  const isYearly = state.billingCycle === 'yearly';
+
+  return `
+    <div class="license-hero">
+      <div>
+        <div class="brand-badge" style="margin-bottom:8px;">
+          <span class="brand-dot"></span>
+          <span>RestoGest Cloud Licence</span>
+        </div>
+        <h3 style="margin:0 0 4px;font-family:var(--font-display);font-size:20px;">
+          ${sub ? esc(sub.plan_name) : 'Essai Gratuit Cloud'} — ${statusBadge(sub?.status || 'trial')}
+        </h3>
+        <p style="margin:0;color:#cbd5e1;font-size:13px;">
+          Établissement : <strong>${esc(comp.name || 'Mon Établissement')}</strong> • Devise active : <strong>${esc(cur)}</strong>
+          ${sub?.ends_at ? ` • Échéance : ${esc(fmtDate(sub.ends_at))}` : ''}
+        </p>
+      </div>
+      <div class="tabs-segmented" style="background:rgba(255,255,255,0.1);min-width:220px;">
+        <button type="button" class="seg-btn ${!isYearly ? 'active' : ''}" data-bill-cycle="monthly">Mensuel</button>
+        <button type="button" class="seg-btn ${isYearly ? 'active' : ''}" data-bill-cycle="yearly">Annuel (-17%)</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-head">
+        <h3>Paramètres Établissement &amp; Multi-Devises (Sénégal / Guinée)</h3>
+      </div>
+      <form id="company-settings-form" class="form-stack">
+        <div class="field-row">
+          <div class="field">
+            <label>Nom de l'établissement</label>
+            <input id="set-comp-name" required value="${esc(comp.name || '')}" />
+          </div>
+          <div class="field">
+            <label>Devise principale (XOF / GNF)</label>
+            <select id="set-comp-currency">
+              <option value="XOF" ${cur === 'XOF' ? 'selected' : ''}>XOF — Franc CFA (Sénégal / UEMOA)</option>
+              <option value="GNF" ${cur === 'GNF' ? 'selected' : ''}>GNF — Franc Guinéen (Guinée)</option>
+              <option value="EUR" ${cur === 'EUR' ? 'selected' : ''}>EUR — Euro (€)</option>
+              <option value="USD" ${cur === 'USD' ? 'selected' : ''}>USD — Dollar ($)</option>
+              <option value="MAD" ${cur === 'MAD' ? 'selected' : ''}>MAD — Dirham (DH)</option>
+              <option value="CAD" ${cur === 'CAD' ? 'selected' : ''}>CAD — Dollar CAD</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Taux TVA par défaut (%)</label>
+            <input id="set-comp-tax" type="number" step="0.1" min="0" max="100" value="${esc(comp.default_tax_rate ?? 0)}" />
+          </div>
+          <div class="field" style="justify-content:flex-end;">
+            <label style="display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;">
+              <input id="set-comp-neg" type="checkbox" ${comp.allow_negative_stock ? 'checked' : ''} style="width:18px;height:18px;" />
+              Autoriser la vente même en stock négatif
+            </label>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button type="submit" class="btn btn-primary">Enregistrer la devise &amp; les paramètres</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="section-head">
+        <h3>Choisissez votre moyen de paiement de licence</h3>
+        <span class="muted-text">Activation instantanée Sénégal &amp; Guinée</span>
+      </div>
+      <div class="service-mode-pills">
+        <button type="button" class="service-pill ${state.checkoutMethod === 'wave' ? 'active' : ''}" data-sub-method="wave">Wave Mobile</button>
+        <button type="button" class="service-pill ${state.checkoutMethod === 'orange_money' ? 'active' : ''}" data-sub-method="orange_money">Orange Money</button>
+        <button type="button" class="service-pill ${state.checkoutMethod === 'card_visa_uba' ? 'active' : ''}" data-sub-method="card_visa_uba">Carte Visa / UBA</button>
+      </div>
+    </div>
+
+    <div class="pricing-grid">
+      ${plans
+        .map((plan) => {
+          const price = getPlanPriceInCurrency(plan, state.billingCycle, cur);
+          const highlights = plan.features?.highlights || [];
+          const isRec = Boolean(plan.features?.recommended);
+          const isCurrent = sub?.plan_id === plan.id && sub?.status === 'active';
+          return `<div class="pricing-card ${isRec ? 'is-recommended' : ''}">
+            <div class="section-head" style="margin-bottom:0;">
+              <h3>${esc(plan.name)}</h3>
+              ${isCurrent ? '<span class="status-pill status-open">Plan Actif</span>' : isRec ? '<span class="status-pill status-info">Recommandé</span>' : ''}
+            </div>
+            <p class="muted-text">${esc(plan.description || '')}</p>
+            <div>
+              <div class="pricing-price">${esc(fmtMoney(price, cur))}</div>
+              <span class="muted-text">${isYearly ? 'par an' : 'par mois'}</span>
+            </div>
+            <ul class="pricing-features">
+              ${highlights.map((h) => `<li>${esc(h)}</li>`).join('')}
+            </ul>
+            <button type="button" class="btn ${isRec ? 'btn-primary' : 'btn-outline'} btn-full" data-subscribe-plan="${esc(plan.id)}" data-plan-name="${esc(plan.name)}" data-plan-price="${price}">
+              ${isCurrent ? 'Renouveler la licence' : 'Souscrire maintenant'}
+            </button>
+          </div>`;
+        })
+        .join('')}
+    </div>
+  `;
+}
+
+function bindSubscription() {
+  document.querySelectorAll('[data-bill-cycle]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.billingCycle = btn.dataset.billCycle;
+      renderRoute();
+    });
+  });
+
+  document.querySelectorAll('[data-sub-method]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.checkoutMethod = btn.dataset.subMethod;
+      renderRoute();
+    });
+  });
+
+  document.getElementById('company-settings-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const res = await apiFetch('/api/subscriptions/company-settings', {
+        method: 'PUT',
+        body: {
+          name: document.getElementById('set-comp-name').value,
+          currency: document.getElementById('set-comp-currency').value,
+          defaultTaxRate: parseFloat(document.getElementById('set-comp-tax').value || '0'),
+          allowNegativeStock: document.getElementById('set-comp-neg').checked,
+        },
+      });
+      state.company = res.data;
+      showToast(`Devise (${res.data.currency}) et paramètres mis à jour`, 'success');
+      await refreshAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.querySelectorAll('[data-subscribe-plan]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const planId = btn.dataset.subscribePlan;
+      const planName = btn.dataset.planName;
+      const price = Number(btn.dataset.planPrice || 0);
+      const cur = CURRENCY();
+      const methodNames = {
+        wave: 'Wave Mobile',
+        orange_money: 'Orange Money',
+        card_visa_uba: 'Carte Bancaire (Visa / UBA)',
+      };
+
+      openModal(
+        `Souscription • ${planName}`,
+        `
+          <form id="sub-checkout-form" class="form-stack">
+            <div class="summary-lines">
+              <div class="summary-line"><span>Formule</span><strong>${esc(planName)} (${state.billingCycle === 'yearly' ? 'Annuel' : 'Mensuel'})</strong></div>
+              <div class="summary-line"><span>Mode choisi</span><strong>${esc(methodNames[state.checkoutMethod] || state.checkoutMethod)}</strong></div>
+              <div class="summary-line summary-total"><span>Total à régler</span><span class="mono">${esc(fmtMoney(price, cur))}</span></div>
+            </div>
+            <div class="field">
+              <label>${state.checkoutMethod === 'card_visa_uba' ? '4 derniers chiffres carte / Réf. autorisation' : 'Numéro téléphone Wave / Orange Money'}</label>
+              <input id="sub-payer-ref" required placeholder="+221 77 ... ou +224 62 ..." />
+            </div>
+            <button type="submit" class="btn btn-success btn-full">Confirmer et activer ma licence</button>
+          </form>
+        `
+      );
+
+      document.getElementById('sub-checkout-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+          const res = await apiFetch('/api/subscriptions/checkout', {
+            method: 'POST',
+            body: {
+              planId,
+              billingPeriod: state.billingCycle,
+              paymentMethod: state.checkoutMethod,
+              payerReference: document.getElementById('sub-payer-ref').value,
+            },
+          });
+          closeModal();
+          showToast(`Licence activée (${res.data.licenseReference}) !`, 'success');
+          await refreshAllData();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
     });
   });
 }
@@ -1969,6 +2920,36 @@ async function init() {
 
   document.getElementById('btn-refresh-all')?.addEventListener('click', () => refreshAllData());
   document.getElementById('btn-demo-quickstart')?.addEventListener('click', runQuickDemo);
+
+  document.getElementById('btn-forgot-password')?.addEventListener('click', () => {
+    openModal(
+      'Mot de passe oublié ?',
+      `
+        <form id="forgot-password-form" class="form-stack">
+          <p class="muted-text">Saisissez l'adresse e-mail de votre compte gérant pour recevoir un lien sécurisé de réinitialisation.</p>
+          <div class="field">
+            <label>Adresse e-mail professionnelle</label>
+            <input id="forgot-email" type="email" required placeholder="chef@monresto.sn" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Envoyer les instructions</button>
+        </form>
+      `
+    );
+    document.getElementById('forgot-password-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const res = await apiFetch('/api/auth/forgot-password', {
+          skipAuth: true,
+          method: 'POST',
+          body: { email: document.getElementById('forgot-email').value },
+        });
+        closeModal();
+        showToast(res.message || 'Instructions envoyées par e-mail', 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
 
   document.getElementById('btn-logout')?.addEventListener('click', async () => {
     try {

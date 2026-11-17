@@ -10,6 +10,7 @@ import { salesRouter } from './modules/sales/sales.router.js';
 import { purchasesRouter } from './modules/purchases/purchases.router.js';
 import { inventoryRouter } from './modules/inventory/inventory.router.js';
 import { cashRouter } from './modules/cash/cash.router.js';
+import { subscriptionsRouter } from './modules/subscriptions/subscriptions.router.js';
 import { errorHandler } from './middlewares/error-handler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -50,6 +51,7 @@ const apiInfoPayload = () => ({
     '/api/purchases',
     '/api/inventory',
     '/api/cash',
+    '/api/subscriptions',
   ],
 });
 
@@ -90,6 +92,7 @@ app.use('/api/sales', salesRouter);
 app.use('/api/purchases', purchasesRouter);
 app.use('/api/inventory', inventoryRouter);
 app.use('/api/cash', cashRouter);
+app.use('/api/subscriptions', subscriptionsRouter);
 
 // Gestionnaire global d'erreurs
 app.use(errorHandler);
