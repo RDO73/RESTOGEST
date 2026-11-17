@@ -346,7 +346,9 @@ async function refreshAllData() {
     apiFetch('/api/qr/options'),
     apiFetch('/api/qr/orders?limit=60'),
     apiFetch(`/api/qr/analytics?period=${encodeURIComponent(state.qrAnalyticsPeriod || 'month')}`),
-    apiFetch('/api/subscriptions/admin/overview'),
+    apiFetch(
+      `/api/subscriptions/admin/overview?period=${encodeURIComponent(state.saasAdminFilters?.period || 'all')}&countryCode=${encodeURIComponent(state.saasAdminFilters?.countryCode || '')}&currency=${encodeURIComponent(state.saasAdminFilters?.currency || '')}&provider=${encodeURIComponent(state.saasAdminFilters?.provider || '')}&reportingCurrency=${encodeURIComponent(state.saasAdminFilters?.reportingCurrency || 'XOF')}`
+    ),
   ]);
 
   const val = (idx, fallback = null) =>
@@ -574,21 +576,20 @@ function renderDashboard() {
           <table class="responsive-table">
             <thead><tr><th>Produit</th><th>Stock</th><th>Seuil</th><th>Niveau</th></tr></thead>
             <tbody>
-              ${
-                state.alerts.length === 0
-                  ? '<tr><td colspan="4" class="muted-text">Aucune alerte de stock bas.</td></tr>'
-                  : state.alerts
-                      .slice(0, 6)
-                      .map(
-                        (a) => `<tr>
+              ${state.alerts.length === 0
+      ? '<tr><td colspan="4" class="muted-text">Aucune alerte de stock bas.</td></tr>'
+      : state.alerts
+        .slice(0, 6)
+        .map(
+          (a) => `<tr>
                           <td data-label="Produit"><strong>${esc(a.product_name)}</strong></td>
                           <td data-label="Stock" class="mono">${esc(fmtQty(a.current_quantity))} ${esc(a.unit)}</td>
                           <td data-label="Seuil" class="mono">${esc(fmtQty(a.min_stock_alert))}</td>
                           <td data-label="Niveau"><span class="status-pill ${a.alert_level === 'critical_out_of_stock' ? 'status-critical' : 'status-pending'}">${a.alert_level === 'critical_out_of_stock' ? 'Rupture' : 'Stock bas'}</span></td>
                         </tr>`
-                      )
-                      .join('')
-              }
+        )
+        .join('')
+    }
             </tbody>
           </table>
         </div>
@@ -603,22 +604,21 @@ function renderDashboard() {
           <table class="responsive-table">
             <thead><tr><th>Facture</th><th>Service / Table</th><th>Montant</th><th>Statut</th></tr></thead>
             <tbody>
-              ${
-                state.sales.length === 0
-                  ? '<tr><td colspan="4" class="muted-text">Aucune commande enregistrée.</td></tr>'
-                  : state.sales
-                      .slice(0, 6)
-                      .map((s) => {
-                        const m = parseSaleMeta(s.notes);
-                        return `<tr>
+              ${state.sales.length === 0
+      ? '<tr><td colspan="4" class="muted-text">Aucune commande enregistrée.</td></tr>'
+      : state.sales
+        .slice(0, 6)
+        .map((s) => {
+          const m = parseSaleMeta(s.notes);
+          return `<tr>
                           <td data-label="Facture" class="mono"><strong>${esc(s.invoice_number)}</strong></td>
                           <td data-label="Service">${esc(serviceModeSummary(m))}</td>
                           <td data-label="Montant" class="mono">${esc(fmtMoney(s.total_amount, cur))}</td>
                           <td data-label="Statut">${statusBadge(s.status)}</td>
                         </tr>`;
-                      })
-                      .join('')
-              }
+        })
+        .join('')
+    }
             </tbody>
           </table>
         </div>
@@ -700,25 +700,25 @@ function renderTables() {
         <h3>Plan de Salle Visuel</h3>
         <div class="category-strip" style="margin:0;padding:0;">
           ${['all', 'Salle', 'Terrasse', 'Comptoir']
-            .map(
-              (z) =>
-                `<button type="button" class="cat-chip ${state.tableZone === z ? 'active' : ''}" data-table-zone="${z}">${z === 'all' ? 'Toutes les zones' : z}</button>`
-            )
-            .join('')}
+      .map(
+        (z) =>
+          `<button type="button" class="cat-chip ${state.tableZone === z ? 'active' : ''}" data-table-zone="${z}">${z === 'all' ? 'Toutes les zones' : z}</button>`
+      )
+      .join('')}
         </div>
       </div>
 
       <div class="floor-grid">
         ${visibleTables
-          .map((t) => {
-            const entry = byTable.get(t.code);
-            const isBill = entry?.meta.tableState === 'bill_requested';
-            const cardCls = !entry ? 'is-free' : isBill ? 'is-bill' : 'is-occupied';
-            const statusText = !entry ? 'Libre' : isBill ? 'Addition en cours' : 'Occupée';
-            const pillCls = !entry ? 'status-open' : isBill ? 'status-info' : 'status-pending';
-            const amount = entry ? parseFloat(entry.sale.total_amount || 0) : 0;
+      .map((t) => {
+        const entry = byTable.get(t.code);
+        const isBill = entry?.meta.tableState === 'bill_requested';
+        const cardCls = !entry ? 'is-free' : isBill ? 'is-bill' : 'is-occupied';
+        const statusText = !entry ? 'Libre' : isBill ? 'Addition en cours' : 'Occupée';
+        const pillCls = !entry ? 'status-open' : isBill ? 'status-info' : 'status-pending';
+        const amount = entry ? parseFloat(entry.sale.total_amount || 0) : 0;
 
-            return `<div class="table-card ${cardCls}">
+        return `<div class="table-card ${cardCls}">
               <div>
                 <div class="table-card-head">
                   <div>
@@ -727,33 +727,30 @@ function renderTables() {
                   </div>
                   <span class="status-pill ${pillCls}">${esc(statusText)}</span>
                 </div>
-                ${
-                  entry
-                    ? `<div style="margin-top:10px;">
+                ${entry
+            ? `<div style="margin-top:10px;">
                         <div class="table-card-amount">${esc(fmtMoney(amount, cur))}</div>
                         <div class="muted-text mono" style="font-size:11px;">${esc(entry.sale.invoice_number)} • ${esc(entry.sale.total_items_count || 0)} art.</div>
                       </div>`
-                    : `<div class="muted-text" style="margin-top:12px;">Prête pour de nouveaux clients</div>`
-                }
+            : `<div class="muted-text" style="margin-top:12px;">Prête pour de nouveaux clients</div>`
+          }
               </div>
 
               <div class="table-card-actions">
-                ${
-                  !entry
-                    ? `<button type="button" class="btn btn-success btn-sm btn-full" data-open-table="${esc(t.code)}">Ouvrir la table</button>`
-                    : `
+                ${!entry
+            ? `<button type="button" class="btn btn-success btn-sm btn-full" data-open-table="${esc(t.code)}">Ouvrir la table</button>`
+            : `
                       <button type="button" class="btn btn-primary btn-sm" data-pos-table-sale="${esc(entry.sale.id)}" style="flex:1;">+ Commander / Encaisser</button>
-                      ${
-                        !isBill
-                          ? `<button type="button" class="btn btn-outline btn-sm" data-bill-table="${esc(entry.sale.id)}">Addition</button>`
-                          : `<button type="button" class="btn btn-whatsapp btn-sm" data-wa-sale="${esc(entry.sale.id)}">WhatsApp</button>`
-                      }
+                      ${!isBill
+              ? `<button type="button" class="btn btn-outline btn-sm" data-bill-table="${esc(entry.sale.id)}">Addition</button>`
+              : `<button type="button" class="btn btn-whatsapp btn-sm" data-wa-sale="${esc(entry.sale.id)}">WhatsApp</button>`
+            }
                     `
-                }
+          }
               </div>
             </div>`;
-          })
-          .join('')}
+      })
+      .join('')}
       </div>
     </div>
   `;
@@ -963,32 +960,31 @@ function renderPos() {
           <div class="category-strip">
             <button type="button" class="cat-chip ${!state.posFilter.categoryId ? 'active' : ''}" data-pos-cat="">Tous (${state.products.length})</button>
             ${state.categories
-              .map(
-                (c) => `<button type="button" class="cat-chip ${state.posFilter.categoryId === c.id ? 'active' : ''}" data-pos-cat="${esc(c.id)}">${esc(c.name)}</button>`
-              )
-              .join('')}
+      .map(
+        (c) => `<button type="button" class="cat-chip ${state.posFilter.categoryId === c.id ? 'active' : ''}" data-pos-cat="${esc(c.id)}">${esc(c.name)}</button>`
+      )
+      .join('')}
           </div>
 
-          ${
-            filteredProducts.length === 0
-              ? '<p class="muted-text">Aucun produit trouvé. Ajoutez des articles depuis Catalogue.</p>'
-              : `<div class="product-grid">
+          ${filteredProducts.length === 0
+      ? '<p class="muted-text">Aucun produit trouvé. Ajoutez des articles depuis Catalogue.</p>'
+      : `<div class="product-grid">
                   ${filteredProducts
-                    .map((p) => {
-                      const inCartQty = qtyByProduct.get(p.id) || 0;
-                      const tileCls =
-                        p.inventory_tracking === 'recipe_on_sale'
-                          ? 'is-recipe'
-                          : p.inventory_tracking === 'none'
-                            ? 'is-service'
-                            : '';
-                      const stockText =
-                        p.inventory_tracking === 'none'
-                          ? 'Service'
-                          : p.inventory_tracking === 'recipe_on_sale'
-                            ? 'Recette'
-                            : `${fmtQty(p.current_stock)} ${p.unit}`;
-                      return `<button class="product-tile ${tileCls}" type="button" data-pos-add="${esc(p.id)}">
+        .map((p) => {
+          const inCartQty = qtyByProduct.get(p.id) || 0;
+          const tileCls =
+            p.inventory_tracking === 'recipe_on_sale'
+              ? 'is-recipe'
+              : p.inventory_tracking === 'none'
+                ? 'is-service'
+                : '';
+          const stockText =
+            p.inventory_tracking === 'none'
+              ? 'Service'
+              : p.inventory_tracking === 'recipe_on_sale'
+                ? 'Recette'
+                : `${fmtQty(p.current_stock)} ${p.unit}`;
+          return `<button class="product-tile ${tileCls}" type="button" data-pos-add="${esc(p.id)}">
                         ${inCartQty > 0 ? `<span class="product-tile-badge">${esc(fmtQty(inCartQty))}</span>` : ''}
                         <span class="product-tile-name">${esc(p.name)}</span>
                         <div>
@@ -999,21 +995,20 @@ function renderPos() {
                           </div>
                         </div>
                       </button>`;
-                    })
-                    .join('')}
+        })
+        .join('')}
                 </div>`
-          }
+    }
         </div>
 
-        ${
-          sale && totalCartItems > 0
-            ? `<div class="mobile-pos-jump">
+        ${sale && totalCartItems > 0
+      ? `<div class="mobile-pos-jump">
                 <button id="btn-mobile-jump-ticket" type="button" class="btn btn-primary btn-full" style="box-shadow: var(--shadow-md);">
                   Voir ticket (${esc(fmtQty(totalCartItems))} art.) • ${esc(fmtMoney(summary.total, cur))}
                 </button>
               </div>`
-            : ''
-        }
+      : ''
+    }
 
         <div class="card">
           <div class="section-head">
@@ -1024,14 +1019,13 @@ function renderPos() {
             <table class="responsive-table">
               <thead><tr><th>Facture</th><th>Service</th><th>Total</th><th>Statut</th><th>Actions</th></tr></thead>
               <tbody>
-                ${
-                  state.sales.length === 0
-                    ? '<tr><td colspan="5" class="muted-text">Aucune commande enregistrée.</td></tr>'
-                    : state.sales
-                        .slice(0, 15)
-                        .map((s) => {
-                          const sMeta = parseSaleMeta(s.notes);
-                          return `<tr>
+                ${state.sales.length === 0
+      ? '<tr><td colspan="5" class="muted-text">Aucune commande enregistrée.</td></tr>'
+      : state.sales
+        .slice(0, 15)
+        .map((s) => {
+          const sMeta = parseSaleMeta(s.notes);
+          return `<tr>
                             <td data-label="Facture" class="mono"><strong>${esc(s.invoice_number)}</strong></td>
                             <td data-label="Service">${esc(serviceModeSummary(sMeta))}</td>
                             <td data-label="Total" class="mono">${esc(fmtMoney(s.total_amount, cur))}</td>
@@ -1040,22 +1034,20 @@ function renderPos() {
                               <div class="toolbar" style="justify-content:flex-end;">
                                 <button class="btn btn-outline btn-sm" data-select-sale="${esc(s.id)}" type="button">Ouvrir</button>
                                 <button class="btn btn-whatsapp btn-sm" data-wa-sale="${esc(s.id)}" type="button">WhatsApp</button>
-                                ${
-                                  s.status === 'completed'
-                                    ? `<button class="btn btn-outline btn-sm" data-receipt-sale="${esc(s.id)}" type="button">Ticket</button>`
-                                    : ''
-                                }
-                                ${
-                                  s.status !== 'cancelled'
-                                    ? `<button class="btn btn-danger btn-sm" data-cancel-sale="${esc(s.id)}" type="button">Annuler</button>`
-                                    : ''
-                                }
+                                ${s.status === 'completed'
+              ? `<button class="btn btn-outline btn-sm" data-receipt-sale="${esc(s.id)}" type="button">Ticket</button>`
+              : ''
+            }
+                                ${s.status !== 'cancelled'
+              ? `<button class="btn btn-danger btn-sm" data-cancel-sale="${esc(s.id)}" type="button">Annuler</button>`
+              : ''
+            }
                               </div>
                             </td>
                           </tr>`;
-                        })
-                        .join('')
-                }
+        })
+        .join('')
+    }
               </tbody>
             </table>
           </div>
@@ -1069,52 +1061,46 @@ function renderPos() {
             <span class="muted-text">${sale ? `${statusBadge(sale.status)} • ${esc(serviceModeSummary(meta))}` : 'Touchez un article'}</span>
           </div>
           <div class="toolbar">
-            ${
-              sale
-                ? `<button class="btn btn-whatsapp btn-sm" data-wa-sale="${esc(sale.id)}" type="button">WhatsApp</button>`
-                : ''
-            }
-            ${
-              sale && sale.status === 'completed'
-                ? `<button class="btn btn-outline btn-sm" data-receipt-sale="${esc(sale.id)}" type="button">Reçu</button>`
-                : ''
-            }
+            ${sale
+      ? `<button class="btn btn-whatsapp btn-sm" data-wa-sale="${esc(sale.id)}" type="button">WhatsApp</button>`
+      : ''
+    }
+            ${sale && sale.status === 'completed'
+      ? `<button class="btn btn-outline btn-sm" data-receipt-sale="${esc(sale.id)}" type="button">Reçu</button>`
+      : ''
+    }
           </div>
         </div>
 
-        ${
-          !state.cashCurrent
-            ? `<div class="alert-callout">
+        ${!state.cashCurrent
+      ? `<div class="alert-callout">
                 <span>Caisse fermée : requise pour espèces.</span>
                 <button id="btn-pos-open-cash" type="button" class="btn btn-amber btn-sm">Ouvrir</button>
               </div>`
-            : ''
-        }
+      : ''
+    }
 
-        ${
-          !sale
-            ? '<p class="muted-text">Touchez un produit sur la carte ou ouvrez une table depuis le Plan de Salle.</p>'
-            : `
-              ${
-                sale.status === 'pending'
-                  ? `<div class="delivery-box">
+        ${!sale
+      ? '<p class="muted-text">Touchez un produit sur la carte ou ouvrez une table depuis le Plan de Salle.</p>'
+      : `
+              ${sale.status === 'pending'
+        ? `<div class="delivery-box">
                       <div class="service-mode-pills">
                         <button type="button" class="service-pill ${meta.serviceMode === 'dine_in' ? 'active' : ''}" data-service-mode="dine_in">Sur place</button>
                         <button type="button" class="service-pill ${meta.serviceMode === 'takeaway' ? 'active' : ''}" data-service-mode="takeaway">À emporter</button>
                         <button type="button" class="service-pill ${meta.serviceMode === 'delivery' ? 'active' : ''}" data-service-mode="delivery">Livraison</button>
                       </div>
 
-                      ${
-                        meta.serviceMode === 'dine_in'
-                          ? `<div class="field-row">
+                      ${meta.serviceMode === 'dine_in'
+          ? `<div class="field-row">
                               <div class="field">
                                 <label>Table attribuée</label>
                                 <select id="pos-table-select">
                                   <option value="">Comptoir / Libre</option>
                                   ${FLOOR_TABLES.map(
-                                    (t) =>
-                                      `<option value="${esc(t.code)}" ${meta.tableCode === t.code ? 'selected' : ''}>${esc(t.name)} (${esc(t.zone)})</option>`
-                                  ).join('')}
+            (t) =>
+              `<option value="${esc(t.code)}" ${meta.tableCode === t.code ? 'selected' : ''}>${esc(t.name)} (${esc(t.zone)})</option>`
+          ).join('')}
                                 </select>
                               </div>
                               <div class="field">
@@ -1125,7 +1111,7 @@ function renderPos() {
                                 </select>
                               </div>
                             </div>`
-                          : `<form id="pos-delivery-form" class="form-stack" style="gap:8px;">
+          : `<form id="pos-delivery-form" class="form-stack" style="gap:8px;">
                               <div class="field-row">
                                 <div class="field">
                                   <label>Client</label>
@@ -1136,9 +1122,8 @@ function renderPos() {
                                   <input id="deliv-phone" class="input-inline" placeholder="+221 77 000 00 00" value="${esc(meta.customerPhone)}" />
                                 </div>
                               </div>
-                              ${
-                                meta.serviceMode === 'delivery'
-                                  ? `<div class="field-row">
+                              ${meta.serviceMode === 'delivery'
+            ? `<div class="field-row">
                                       <div class="field">
                                         <label>Zone / Quartier</label>
                                         <input id="deliv-zone" class="input-inline" placeholder="Ex: Almadies / Kaloum" value="${esc(meta.deliveryZone)}" />
@@ -1152,64 +1137,59 @@ function renderPos() {
                                       <label>Livreur assigné</label>
                                       <input id="deliv-courier" class="input-inline" placeholder="Ex: Moussa (Moto 2)" value="${esc(meta.courierName)}" />
                                     </div>`
-                                  : ''
-                              }
+            : ''
+          }
                               <div class="toolbar">
                                 <button type="submit" class="btn btn-outline btn-sm">Enregistrer infos</button>
-                                ${
-                                  meta.serviceMode === 'delivery'
-                                    ? `<button id="btn-add-deliv-fee" type="button" class="btn btn-amber btn-sm">+ Ajouter frais au ticket</button>`
-                                    : ''
-                                }
+                                ${meta.serviceMode === 'delivery'
+            ? `<button id="btn-add-deliv-fee" type="button" class="btn btn-amber btn-sm">+ Ajouter frais au ticket</button>`
+            : ''
+          }
                               </div>
                             </form>`
-                      }
+        }
                     </div>`
-                  : ''
-              }
+        : ''
+      }
 
               <div>
-                ${
-                  (sale.items || []).length === 0
-                    ? '<p class="muted-text">Ticket vide — touchez un produit pour l\'ajouter.</p>'
-                    : sale.items
-                        .map(
-                          (it) => `<div class="ticket-item">
+                ${(sale.items || []).length === 0
+        ? '<p class="muted-text">Ticket vide — touchez un produit pour l\'ajouter.</p>'
+        : sale.items
+          .map(
+            (it) => `<div class="ticket-item">
                             <div class="ticket-item-info">
                               <div class="ticket-item-name">${esc(it.product_name)}</div>
                               <div class="muted-text mono">${esc(fmtMoney(it.unit_price, cur))} / ${esc(it.unit)}</div>
                             </div>
                             <div class="toolbar">
-                              ${
-                                sale.status === 'pending'
-                                  ? `<div class="qty-stepper">
+                              ${sale.status === 'pending'
+                ? `<div class="qty-stepper">
                                       <button type="button" class="qty-btn" data-step-item="${esc(it.id)}" data-prod="${esc(it.product_id)}" data-qty="${esc(it.quantity)}" data-price="${esc(it.unit_price)}" data-delta="-1">−</button>
                                       <span class="qty-val">${esc(fmtQty(it.quantity))}</span>
                                       <button type="button" class="qty-btn" data-step-item="${esc(it.id)}" data-prod="${esc(it.product_id)}" data-qty="${esc(it.quantity)}" data-price="${esc(it.unit_price)}" data-delta="1">+</button>
                                     </div>`
-                                  : `<span class="mono">x${esc(fmtQty(it.quantity))}</span>`
-                              }
+                : `<span class="mono">x${esc(fmtQty(it.quantity))}</span>`
+              }
                               <span class="mono" style="min-width:74px;text-align:right;"><strong>${esc(fmtMoney(it.subtotal, cur))}</strong></span>
-                              ${
-                                sale.status === 'pending'
-                                  ? `<button class="btn btn-danger btn-sm" data-del-sale-item="${esc(it.id)}" type="button" aria-label="Retirer">&times;</button>`
-                                  : ''
-                              }
+                              ${sale.status === 'pending'
+                ? `<button class="btn btn-danger btn-sm" data-del-sale-item="${esc(it.id)}" type="button" aria-label="Retirer">&times;</button>`
+                : ''
+              }
                             </div>
                           </div>`
-                        )
-                        .join('')
-                }
+          )
+          .join('')
+      }
               </div>
 
-              ${
-                sale.status === 'pending'
-                  ? `<form id="sale-discount-form" class="toolbar">
+              ${sale.status === 'pending'
+        ? `<form id="sale-discount-form" class="toolbar">
                       <input id="sale-discount-input" class="input-inline" type="number" step="0.01" min="0" value="${esc(summary.discount)}" placeholder="Remise" style="flex:1;" />
                       <button type="submit" class="btn btn-outline">Appliquer remise</button>
                     </form>`
-                  : ''
-              }
+        : ''
+      }
 
               <div class="summary-lines">
                 <div class="summary-line"><span>Sous-total</span><span class="mono">${esc(fmtMoney(summary.subtotal, cur))}</span></div>
@@ -1220,27 +1200,25 @@ function renderPos() {
                 <div class="summary-line"><span>Reste dû</span><span class="mono" style="color:var(--primary)"><strong>${esc(fmtMoney(summary.remaining, cur))}</strong></span></div>
               </div>
 
-              ${
-                (sale.payments || []).length > 0
-                  ? `<div class="muted-text" style="font-size:12px;">
+              ${(sale.payments || []).length > 0
+        ? `<div class="muted-text" style="font-size:12px;">
                       <strong>Règlements :</strong>
                       ${sale.payments
-                        .map((p) => `<div>• ${esc(methodLabel(p.payment_method, p.reference))} : <span class="mono">${esc(fmtMoney(p.amount, cur))}</span></div>`)
-                        .join('')}
+          .map((p) => `<div>• ${esc(methodLabel(p.payment_method, p.reference))} : <span class="mono">${esc(fmtMoney(p.amount, cur))}</span></div>`)
+          .join('')}
                     </div>`
-                  : ''
-              }
+        : ''
+      }
 
-              ${
-                sale.status === 'pending'
-                  ? `<form id="sale-payment-form" class="form-stack">
+              ${sale.status === 'pending'
+        ? `<form id="sale-payment-form" class="form-stack">
                       <div class="field">
                         <label>Mode de règlement (Sénégal / Guinée)</label>
                         <div class="method-pills">
                           ${PAYMENT_CHANNELS.map(
-                            (ch) =>
-                              `<button type="button" class="method-pill ${state.payChannel === ch.id ? 'active' : ''}" data-pay-channel="${ch.id}">${esc(ch.label)}</button>`
-                          ).join('')}
+          (ch) =>
+            `<button type="button" class="method-pill ${state.payChannel === ch.id ? 'active' : ''}" data-pay-channel="${ch.id}">${esc(ch.label)}</button>`
+        ).join('')}
                         </div>
                       </div>
                       <div class="field">
@@ -1254,12 +1232,12 @@ function renderPos() {
                         </button>
                       </div>
                     </form>`
-                  : `<button type="button" class="btn btn-whatsapp btn-full" data-wa-sale="${esc(sale.id)}">
+        : `<button type="button" class="btn btn-whatsapp btn-full" data-wa-sale="${esc(sale.id)}">
                       Générer Récap WhatsApp
                     </button>`
-              }
+      }
             `
-        }
+    }
       </div>
     </div>
   `;
@@ -1285,13 +1263,13 @@ async function openQuickReceipt(saleId) {
           </div>
           <hr/>
           ${r.items
-            .map(
-              (it) => `<div style="display:flex;justify-content:space-between;margin:4px 0;">
+        .map(
+          (it) => `<div style="display:flex;justify-content:space-between;margin:4px 0;">
                 <span>${esc(fmtQty(it.quantity))}x ${esc(it.productName)}</span>
                 <span>${esc(fmtMoney(it.subtotal, cur))}</span>
               </div>`
-            )
-            .join('')}
+        )
+        .join('')}
           <hr/>
           <div style="display:flex;justify-content:space-between;"><span>Sous-total</span><span>${esc(fmtMoney(r.totals.subtotal, cur))}</span></div>
           <div style="display:flex;justify-content:space-between;"><span>Remise</span><span>-${esc(fmtMoney(r.totals.discountAmount, cur))}</span></div>
@@ -1300,13 +1278,13 @@ async function openQuickReceipt(saleId) {
           <hr/>
           <div><strong>Règlements :</strong></div>
           ${r.payments
-            .map(
-              (p) => `<div style="display:flex;justify-content:space-between;">
+        .map(
+          (p) => `<div style="display:flex;justify-content:space-between;">
                 <span>${esc(methodLabel(p.method, p.reference))}</span>
                 <span>${esc(fmtMoney(p.amount, cur))}</span>
               </div>`
-            )
-            .join('')}
+        )
+        .join('')}
         </div>
         <div class="toolbar" style="margin-top:14px;justify-content:flex-end;">
           <button id="btn-receipt-whatsapp" type="button" class="btn btn-whatsapp">Générer Récap WhatsApp</button>
@@ -1670,9 +1648,8 @@ function renderCatalog() {
       <button class="subtab ${sub === 'recipes' ? 'active' : ''}" data-cat-tab="recipes" type="button">Recettes (${state.recipes.length})</button>
     </div>
 
-    ${
-      sub === 'products'
-        ? `<div class="two-col">
+    ${sub === 'products'
+      ? `<div class="two-col">
             <div class="card">
               <div class="section-head"><h3>Nouveau produit</h3></div>
               <form id="product-create-form" class="form-stack">
@@ -1738,32 +1715,30 @@ function renderCatalog() {
                 <table class="responsive-table">
                   <thead><tr><th>Nom</th><th>Suivi</th><th>Prix Vente</th><th>PMP</th><th>Stock</th></tr></thead>
                   <tbody>
-                    ${
-                      state.products.length === 0
-                        ? '<tr><td colspan="5" class="muted-text">Aucun produit enregistré.</td></tr>'
-                        : state.products
-                            .map(
-                              (p) => `<tr>
+                    ${state.products.length === 0
+        ? '<tr><td colspan="5" class="muted-text">Aucun produit enregistré.</td></tr>'
+        : state.products
+          .map(
+            (p) => `<tr>
                                 <td data-label="Produit"><strong>${esc(p.name)}</strong><div class="muted-text" style="font-size:11px;">${esc(p.category_name || '—')}</div></td>
                                 <td data-label="Suivi"><span class="status-pill status-neutral">${esc(p.inventory_tracking)}</span></td>
                                 <td data-label="Prix Vente" class="mono">${esc(fmtMoney(p.selling_price, cur))}</td>
                                 <td data-label="PMP" class="mono">${esc(fmtMoney(p.cost_price, cur))}</td>
                                 <td data-label="Stock" class="mono">${p.inventory_tracking === 'none' ? '—' : esc(fmtQty(p.current_stock) + ' ' + p.unit)}</td>
                               </tr>`
-                            )
-                            .join('')
-                    }
+          )
+          .join('')
+      }
                   </tbody>
                 </table>
               </div>
             </div>
           </div>`
-        : ''
+      : ''
     }
 
-    ${
-      sub === 'categories'
-        ? `<div class="two-col">
+    ${sub === 'categories'
+      ? `<div class="two-col">
             <div class="card">
               <div class="section-head"><h3>Nouvelle catégorie</h3></div>
               <form id="category-create-form" class="form-stack">
@@ -1784,24 +1759,22 @@ function renderCatalog() {
                 <table class="responsive-table">
                   <thead><tr><th>Nom</th><th>Description</th></tr></thead>
                   <tbody>
-                    ${
-                      state.categories.length === 0
-                        ? '<tr><td colspan="2" class="muted-text">Aucune catégorie.</td></tr>'
-                        : state.categories
-                            .map((c) => `<tr><td data-label="Nom"><strong>${esc(c.name)}</strong></td><td data-label="Description">${esc(c.description || '—')}</td></tr>`)
-                            .join('')
-                    }
+                    ${state.categories.length === 0
+        ? '<tr><td colspan="2" class="muted-text">Aucune catégorie.</td></tr>'
+        : state.categories
+          .map((c) => `<tr><td data-label="Nom"><strong>${esc(c.name)}</strong></td><td data-label="Description">${esc(c.description || '—')}</td></tr>`)
+          .join('')
+      }
                   </tbody>
                 </table>
               </div>
             </div>
           </div>`
-        : ''
+      : ''
     }
 
-    ${
-      sub === 'recipes'
-        ? `<div class="two-col">
+    ${sub === 'recipes'
+      ? `<div class="two-col">
             <div class="card">
               <div class="section-head"><h3>Nouvelle fiche recette</h3></div>
               <form id="recipe-create-form" class="form-stack">
@@ -1833,25 +1806,24 @@ function renderCatalog() {
 
             <div class="card">
               <div class="section-head"><h3>Fiches techniques actives</h3></div>
-              ${
-                state.recipes.length === 0
-                  ? '<p class="muted-text">Aucune fiche technique enregistrée.</p>'
-                  : state.recipes
-                      .map(
-                        (r) => `<div style="padding:12px 0;border-bottom:1px solid var(--border);">
+              ${state.recipes.length === 0
+        ? '<p class="muted-text">Aucune fiche technique enregistrée.</p>'
+        : state.recipes
+          .map(
+            (r) => `<div style="padding:12px 0;border-bottom:1px solid var(--border);">
                           <strong>${esc(r.product_name)}</strong> — <span class="muted-text">${esc(r.recipe_name)} (pour ${esc(fmtQty(r.output_quantity))})</span>
                           <ul style="margin:6px 0 0;padding-left:18px;font-size:12px;color:var(--text-secondary);">
                             ${(r.ingredients || [])
-                              .map((ing) => `<li>${esc(ing.ingredientName)} : <span class="mono">${esc(fmtQty(ing.quantityRequired))} ${esc(ing.unit)}</span></li>`)
-                              .join('')}
+                .map((ing) => `<li>${esc(ing.ingredientName)} : <span class="mono">${esc(fmtQty(ing.quantityRequired))} ${esc(ing.unit)}</span></li>`)
+                .join('')}
                           </ul>
                         </div>`
-                      )
-                      .join('')
-              }
+          )
+          .join('')
+      }
             </div>
           </div>`
-        : ''
+      : ''
     }
   `;
 }
@@ -1992,9 +1964,9 @@ function renderInventory() {
             <select id="adj-product" required>
               <option value="">Sélectionner un produit...</option>
               ${state.products
-                .filter((p) => p.inventory_tracking === 'direct')
-                .map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (actuel: ${esc(fmtQty(p.current_stock))} ${esc(p.unit)})</option>`)
-                .join('')}
+      .filter((p) => p.inventory_tracking === 'direct')
+      .map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (actuel: ${esc(fmtQty(p.current_stock))} ${esc(p.unit)})</option>`)
+      .join('')}
             </select>
           </div>
           <div class="field-row">
@@ -2025,21 +1997,20 @@ function renderInventory() {
           <table class="responsive-table">
             <thead><tr><th>Produit</th><th>Type</th><th>Delta</th><th>Notes</th></tr></thead>
             <tbody>
-              ${
-                state.movements.length === 0
-                  ? '<tr><td colspan="4" class="muted-text">Aucun mouvement enregistré.</td></tr>'
-                  : state.movements
-                      .slice(0, 10)
-                      .map(
-                        (m) => `<tr>
+              ${state.movements.length === 0
+      ? '<tr><td colspan="4" class="muted-text">Aucun mouvement enregistré.</td></tr>'
+      : state.movements
+        .slice(0, 10)
+        .map(
+          (m) => `<tr>
                           <td data-label="Produit"><strong>${esc(m.product_name)}</strong></td>
                           <td data-label="Type"><span class="status-pill status-info">${esc(m.movement_type)}</span></td>
                           <td data-label="Delta" class="mono">${parseFloat(m.quantity_delta) > 0 ? '+' : ''}${esc(fmtQty(m.quantity_delta))} ${esc(m.unit)}</td>
                           <td data-label="Notes" class="muted-text">${esc(m.notes || m.source_type || '—')}</td>
                         </tr>`
-                      )
-                      .join('')
-              }
+        )
+        .join('')
+    }
             </tbody>
           </table>
         </div>
@@ -2061,26 +2032,24 @@ function renderInventory() {
         <table class="responsive-table">
           <thead><tr><th>Produit</th><th>Quantité</th><th>Seuil alerte</th><th>PMP</th><th>Valorisation</th><th>Statut</th></tr></thead>
           <tbody>
-            ${
-              filtered.length === 0
-                ? '<tr><td colspan="6" class="muted-text">Aucun niveau de stock enregistré.</td></tr>'
-                : filtered
-                    .map(
-                      (lv) => `<tr>
+            ${filtered.length === 0
+      ? '<tr><td colspan="6" class="muted-text">Aucun niveau de stock enregistré.</td></tr>'
+      : filtered
+        .map(
+          (lv) => `<tr>
                         <td data-label="Produit"><strong>${esc(lv.product_name)}</strong></td>
                         <td data-label="Quantité" class="mono">${esc(fmtQty(lv.current_quantity))} ${esc(lv.unit)}</td>
                         <td data-label="Seuil" class="mono">${esc(fmtQty(lv.min_stock_alert))}</td>
                         <td data-label="PMP" class="mono">${esc(fmtMoney(lv.pmp, cur))}</td>
                         <td data-label="Valorisation" class="mono">${esc(fmtMoney(lv.stock_valuation, cur))}</td>
-                        <td data-label="Statut">${
-                          lv.is_low_stock
-                            ? '<span class="status-pill status-critical">Alerte</span>'
-                            : '<span class="status-pill status-open">OK</span>'
-                        }</td>
+                        <td data-label="Statut">${lv.is_low_stock
+              ? '<span class="status-pill status-critical">Alerte</span>'
+              : '<span class="status-pill status-open">OK</span>'
+            }</td>
                       </tr>`
-                    )
-                    .join('')
-            }
+        )
+        .join('')
+    }
           </tbody>
         </table>
       </div>
@@ -2136,9 +2105,8 @@ function renderPurchases() {
       <button class="subtab ${sub === 'suppliers' ? 'active' : ''}" data-purch-tab="suppliers" type="button">Fournisseurs (${state.suppliers.length})</button>
     </div>
 
-    ${
-      sub === 'orders'
-        ? `<div class="two-col">
+    ${sub === 'orders'
+      ? `<div class="two-col">
             <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
               <div class="card">
                 <div class="section-head"><h3>Nouvelle commande fournisseur</h3></div>
@@ -2170,21 +2138,20 @@ function renderPurchases() {
                   <table class="responsive-table">
                     <thead><tr><th>Réf.</th><th>Fournisseur</th><th>Total</th><th>Statut</th><th>Action</th></tr></thead>
                     <tbody>
-                      ${
-                        state.purchases.length === 0
-                          ? '<tr><td colspan="5" class="muted-text">Aucune commande d\'achat.</td></tr>'
-                          : state.purchases
-                              .map(
-                                (p) => `<tr>
+                      ${state.purchases.length === 0
+        ? '<tr><td colspan="5" class="muted-text">Aucune commande d\'achat.</td></tr>'
+        : state.purchases
+          .map(
+            (p) => `<tr>
                                   <td data-label="Référence" class="mono"><strong>${esc(p.reference)}</strong></td>
                                   <td data-label="Fournisseur">${esc(p.supplier_name || '—')}</td>
                                   <td data-label="Total" class="mono">${esc(fmtMoney(p.total_amount, cur))}</td>
                                   <td data-label="Statut">${statusBadge(p.status)}</td>
                                   <td data-label="Action"><button class="btn btn-outline btn-sm" data-open-purch="${esc(p.id)}" type="button">Gérer</button></td>
                                 </tr>`
-                              )
-                              .join('')
-                      }
+          )
+          .join('')
+      }
                     </tbody>
                   </table>
                 </div>
@@ -2196,49 +2163,45 @@ function renderPurchases() {
                 <h3>${ap ? `Commande ${esc(ap.reference)}` : 'Détail commande'}</h3>
                 ${ap ? statusBadge(ap.status) : ''}
               </div>
-              ${
-                !ap
-                  ? '<p class="muted-text">Sélectionnez ou créez une commande pour y ajouter des articles et la réceptionner (calcul du PMP).</p>'
-                  : `
+              ${!ap
+        ? '<p class="muted-text">Sélectionnez ou créez une commande pour y ajouter des articles et la réceptionner (calcul du PMP).</p>'
+        : `
                     <p class="muted-text" style="margin-bottom:12px;">Fournisseur : <strong>${esc(ap.supplier_name || 'Non spécifié')}</strong> • Total : <strong class="mono">${esc(fmtMoney(ap.total_amount, cur))}</strong></p>
                     <div class="table-wrap" style="margin-bottom:14px;">
                       <table class="responsive-table">
                         <thead><tr><th>Produit</th><th>Qté</th><th>Coût unit.</th><th>Sous-total</th><th></th></tr></thead>
                         <tbody>
-                          ${
-                            (ap.items || []).length === 0
-                              ? '<tr><td colspan="5" class="muted-text">Aucune ligne ajoutée.</td></tr>'
-                              : ap.items
-                                  .map(
-                                    (it) => `<tr>
+                          ${(ap.items || []).length === 0
+          ? '<tr><td colspan="5" class="muted-text">Aucune ligne ajoutée.</td></tr>'
+          : ap.items
+            .map(
+              (it) => `<tr>
                                       <td data-label="Produit"><strong>${esc(it.product_name)}</strong></td>
                                       <td data-label="Qté" class="mono">${esc(fmtQty(it.quantity))} ${esc(it.unit)}</td>
                                       <td data-label="Coût unit." class="mono">${esc(fmtMoney(it.unit_cost, cur))}</td>
                                       <td data-label="Sous-total" class="mono">${esc(fmtMoney(it.subtotal, cur))}</td>
-                                      <td data-label="Action">${
-                                        ap.status === 'ordered' || ap.status === 'draft'
-                                          ? `<button class="btn btn-danger btn-sm" data-del-purch-item="${esc(it.id)}" type="button">&times;</button>`
-                                          : '—'
-                                      }</td>
+                                      <td data-label="Action">${ap.status === 'ordered' || ap.status === 'draft'
+                  ? `<button class="btn btn-danger btn-sm" data-del-purch-item="${esc(it.id)}" type="button">&times;</button>`
+                  : '—'
+                }</td>
                                     </tr>`
-                                  )
-                                  .join('')
-                          }
+            )
+            .join('')
+        }
                         </tbody>
                       </table>
                     </div>
 
-                    ${
-                      ap.status === 'ordered' || ap.status === 'draft'
-                        ? `<form id="purch-add-item-form" class="form-stack" style="margin-bottom:14px;">
+                    ${ap.status === 'ordered' || ap.status === 'draft'
+          ? `<form id="purch-add-item-form" class="form-stack" style="margin-bottom:14px;">
                             <div class="field">
                               <label>Ajouter un article</label>
                               <select id="purch-item-prod" required>
                                 <option value="">Choisir un produit...</option>
                                 ${state.products
-                                  .filter((p) => p.inventory_tracking === 'direct')
-                                  .map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (${esc(p.unit)})</option>`)
-                                  .join('')}
+            .filter((p) => p.inventory_tracking === 'direct')
+            .map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (${esc(p.unit)})</option>`)
+            .join('')}
                               </select>
                             </div>
                             <div class="field-row">
@@ -2251,13 +2214,13 @@ function renderPurchases() {
                             <button id="btn-receive-purch" type="button" class="btn btn-success" ${(ap.items || []).length === 0 ? 'disabled' : ''}>Réceptionner (PMP + Stock)</button>
                             <button id="btn-cancel-purch" type="button" class="btn btn-danger">Annuler</button>
                           </div>`
-                        : '<p class="muted-text">Commande clôturée — ses lignes sont verrouillées et immuables.</p>'
-                    }
+          : '<p class="muted-text">Commande clôturée — ses lignes sont verrouillées et immuables.</p>'
+        }
                   `
-              }
+      }
             </div>
           </div>`
-        : `<div class="two-col">
+      : `<div class="two-col">
             <div class="card">
               <div class="section-head"><h3>Nouveau fournisseur</h3></div>
               <form id="supplier-create-form" class="form-stack">
@@ -2276,20 +2239,19 @@ function renderPurchases() {
                 <table class="responsive-table">
                   <thead><tr><th>Nom</th><th>Contact</th><th>Cmd reçues</th><th>Total achats</th></tr></thead>
                   <tbody>
-                    ${
-                      state.suppliers.length === 0
-                        ? '<tr><td colspan="4" class="muted-text">Aucun fournisseur.</td></tr>'
-                        : state.suppliers
-                            .map(
-                              (s) => `<tr>
+                    ${state.suppliers.length === 0
+        ? '<tr><td colspan="4" class="muted-text">Aucun fournisseur.</td></tr>'
+        : state.suppliers
+          .map(
+            (s) => `<tr>
                                 <td data-label="Nom"><strong>${esc(s.name)}</strong></td>
                                 <td data-label="Contact" class="muted-text">${esc(s.phone || s.email || '—')}</td>
                                 <td data-label="Cmd reçues" class="mono">${esc(s.total_orders_count)}</td>
                                 <td data-label="Total achats" class="mono">${esc(fmtMoney(s.total_spend, cur))}</td>
                               </tr>`
-                            )
-                            .join('')
-                    }
+          )
+          .join('')
+      }
                   </tbody>
                 </table>
               </div>
@@ -2513,9 +2475,8 @@ function renderCash() {
   const pb = z?.paymentBreakdown || {};
 
   return `
-    ${
-      !cs
-        ? `<div class="card" style="max-width:520px;">
+    ${!cs
+      ? `<div class="card" style="max-width:520px;">
             <div class="section-head"><h3>Ouvrir une session de caisse</h3></div>
             <p class="muted-text" style="margin-bottom:14px;">Aucune session active. Saisissez le fond de caisse initial pour encaisser et générer votre rapport Z.</p>
             <form id="cash-open-form" class="form-stack">
@@ -2526,7 +2487,7 @@ function renderCash() {
               <button type="submit" class="btn btn-primary">Ouvrir la caisse</button>
             </form>
           </div>`
-        : `<div class="kpi-grid">
+      : `<div class="kpi-grid">
             <div class="card kpi-card">
               <div class="kpi-label">Chiffre d'affaires Net</div>
               <div class="kpi-value">${esc(fmtMoney(z?.netSales || 0, cur))}</div>
@@ -2622,12 +2583,11 @@ function renderCash() {
           <table class="responsive-table">
             <thead><tr><th>Ouverture</th><th>Attendu</th><th>Réel</th><th>Écart</th><th>Statut</th><th></th></tr></thead>
             <tbody>
-              ${
-                state.cashSessions.length === 0
-                  ? '<tr><td colspan="6" class="muted-text">Aucune session.</td></tr>'
-                  : state.cashSessions
-                      .map(
-                        (s) => `<tr>
+              ${state.cashSessions.length === 0
+      ? '<tr><td colspan="6" class="muted-text">Aucune session.</td></tr>'
+      : state.cashSessions
+        .map(
+          (s) => `<tr>
                           <td data-label="Ouverture">${esc(fmtDate(s.opened_at))}</td>
                           <td data-label="Attendu" class="mono">${s.expected_closing_amount !== null ? esc(fmtMoney(s.expected_closing_amount, cur)) : '—'}</td>
                           <td data-label="Réel" class="mono">${s.actual_closing_amount !== null ? esc(fmtMoney(s.actual_closing_amount, cur)) : '—'}</td>
@@ -2635,9 +2595,9 @@ function renderCash() {
                           <td data-label="Statut">${statusBadge(s.status)}</td>
                           <td data-label="Rapport Z"><button class="btn btn-outline btn-sm" data-cash-detail="${esc(s.id)}" type="button">Rapport Z</button></td>
                         </tr>`
-                      )
-                      .join('')
-              }
+        )
+        .join('')
+    }
             </tbody>
           </table>
         </div>
@@ -2649,20 +2609,19 @@ function renderCash() {
           <table class="responsive-table">
             <thead><tr><th>Catégorie</th><th>Montant</th><th>Motif</th><th>Date</th></tr></thead>
             <tbody>
-              ${
-                state.expenses.length === 0
-                  ? '<tr><td colspan="4" class="muted-text">Aucune dépense enregistrée.</td></tr>'
-                  : state.expenses
-                      .map(
-                        (ex) => `<tr>
+              ${state.expenses.length === 0
+      ? '<tr><td colspan="4" class="muted-text">Aucune dépense enregistrée.</td></tr>'
+      : state.expenses
+        .map(
+          (ex) => `<tr>
                           <td data-label="Catégorie"><strong>${esc(ex.category)}</strong></td>
                           <td data-label="Montant" class="mono">${esc(fmtMoney(ex.amount, cur))}</td>
                           <td data-label="Motif">${esc(ex.description)}</td>
                           <td data-label="Date">${esc(fmtDate(ex.created_at))}</td>
                         </tr>`
-                      )
-                      .join('')
-              }
+        )
+        .join('')
+    }
             </tbody>
           </table>
         </div>
@@ -2832,12 +2791,12 @@ function renderSubscription() {
 
     <div class="pricing-grid">
       ${plans
-        .map((plan) => {
-          const price = getPlanPriceInCurrency(plan, state.billingCycle, cur);
-          const highlights = plan.features?.highlights || [];
-          const isRec = Boolean(plan.features?.recommended);
-          const isCurrent = sub?.plan_id === plan.id && sub?.status === 'active';
-          return `<div class="pricing-card ${isRec ? 'is-recommended' : ''}">
+      .map((plan) => {
+        const price = getPlanPriceInCurrency(plan, state.billingCycle, cur);
+        const highlights = plan.features?.highlights || [];
+        const isRec = Boolean(plan.features?.recommended);
+        const isCurrent = sub?.plan_id === plan.id && sub?.status === 'active';
+        return `<div class="pricing-card ${isRec ? 'is-recommended' : ''}">
             <div class="section-head" style="margin-bottom:0;">
               <h3>${esc(plan.name)}</h3>
               ${isCurrent ? '<span class="status-pill status-open">Plan Actif</span>' : isRec ? '<span class="status-pill status-info">Recommandé</span>' : ''}
@@ -2854,8 +2813,8 @@ function renderSubscription() {
               ${isCurrent ? 'Renouveler la licence' : 'Souscrire maintenant'}
             </button>
           </div>`;
-        })
-        .join('')}
+      })
+      .join('')}
     </div>
   `;
 }
@@ -3091,16 +3050,32 @@ async function init() {
     }
   });
 
+  document.getElementById('reg-country')?.addEventListener('change', (e) => {
+    const sel = e.target;
+    const opt = sel.options[sel.selectedIndex];
+    const curInp = document.getElementById('reg-currency');
+    if (curInp && opt?.dataset?.currency) {
+      curInp.value = opt.dataset.currency;
+    }
+  });
+
   document.getElementById('register-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
+      const countrySelect = document.getElementById('reg-country');
+      const countryCode = countrySelect ? countrySelect.value : 'SN';
+      const selectedOpt = countrySelect ? countrySelect.options[countrySelect.selectedIndex] : null;
+      const currency =
+        selectedOpt?.dataset?.currency || document.getElementById('reg-currency')?.value || 'XOF';
+
       const res = await apiFetch('/api/auth/register', {
         skipAuth: true,
         method: 'POST',
         body: {
           companyName: document.getElementById('reg-company').value,
           businessType: document.getElementById('reg-type').value,
-          currency: document.getElementById('reg-currency').value,
+          countryCode,
+          currency,
           fullName: document.getElementById('reg-fullname').value,
           email: document.getElementById('reg-email').value,
           password: document.getElementById('reg-password').value,
@@ -3116,6 +3091,25 @@ async function init() {
   });
 
   await loadHealth();
+
+  // Charger dynamiquement les pays africains pour l'inscription
+  try {
+    const pubRes = await apiFetch('/api/subscriptions/plans/public', { skipAuth: true, ignoreUnauthorized: true });
+    const countries = pubRes?.data?.countries || [];
+    const countrySel = document.getElementById('reg-country');
+    if (countrySel && countries.length > 0) {
+      countrySel.innerHTML = countries
+        .map(
+          (c) =>
+            `<option value="${esc(c.code)}" data-currency="${esc(c.currency_code)}">${esc(c.name)} (${esc(c.currency_code)} • ${esc(c.dial_code)})</option>`
+        )
+        .join('');
+      const curInp = document.getElementById('reg-currency');
+      if (curInp) curInp.value = countries[0].currency_code || 'XOF';
+    }
+  } catch {
+    // fallback to static options
+  }
 
   if (getToken()) {
     try {

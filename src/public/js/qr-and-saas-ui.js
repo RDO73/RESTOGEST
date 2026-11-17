@@ -1463,10 +1463,14 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
   const sub = state.subscriptionData?.subscription;
   const plans = state.subscriptionData?.plans || [];
   const settings = state.subscriptionData?.settings || {};
-  const transactions = state.subscriptionData?.transactions || [];
+  const countries = state.subscriptionData?.countries || [];
+  const selectedCountry = state.subscriptionData?.selectedCountry || { code: settings.country || 'SN', name: 'Sénégal', currency_code: cur };
+  const countryMethods = state.subscriptionData?.countryPaymentMethods || [];
+  const receptionAccounts = state.subscriptionData?.countryReceptionAccounts || [];
   const invoices = state.subscriptionData?.invoices || [];
-  const merch = state.subscriptionData?.merchantPaymentInfo || {};
+  const transactions = state.subscriptionData?.transactions || [];
   const cycle = state.billingCycle || 'monthly';
+  const activeCountryCode = selectedCountry.code || 'SN';
 
   const cycleLabels = {
     monthly: 'Mensuel (1 mois)',
@@ -1480,14 +1484,15 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
       <div>
         <div class="brand-badge" style="margin-bottom:8px;">
           <span class="brand-dot"></span>
-          <span>Abonnement &amp; Licence SaaS RestoGest</span>
+          <span>Abonnement &amp; Licence SaaS RestoGest Afrique</span>
         </div>
         <h3 style="margin:0 0 4px;font-family:var(--font-display);font-size:20px;">
           ${sub ? esc(sub.plan_name || sub.plan_code) : 'Essai Gratuit Cloud'} — ${statusBadge(sub?.status || 'trial')}
         </h3>
         <p style="margin:0;color:#cbd5e1;font-size:13px;">
           Établissement : <strong>${esc(state.company?.name || 'Mon Établissement')}</strong>
-          • Devise : <strong>${esc(cur)}</strong>
+          • Pays : <strong>${esc(selectedCountry.name)} (${esc(activeCountryCode)})</strong>
+          • Devise : <strong>${esc(selectedCountry.currency_code || cur)}</strong>
           • Jours restants : <strong>${sub?.daysRemaining ?? 14} j</strong>
           ${sub?.current_period_end ? ` • Échéance : ${esc(fmtDate(sub.current_period_end))}` : ''}
         </p>
@@ -1507,7 +1512,17 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
     <div class="pricing-grid" style="margin-bottom:20px;">
       ${plans
         .map((plan) => {
-          const { basePrice, setupFee } = computeClientPlanPrice(plan, cycle, cur);
+          const pInfo = plan.pricingByPeriod?.[cycle] || null;
+          const hasOfficial = Boolean(pInfo?.hasOfficialLocalPrice);
+          const isEstimate = Boolean(pInfo?.isEstimate);
+          const displayCurrency = hasOfficial ? pInfo.currencyCode : isEstimate ? pInfo.currencyCode : 'XOF';
+          const displayPrice = hasOfficial
+            ? pInfo.officialLocalPrice
+            : isEstimate
+              ? pInfo.estimatedLocalPrice
+              : pInfo?.referencePriceXof ?? computeClientPlanPrice(plan, cycle, 'XOF').basePrice;
+          const setupFee = pInfo ? pInfo.setupFee : 0;
+
           const features = Array.isArray(plan.features) ? plan.features : [];
           const isPro = plan.code === 'PRO';
           const isCurrent = sub?.plan_code === plan.code && sub?.status === 'active';
@@ -1528,9 +1543,16 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
                 Jusqu'à <strong>${plan.max_users || 10}</strong> utilisateurs • <strong>${plan.max_tables || 50}</strong> tables QR • <strong>${plan.max_locations || 1}</strong> site(s)
               </div>
               <div>
-                <div class="pricing-price">${esc(fmtMoney(basePrice, cur))}</div>
+                <div class="pricing-price">${esc(fmtMoney(displayPrice, displayCurrency))}</div>
                 <span class="muted-text">${esc(cycleLabels[cycle] || cycle)}</span>
-                ${setupFee > 0 ? `<div style="font-size:11px;color:#fdba74;margin-top:2px;">+ Frais d'installation initiale : ${esc(fmtMoney(setupFee, cur))}</div>` : '<div style="font-size:11px;color:#10b981;margin-top:2px;">✓ Installation & mise en service offertes</div>'}
+                ${
+                  hasOfficial
+                    ? `<div style="font-size:11px;color:#10b981;margin-top:2px;">✓ Tarif officiel local (${esc(selectedCountry.name)})</div>`
+                    : isEstimate
+                      ? `<div style="font-size:11px;color:#f59e0b;margin-top:2px;">ℹ️ Estimation indicative (1 XOF ≈ ${esc(pInfo.exchangeRate)} ${esc(displayCurrency)}) — Tarif officiel local à confirmer (Réf. ${esc(fmtMoney(pInfo.referencePriceXof, 'XOF'))})</div>`
+                      : `<div style="font-size:11px;color:#94a3b8;margin-top:2px;">Tarif de référence XOF (tarif local non encore configuré)</div>`
+                }
+                ${setupFee > 0 ? `<div style="font-size:11px;color:#fdba74;margin-top:2px;">+ Frais d'installation initiale : ${esc(fmtMoney(setupFee, displayCurrency))}</div>` : '<div style="font-size:11px;color:#10b981;margin-top:2px;">✓ Installation & mise en service offertes</div>'}
               </div>
               <ul class="pricing-features" style="margin:12px 0;">
                 ${features.map((f) => `<li>${esc(f)}</li>`).join('')}
@@ -1550,24 +1572,25 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
 
     <div class="two-col">
       <div class="card">
-        <div class="section-head"><h3>📄 Mes Factures d'Abonnement (${invoices.length})</h3></div>
+        <div class="section-head"><h3>📄 Mes Factures &amp; Paiements SaaS (${invoices.length} / ${transactions.length})</h3></div>
         <div class="table-wrap">
           <table class="responsive-table">
-            <thead><tr><th>N° Facture</th><th>Formule</th><th>Montant</th><th>Date</th><th>Action</th></tr></thead>
+            <thead><tr><th>Réf.</th><th>Formule</th><th>Montant</th><th>Statut</th><th>Action</th></tr></thead>
             <tbody>
               ${
-                invoices.length === 0
-                  ? '<tr><td colspan="5" class="muted-text">Aucune facture émise pour le moment.</td></tr>'
-                  : invoices
-                      .map(
-                        (inv) => `<tr>
-                          <td class="mono"><strong>${esc(inv.invoice_number)}</strong></td>
-                          <td>${esc(inv.plan_name)} (${esc(inv.billing_period)})</td>
-                          <td class="mono">${esc(fmtMoney(inv.total_amount, inv.currency))}</td>
-                          <td>${esc(fmtDate(inv.issued_at))}</td>
-                          <td><button type="button" class="btn btn-outline btn-sm" data-print-saas-inv="${esc(inv.id)}">🖨️ Facture PDF</button></td>
-                        </tr>`
-                      )
+                transactions.length === 0
+                  ? '<tr><td colspan="5" class="muted-text">Aucune transaction d’abonnement pour le moment.</td></tr>'
+                  : transactions
+                      .map((tx) => {
+                        const inv = invoices.find((i) => i.payment_reference === tx.transaction_ref);
+                        return `<tr>
+                          <td class="mono"><strong>${esc(tx.transaction_ref)}</strong><div class="muted-text" style="font-size:10px;">${esc(fmtDate(tx.created_at))}</div></td>
+                          <td>${esc(tx.plan_code)} (${esc(tx.billing_period)})</td>
+                          <td class="mono">${esc(fmtMoney(tx.gross_amount, tx.currency))}</td>
+                          <td><span class="status-pill ${tx.status === 'confirmed' ? 'status-open' : tx.status === 'pending' ? 'status-pending' : 'status-closed'}">${tx.status === 'pending' ? 'En attente de vérification' : esc(tx.status)}</span></td>
+                          <td>${inv ? `<button type="button" class="btn btn-outline btn-sm" data-print-saas-inv="${esc(inv.id)}">🖨️ Facture</button>` : '<span class="muted-text">—</span>'}</td>
+                        </tr>`;
+                      })
                       .join('')
               }
             </tbody>
@@ -1576,36 +1599,49 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
       </div>
 
       <div class="card">
-        <div class="section-head"><h3>🌍 Paramètres Devises &amp; Pays (Sénégal / Guinée)</h3></div>
+        <div class="section-head"><h3>🌍 Pays de l'établissement &amp; Moyens de paiement autorisés</h3></div>
         <form id="form-sub-company-settings" class="form-stack">
           <div class="field-row">
             <div class="field">
-              <label>Devise de travail</label>
-              <select id="scs-currency">
-                <option value="XOF" ${cur === 'XOF' ? 'selected' : ''}>XOF — Franc CFA (Sénégal / UEMOA)</option>
-                <option value="GNF" ${cur === 'GNF' ? 'selected' : ''}>GNF — Franc Guinéen (Guinée)</option>
+              <label>Pays de facturation (Afrique)</label>
+              <select id="scs-country">
+                ${countries
+                  .map(
+                    (c) =>
+                      `<option value="${esc(c.code)}" data-currency="${esc(c.currency_code)}" ${activeCountryCode === c.code ? 'selected' : ''}>${esc(c.name)} (${esc(c.currency_code)} • ${esc(c.dial_code)})</option>`
+                  )
+                  .join('')}
               </select>
             </div>
             <div class="field">
-              <label>Pays</label>
-              <select id="scs-country">
-                <option value="SN" ${(settings.country || 'SN') === 'SN' ? 'selected' : ''}>🇸🇳 Sénégal</option>
-                <option value="GN" ${settings.country === 'GN' ? 'selected' : ''}>🇬🇳 Guinée</option>
-              </select>
+              <label>Devise officielle associée</label>
+              <input id="scs-currency" readonly value="${esc(selectedCountry.currency_code || cur)}" />
             </div>
           </div>
           <div class="field">
             <label>Numéro WhatsApp du Gérant (Rapports Z &amp; Commandes)</label>
-            <input id="scs-whatsapp" value="${esc(settings.whatsapp_phone || '')}" placeholder="+221 77 000 00 00 ou +224 620 00 00 00" />
+            <input id="scs-whatsapp" value="${esc(settings.whatsapp_phone || '')}" placeholder="${esc(selectedCountry.dial_code || '+221')} ..." />
           </div>
-          <button type="submit" class="btn btn-primary">Mettre à jour la devise &amp; les coordonnées</button>
+          <button type="submit" class="btn btn-primary">Mettre à jour mon pays &amp; devise</button>
         </form>
 
         <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--text-secondary);">
-          <strong>Coordonnées officielles de règlement RESTOGEST :</strong><br/>
-          Wave Business : <span class="mono">${esc(merch.wave_merchant_number || '+221 77 800 10 10')}</span> •
-          Orange Money : <span class="mono">${esc(merch.orange_money_merchant_number || '+221 77 900 20 20')}</span><br/>
-          Banque : ${esc(merch.bank_name || 'UBA / Orabank')} — IBAN : <span class="mono">${esc(merch.bank_iban || 'SN08 0010 2030 4050 6070 8090')}</span>
+          <strong>Moyens de réception disponibles pour ${esc(selectedCountry.name)} (${esc(activeCountryCode)}) :</strong><br/>
+          ${
+            receptionAccounts.length === 0
+              ? '<span class="muted-text">Aucun compte de réception manuel configuré pour ce pays. Utilisez un agrégateur activé ou contactez le support.</span>'
+              : receptionAccounts
+                  .map(
+                    (ra) =>
+                      `<div style="margin-top:6px;">• <strong>${esc(ra.account_label)}</strong> : <span class="mono">${esc(ra.merchant_number_or_iban)}</span> (${esc(ra.currency_code)})</div>`
+                  )
+                  .join('')
+          }
+          ${
+            countryMethods.length > 0
+              ? `<div style="margin-top:8px;">Méthodes actives : ${countryMethods.map((m) => `<span class="status-pill status-neutral" style="margin-right:4px;">${esc(m.method_label)}</span>`).join('')}</div>`
+              : ''
+          }
         </div>
       </div>
     </div>
@@ -1620,18 +1656,30 @@ export function bindSubscriptionModuleV12(state, { cur, openModal, closeModal, r
     });
   });
 
+  document.getElementById('scs-country')?.addEventListener('change', (e) => {
+    const sel = e.target;
+    const opt = sel.options[sel.selectedIndex];
+    const curInp = document.getElementById('scs-currency');
+    if (curInp && opt?.dataset?.currency) {
+      curInp.value = opt.dataset.currency;
+    }
+  });
+
   document.getElementById('form-sub-company-settings')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      const currency = document.getElementById('scs-currency').value;
       const country = document.getElementById('scs-country').value;
+      const currency = document.getElementById('scs-currency').value;
       const whatsappPhone = document.getElementById('scs-whatsapp').value.trim() || null;
-      await apiFetch('/api/subscriptions/settings', {
+      const res = await apiFetch('/api/subscriptions/settings', {
         method: 'PUT',
         body: { currency, country, whatsappPhone },
       });
-      if (state.company) state.company.currency = currency;
-      showToast(`Devise (${currency}) enregistrée avec succès`, 'success');
+      if (state.company) {
+        state.company.currency = res.data.currency;
+        state.company.country_code = res.data.country;
+      }
+      showToast(`Pays (${res.data.country}) et devise (${res.data.currency}) mis à jour`, 'success');
       await refreshAllData();
     } catch (err) {
       showToast(err.message, 'error');
@@ -1656,44 +1704,67 @@ export function bindSubscriptionModuleV12(state, { cur, openModal, closeModal, r
       const plan = plans.find((p) => p.code === planCode);
       if (!plan) return;
 
+      const selectedCountry = state.subscriptionData?.selectedCountry || { code: 'SN', name: 'Sénégal', currency_code: cur };
+      const countryMethods = state.subscriptionData?.countryPaymentMethods || [];
+      const receptionAccounts = state.subscriptionData?.countryReceptionAccounts || [];
       const cycle = state.billingCycle || 'monthly';
-      const { basePrice, setupFee } = computeClientPlanPrice(plan, cycle, cur);
+      const pInfo = plan.pricingByPeriod?.[cycle] || null;
+
+      const effectiveCurrency = pInfo?.hasOfficialLocalPrice ? pInfo.currencyCode : 'XOF';
+      const basePrice = pInfo?.hasOfficialLocalPrice
+        ? pInfo.officialLocalPrice
+        : pInfo?.referencePriceXof ?? computeClientPlanPrice(plan, cycle, 'XOF').basePrice;
+      const setupFee = pInfo ? pInfo.setupFee : 0;
       const total = basePrice + setupFee;
 
+      const methodOptionsHtml =
+        countryMethods.length > 0
+          ? countryMethods
+              .map(
+                (m) =>
+                  `<option value="${esc(m.method_code)}" data-provider="${esc(m.provider_code)}" data-manual="${m.requires_manual_verification ? '1' : '0'}">${esc(m.method_label)}</option>`
+              )
+              .join('')
+          : `<option value="bank_transfer" data-provider="bank_transfer" data-manual="1">🏦 Virement Bancaire / Preuve Manuelle</option>`;
+
       openModal(
-        `Souscription SaaS • ${plan.name}`,
+        `Souscription SaaS • ${plan.name} (${selectedCountry.name})`,
         `<form id="form-saas-wizard" class="form-stack">
           <div class="summary-lines">
-            <div class="summary-line"><span>1. Formule sélectionnée</span><strong>${esc(plan.name)} (${esc(plan.code)})</strong></div>
-            <div class="summary-line"><span>2. Fréquence de facturation</span><strong>${esc(cycle)}</strong></div>
-            <div class="summary-line"><span>3. Prix de l'abonnement</span><span class="mono">${esc(fmtMoney(basePrice, cur))}</span></div>
-            <div class="summary-line"><span>4. Frais d'installation</span><span class="mono">${esc(fmtMoney(setupFee, cur))}</span></div>
-            <div class="summary-line summary-total"><span>Total TTC à régler</span><span class="mono">${esc(fmtMoney(total, cur))}</span></div>
+            <div class="summary-line"><span>1. Pays &amp; Devise</span><strong>${esc(selectedCountry.name)} (${esc(effectiveCurrency)})</strong></div>
+            <div class="summary-line"><span>2. Formule &amp; Périodicité</span><strong>${esc(plan.name)} • ${esc(cycle)}</strong></div>
+            <div class="summary-line"><span>3. Prix du plan</span><span class="mono">${esc(fmtMoney(basePrice, effectiveCurrency))}</span></div>
+            <div class="summary-line"><span>4. Frais d'installation</span><span class="mono">${esc(fmtMoney(setupFee, effectiveCurrency))}</span></div>
+            <div class="summary-line"><span>5. Taxes / Frais supplémentaires</span><span class="mono">0 ${esc(effectiveCurrency)}</span></div>
+            <div class="summary-line summary-total"><span>Total à payer</span><span class="mono">${esc(fmtMoney(total, effectiveCurrency))}</span></div>
           </div>
 
           <div class="field">
-            <label>Moyen de paiement</label>
-            <select id="wiz-pay-method">
-              <option value="wave">🌊 Wave Mobile Money (Activation immédiate)</option>
-              <option value="orange_money">🍊 Orange Money (Activation immédiate)</option>
-              <option value="mtn_momo">💛 MTN MoMo (Activation immédiate)</option>
-              <option value="paydunya">⚡ PayDunya Checkout UEMOA</option>
-              <option value="paytech">⚡ PayTech Sénégal</option>
-              <option value="cinetpay">⚡ CinetPay Afrique</option>
-              <option value="card_visa_uba">💳 Carte Bancaire Visa / Mastercard / UBA</option>
-              <option value="bank_transfer">🏦 Virement Bancaire (Validation manuelle Super-Admin)</option>
-              <option value="manual">🧾 Dépôt avec référence de preuve (Validation Super-Admin)</option>
-            </select>
+            <label>Moyen de paiement disponible (${esc(selectedCountry.name)})</label>
+            <select id="wiz-pay-method">${methodOptionsHtml}</select>
+          </div>
+
+          <div id="wiz-reception-box" style="padding:10px;border-radius:8px;background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.35);font-size:12px;">
+            ${
+              receptionAccounts.length > 0
+                ? receptionAccounts
+                    .map(
+                      (ra) =>
+                        `<div><strong>${esc(ra.account_label)}</strong> : <span class="mono">${esc(ra.merchant_number_or_iban)}</span><div class="muted-text" style="margin-top:2px;">${esc(ra.instructions || '')}</div></div>`
+                    )
+                    .join('<hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin:6px 0;"/>')
+                : '<span>Votre paiement sera vérifié par le serveur ou le Super-Administrateur avant activation.</span>'
+            }
           </div>
 
           <div class="field">
             <label>Téléphone payeur ou contact</label>
-            <input id="wiz-payer-phone" required placeholder="+221 77 000 00 00 ou +224 620 00 00 00" />
+            <input id="wiz-payer-phone" required placeholder="${esc(selectedCountry.dial_code || '+221')} ..." />
           </div>
 
-          <div class="field" id="wiz-manual-ref-wrap" style="display:none;">
-            <label>Référence du transfert / virement (Obligatoire pour paiement manuel)</label>
-            <input id="wiz-manual-ref" placeholder="Ex: VIR-UBA-99281 ou REF-WAVE-112" />
+          <div class="field" id="wiz-manual-ref-wrap">
+            <label>Référence de transaction / virement (Obligatoire pour validation manuelle)</label>
+            <input id="wiz-manual-ref" placeholder="Ex: TX-WAVE-88412 ou VIR-UBA-99281" />
           </div>
 
           <div class="field">
@@ -1702,32 +1773,40 @@ export function bindSubscriptionModuleV12(state, { cur, openModal, closeModal, r
           </div>
 
           <p class="muted-text" style="font-size:11px;">
-            🔒 Sécurité bancaire : RestoGest ne vous demandera jamais votre code secret PIN Mobile Money.
+            🔒 Sécurité bancaire : Votre abonnement n'est activé qu'après confirmation réelle de la réception du paiement.
           </p>
 
-          <button type="submit" class="btn btn-success btn-full">Procéder au règlement &amp; activer la licence</button>
+          <button type="submit" class="btn btn-success btn-full">Soumettre le paiement pour vérification</button>
         </form>`
       );
 
       const methodSel = document.getElementById('wiz-pay-method');
       const manualWrap = document.getElementById('wiz-manual-ref-wrap');
-      methodSel?.addEventListener('change', () => {
-        const isManual = ['bank_transfer', 'manual'].includes(methodSel.value);
+      const syncManualVisibility = () => {
+        const opt = methodSel?.options[methodSel.selectedIndex];
+        const isManual = opt?.dataset?.manual === '1' || ['bank_transfer', 'manual'].includes(methodSel?.value);
         if (manualWrap) manualWrap.style.display = isManual ? 'block' : 'none';
-      });
+      };
+      methodSel?.addEventListener('change', syncManualVisibility);
+      syncManualVisibility();
 
       document.getElementById('form-saas-wizard')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         try {
-          const paymentMethod = document.getElementById('wiz-pay-method').value;
-          const isManual = ['bank_transfer', 'manual'].includes(paymentMethod);
+          const opt = methodSel?.options[methodSel.selectedIndex];
+          const paymentMethod = methodSel.value;
+          const providerCode = opt?.dataset?.provider || null;
+          const isManual = opt?.dataset?.manual === '1' || ['bank_transfer', 'manual'].includes(paymentMethod);
+
           const res = await apiFetch('/api/subscriptions/transactions', {
             method: 'POST',
             body: {
+              countryCode: selectedCountry.code,
               planCode: plan.code,
               billingPeriod: cycle,
               paymentMethod,
-              paymentMode: isManual ? 'manual_proof' : 'instant_gateway',
+              providerCode,
+              paymentMode: isManual ? 'manual_proof' : 'pending_webhook',
               payerPhone: document.getElementById('wiz-payer-phone').value.trim(),
               manualReference: document.getElementById('wiz-manual-ref')?.value.trim() || null,
               promoCode: document.getElementById('wiz-promo')?.value.trim() || null,
@@ -1737,7 +1816,7 @@ export function bindSubscriptionModuleV12(state, { cur, openModal, closeModal, r
           if (res.data.mode === 'confirmed') {
             showToast(`Abonnement ${plan.name} activé et facture générée !`, 'success');
           } else {
-            showToast('Preuve de paiement enregistrée — en attente de validation Super-Admin.', 'info');
+            showToast('Paiement enregistré « En attente de vérification » — activation après contrôle réel.', 'info');
           }
           await refreshAllData();
         } catch (err) {
@@ -1749,7 +1828,7 @@ export function bindSubscriptionModuleV12(state, { cur, openModal, closeModal, r
 }
 
 // -------------------------------------------------------------
-// EXTENSION 2 (SECTIONS 8, 9, 10) : ESPACE SUPER-ADMIN « FINANCES RESTOGEST »
+// EXTENSION 2 + ADDENDUM AFRIQUE : ESPACE SUPER-ADMIN « FINANCES RESTOGEST »
 // -------------------------------------------------------------
 export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
   const overview = state.saasAdminOverview;
@@ -1760,45 +1839,76 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
   }
 
   const k = overview.kpis || {};
+  const mc = overview.multiCurrency || {};
+  const totalsByCurrency = mc.totalsByCurrency || [];
+  const reportingEst = mc.reportingEstimate || {};
+  const revenueByCountry = mc.revenueByCountry || [];
   const transactions = overview.transactions || [];
   const subscriptions = overview.subscriptions || [];
-  const invoices = overview.invoices || [];
   const payouts = overview.payouts || [];
-  const merch = overview.merchantSettings || {};
+  const countries = overview.countries || [];
+  const providers = overview.providers || [];
+  const receptionAccounts = overview.receptionAccounts || [];
+  const countryPlanPrices = overview.countryPlanPrices || [];
+  const exchangeRates = overview.exchangeRates || [];
+  const filters = state.saasAdminFilters || { period: 'all', countryCode: '', currency: '', provider: '', reportingCurrency: 'XOF' };
 
   return `
     <div class="card" style="margin-bottom:16px;border-left:4px solid var(--primary);">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
         <div>
-          <h3 style="margin:0;">🏦 Finances RESTOGEST — Pilotage des Revenus SaaS</h3>
+          <h3 style="margin:0;">🏦 Finances RESTOGEST — Pilotage Multi-Devises &amp; Marché Africain</h3>
           <p class="muted-text" style="margin:4px 0 0;font-size:12px;">
-            Séparation comptable stricte : ces montants concernent exclusivement les abonnements payés par les établissements clients à RESTOGEST.
+            Séparation comptable stricte : chaque devise est suivie séparément (aucune addition brute XOF + GNF + NGN).
           </p>
         </div>
-        <button type="button" id="btn-export-saas-csv" class="btn btn-outline btn-sm">📥 Exporter Transactions (CSV)</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <select id="sa-flt-period" class="input-inline" style="max-width:130px;">
+            <option value="all" ${filters.period === 'all' ? 'selected' : ''}>Toute période</option>
+            <option value="today" ${filters.period === 'today' ? 'selected' : ''}>Aujourd'hui</option>
+            <option value="week" ${filters.period === 'week' ? 'selected' : ''}>7 jours</option>
+            <option value="month" ${filters.period === 'month' ? 'selected' : ''}>Ce mois</option>
+            <option value="year" ${filters.period === 'year' ? 'selected' : ''}>Cette année</option>
+          </select>
+          <select id="sa-flt-country" class="input-inline" style="max-width:140px;">
+            <option value="">Tous les pays</option>
+            ${countries.map((c) => `<option value="${esc(c.code)}" ${filters.countryCode === c.code ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+          </select>
+          <button type="button" id="btn-export-saas-csv" class="btn btn-outline btn-sm">📥 Exporter CSV</button>
+        </div>
       </div>
     </div>
 
     <div class="kpi-grid">
       <div class="card kpi-card">
-        <div class="kpi-label">Encaissé Confirmé (Brut)</div>
-        <div class="kpi-value" style="color:var(--success)">${esc(fmtMoney(k.confirmedGrossRevenue || 0, 'XOF'))}</div>
-        <div class="kpi-foot">${k.confirmedCount || 0} paiement(s) confirmé(s)</div>
+        <div class="kpi-label">Estimation Consolidée (${esc(reportingEst.reportingCurrency || 'XOF')})</div>
+        <div class="kpi-value" style="color:var(--success)">${esc(fmtMoney(reportingEst.consolidatedGross || 0, reportingEst.reportingCurrency || 'XOF'))}</div>
+        <div class="kpi-foot">⚠️ Conversion indicative de reporting • Net : ${esc(fmtMoney(reportingEst.consolidatedNetExpected || 0, reportingEst.reportingCurrency || 'XOF'))}</div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">Revenu Net Attendu (Après frais)</div>
-        <div class="kpi-value" style="color:var(--primary)">${esc(fmtMoney(k.netExpectedRevenue || 0, 'XOF'))}</div>
-        <div class="kpi-foot">Frais prestataires : ${esc(fmtMoney(k.totalProviderFees || 0, 'XOF'))}</div>
+        <div class="kpi-label">Abonnements Actifs / Essai</div>
+        <div class="kpi-value">${k.activeSubscriptionsCount || 0} <span style="font-size:13px;">actifs</span></div>
+        <div class="kpi-foot">Essai: ${k.trialSubscriptionsCount || 0} • En attente: ${k.pendingPaymentCount || 0} • Expirés: ${k.expiredOrSuspendedCount || 0}</div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">Reversements Reçus vs Solde à recevoir</div>
-        <div class="kpi-value">${esc(fmtMoney(k.settledPayoutsTotal || 0, 'XOF'))}</div>
-        <div class="kpi-foot">Non encore reversé : <strong>${esc(fmtMoney(k.unsettledBalance || 0, 'XOF'))}</strong></div>
+        <div class="kpi-label">Transactions Confirmées / Attente</div>
+        <div class="kpi-value">${k.confirmedCount || 0} <span style="font-size:13px;">OK</span> / ${k.pendingCount || 0} <span style="font-size:13px;">att.</span></div>
+        <div class="kpi-foot">Échouées : ${k.failedCount || 0} • MRR réf. : ${esc(fmtMoney(k.mrr || 0, 'XOF'))}</div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">MRR / ARR &amp; Abonnements</div>
-        <div class="kpi-value">${esc(fmtMoney(k.mrr || 0, 'XOF'))} <span style="font-size:12px;">/mois</span></div>
-        <div class="kpi-foot">ARR: ${esc(fmtMoney(k.arr || 0, 'XOF'))} • Actifs: ${k.activeSubscriptionsCount || 0} • Essai: ${k.trialSubscriptionsCount || 0}</div>
+        <div class="kpi-label">Revenus par Devise (Séparés)</div>
+        <div style="font-size:12px;margin-top:6px;">
+          ${
+            totalsByCurrency.length === 0
+              ? '<span class="muted-text">Aucune transaction</span>'
+              : totalsByCurrency
+                  .map(
+                    (t) =>
+                      `<div><strong>${esc(t.currency)}</strong> : ${esc(fmtMoney(t.grossConfirmed, t.currency))} <span class="muted-text">(Net ${esc(fmtMoney(t.netExpected, t.currency))})</span></div>`
+                  )
+                  .join('')
+          }
+        </div>
       </div>
     </div>
 
@@ -1807,27 +1917,58 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
         💳 Paiements &amp; Approbations (${transactions.length})
       </button>
       <button type="button" class="subtab ${subtab === 'subscriptions' ? 'active' : ''}" data-sa-subtab="subscriptions">
-        🏢 Abonnements Clients (${subscriptions.length})
+        🏢 Abonnements (${subscriptions.length})
+      </button>
+      <button type="button" class="subtab ${subtab === 'countries' ? 'active' : ''}" data-sa-subtab="countries">
+        🌍 Pays, Tarifs &amp; Taux
+      </button>
+      <button type="button" class="subtab ${subtab === 'reception' ? 'active' : ''}" data-sa-subtab="reception">
+        🏦 Moyens de réception &amp; Prestataires
       </button>
       <button type="button" class="subtab ${subtab === 'payouts' ? 'active' : ''}" data-sa-subtab="payouts">
-        🏦 Reversements &amp; Comptes Marchands
+        💸 Reversements (${payouts.length})
       </button>
     </div>
 
     ${
       subtab === 'transactions'
         ? `
+          <div class="card" style="margin-bottom:16px;">
+            <div class="section-head"><h3>Revenus par Pays &amp; Devise</h3></div>
+            <div class="table-wrap">
+              <table class="responsive-table">
+                <thead><tr><th>Pays</th><th>Devise</th><th>Confirmés</th><th>Brut</th><th>Net attendu</th></tr></thead>
+                <tbody>
+                  ${
+                    revenueByCountry.length === 0
+                      ? '<tr><td colspan="5" class="muted-text">Aucune donnée sur cette période.</td></tr>'
+                      : revenueByCountry
+                          .map(
+                            (rc) => `<tr>
+                              <td><strong>${esc(rc.country_name)} (${esc(rc.country_code)})</strong></td>
+                              <td>${esc(rc.currency)}</td>
+                              <td class="mono">${rc.confirmed_count}</td>
+                              <td class="mono">${esc(fmtMoney(rc.gross_confirmed, rc.currency))}</td>
+                              <td class="mono">${esc(fmtMoney(rc.net_expected, rc.currency))}</td>
+                            </tr>`
+                          )
+                          .join('')
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div class="card">
             <div class="section-head">
               <h3>Journal des Transactions d'Abonnement SaaS</h3>
-              <span class="muted-text">En attente : ${esc(fmtMoney(k.pendingAmount || 0, 'XOF'))} (${k.pendingCount || 0})</span>
             </div>
             <div class="table-wrap">
               <table class="responsive-table">
                 <thead>
                   <tr>
                     <th>Réf.</th>
-                    <th>Client</th>
+                    <th>Client / Pays</th>
                     <th>Plan</th>
                     <th>Brut / Net</th>
                     <th>Méthode / Réf.</th>
@@ -1843,13 +1984,13 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                           .map(
                             (tx) => `<tr>
                               <td class="mono"><strong>${esc(tx.transaction_ref)}</strong><div class="muted-text" style="font-size:10px;">${esc(fmtDate(tx.created_at))}</div></td>
-                              <td><strong>${esc(tx.company_name)}</strong><div class="muted-text" style="font-size:11px;">${esc(tx.payer_phone || tx.company_email || '')}</div></td>
+                              <td><strong>${esc(tx.company_name)}</strong><div class="muted-text" style="font-size:11px;">${esc(tx.country_code || 'SN')} • ${esc(tx.payer_phone || '')}</div></td>
                               <td>${esc(tx.plan_code)} (${esc(tx.billing_period)})</td>
                               <td class="mono">
                                 <strong>${esc(fmtMoney(tx.gross_amount, tx.currency))}</strong>
                                 <div class="muted-text" style="font-size:10px;">Net: ${esc(fmtMoney(tx.net_expected_amount, tx.currency))}</div>
                               </td>
-                              <td>${esc(tx.payment_method)} ${tx.manual_reference ? `<div class="mono" style="font-size:10px;color:#fdba74;">Réf: ${esc(tx.manual_reference)}</div>` : ''}</td>
+                              <td>${esc(tx.payment_method)} (${esc(tx.payment_provider)}) ${tx.manual_reference ? `<div class="mono" style="font-size:10px;color:#fdba74;">Réf: ${esc(tx.manual_reference)}</div>` : ''}</td>
                               <td><span class="status-pill ${tx.status === 'confirmed' ? 'status-open' : tx.status === 'pending' ? 'status-pending' : 'status-closed'}">${esc(tx.status)}</span></td>
                               <td>
                                 ${
@@ -1858,7 +1999,9 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                                         <button type="button" class="btn btn-success btn-sm" data-sa-confirm-tx="${esc(tx.id)}">✓ Valider</button>
                                         <button type="button" class="btn btn-danger btn-sm" data-sa-reject-tx="${esc(tx.id)}">✕ Rejeter</button>
                                       </div>`
-                                    : '<span class="muted-text">Verrouillée</span>'
+                                    : tx.status === 'confirmed'
+                                      ? `<button type="button" class="btn btn-outline btn-sm" data-sa-refund-tx="${esc(tx.id)}">↩️ Rembourser</button>`
+                                      : '<span class="muted-text">—</span>'
                                 }
                               </td>
                             </tr>`
@@ -1883,17 +2026,19 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                 <thead>
                   <tr>
                     <th>Établissement</th>
+                    <th>Pays / Devise</th>
                     <th>Formule</th>
                     <th>Statut</th>
                     <th>Fin de période</th>
-                    <th>Action Administrative (Auditée)</th>
+                    <th>Action (Auditée)</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${subscriptions
                     .map(
                       (s) => `<tr>
-                        <td><strong>${esc(s.company_name)}</strong><div class="muted-text" style="font-size:11px;">${esc(s.company_email || '')}</div></td>
+                        <td><strong>${esc(s.company_name)}</strong></td>
+                        <td>${esc(s.country_code || 'SN')} (${esc(s.company_currency || 'XOF')})</td>
                         <td>${esc(s.plan_name || s.plan_code)} (${esc(s.billing_period)})</td>
                         <td>${statusBadge(s.status)}</td>
                         <td>${esc(fmtDate(s.current_period_end))}</td>
@@ -1914,59 +2059,72 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
     }
 
     ${
-      subtab === 'payouts'
+      subtab === 'countries'
         ? `
           <div class="two-col">
             <div class="card">
-              <div class="section-head"><h3>Enregistrer un Reversement Reçu (Payout)</h3></div>
-              <form id="form-sa-create-payout" class="form-stack">
+              <div class="section-head"><h3>Définir un Tarif Officiel Local par Pays</h3></div>
+              <form id="form-sa-country-price" class="form-stack">
                 <div class="field-row">
                   <div class="field">
-                    <label>Prestataire source</label>
-                    <input id="po-provider" required value="PayDunya / Wave Business" />
+                    <label>Pays</label>
+                    <select id="cp-country">
+                      ${countries.map((c) => `<option value="${esc(c.code)}" data-cur="${esc(c.currency_code)}">${esc(c.name)} (${esc(c.currency_code)})</option>`).join('')}
+                    </select>
                   </div>
                   <div class="field">
-                    <label>Compte récepteur RESTOGEST</label>
-                    <input id="po-dest" required value="${esc(merch.bank_name || 'Compte UBA RESTOGEST')}" />
+                    <label>Devise</label>
+                    <input id="cp-currency" required value="XOF" />
                   </div>
                 </div>
                 <div class="field-row">
                   <div class="field">
-                    <label>Montant brut collecté (XOF)</label>
-                    <input id="po-gross" type="number" min="1" required placeholder="100000" />
+                    <label>Plan</label>
+                    <select id="cp-plan">
+                      <option value="ESSENTIEL">ESSENTIEL</option>
+                      <option value="PRO">PRO</option>
+                      <option value="ENTREPRISE">ENTREPRISE</option>
+                    </select>
                   </div>
                   <div class="field">
-                    <label>Frais retenus (XOF)</label>
-                    <input id="po-fees" type="number" min="0" value="0" />
+                    <label>Périodicité</label>
+                    <select id="cp-period">
+                      <option value="monthly">Mensuel</option>
+                      <option value="quarterly">Trimestriel</option>
+                      <option value="semiannual">Semestriel</option>
+                      <option value="yearly">Annuel</option>
+                    </select>
                   </div>
                 </div>
-                <div class="field">
-                  <label>Notes / Référence bordereau bancaire</label>
-                  <input id="po-notes" placeholder="Ex: Virement hebdomadaire PayDunya #882" />
+                <div class="field-row">
+                  <div class="field">
+                    <label>Prix local officiel</label>
+                    <input id="cp-price" type="number" min="0" required placeholder="29000" />
+                  </div>
+                  <div class="field">
+                    <label>Frais d'installation</label>
+                    <input id="cp-setup" type="number" min="0" value="0" />
+                  </div>
                 </div>
-                <button type="submit" class="btn btn-primary">Enregistrer le reversement effectif</button>
+                <button type="submit" class="btn btn-primary">Enregistrer ce tarif local</button>
               </form>
 
               <div style="margin-top:16px;">
-                <h4>Historique des reversements (${payouts.length})</h4>
-                <div class="table-wrap">
+                <h4>Tarifs locaux actifs (${countryPlanPrices.length})</h4>
+                <div class="table-wrap" style="max-height:260px;overflow:auto;">
                   <table class="responsive-table">
-                    <thead><tr><th>Réf.</th><th>Source → Compte</th><th>Net Reçu</th><th>Statut</th></tr></thead>
+                    <thead><tr><th>Pays</th><th>Plan</th><th>Période</th><th>Prix Local</th></tr></thead>
                     <tbody>
-                      ${
-                        payouts.length === 0
-                          ? '<tr><td colspan="4" class="muted-text">Aucun reversement enregistré.</td></tr>'
-                          : payouts
-                              .map(
-                                (p) => `<tr>
-                                  <td class="mono">${esc(p.payout_ref)}</td>
-                                  <td>${esc(p.payment_provider)} → ${esc(p.destination_account)}</td>
-                                  <td class="mono"><strong>${esc(fmtMoney(p.net_settled_amount, p.currency))}</strong></td>
-                                  <td><span class="status-pill status-open">${esc(p.status)}</span></td>
-                                </tr>`
-                              )
-                              .join('')
-                      }
+                      ${countryPlanPrices
+                        .map(
+                          (cp) => `<tr>
+                            <td>${esc(cp.country_code)}</td>
+                            <td>${esc(cp.plan_code)}</td>
+                            <td>${esc(cp.billing_period)}</td>
+                            <td class="mono">${esc(fmtMoney(cp.local_price, cp.currency_code))}</td>
+                          </tr>`
+                        )
+                        .join('')}
                     </tbody>
                   </table>
                 </div>
@@ -1974,40 +2132,195 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
             </div>
 
             <div class="card">
-              <div class="section-head"><h3>Coordonnées Marchand du Propriétaire RESTOGEST</h3></div>
-              <form id="form-sa-merchant-settings" class="form-stack">
+              <div class="section-head"><h3>Taux de Change Indicatifs (Base XOF)</h3></div>
+              <form id="form-sa-exchange-rate" class="form-stack">
                 <div class="field-row">
                   <div class="field">
-                    <label>Raison sociale</label>
-                    <input id="ms-legal" required value="${esc(merch.legal_name || '')}" />
+                    <label>Devise cible (ISO 4217)</label>
+                    <input id="er-target" required placeholder="GNF, NGN, GHS, KES..." />
                   </div>
                   <div class="field">
-                    <label>Email facturation</label>
-                    <input id="ms-email" value="${esc(merch.support_email || '')}" />
+                    <label>Taux (1 XOF = ?)</label>
+                    <input id="er-rate" type="number" step="0.000001" min="0.000001" required placeholder="15" />
                   </div>
                 </div>
-                <div class="field-row">
-                  <div class="field">
-                    <label>Numéro Marchand Wave</label>
-                    <input id="ms-wave" value="${esc(merch.wave_merchant_number || '')}" />
-                  </div>
-                  <div class="field">
-                    <label>Numéro Marchand Orange Money</label>
-                    <input id="ms-om" value="${esc(merch.orange_money_merchant_number || '')}" />
-                  </div>
+                <div class="field">
+                  <label>Source du taux</label>
+                  <input id="er-source" required value="BCEAO / Mise à jour Super-Admin" />
                 </div>
-                <div class="field-row">
-                  <div class="field">
-                    <label>Banque réceptrice</label>
-                    <input id="ms-bank" value="${esc(merch.bank_name || '')}" />
-                  </div>
-                  <div class="field">
-                    <label>IBAN / RIB</label>
-                    <input id="ms-iban" value="${esc(merch.bank_iban || '')}" />
-                  </div>
-                </div>
-                <button type="submit" class="btn btn-primary">Mettre à jour les comptes récepteurs</button>
+                <button type="submit" class="btn btn-primary">Mettre à jour le taux &amp; journaliser</button>
               </form>
+
+              <div style="margin-top:16px;">
+                <h4>Taux configurés (${exchangeRates.length})</h4>
+                <div class="table-wrap">
+                  <table class="responsive-table">
+                    <thead><tr><th>Paire</th><th>Taux</th><th>Source</th><th>Mise à jour</th></tr></thead>
+                    <tbody>
+                      ${exchangeRates
+                        .map(
+                          (er) => `<tr>
+                            <td class="mono"><strong>${esc(er.base_currency)} → ${esc(er.target_currency)}</strong></td>
+                            <td class="mono">${esc(er.rate)}</td>
+                            <td>${esc(er.source)}</td>
+                            <td>${esc(fmtDate(er.updated_at))}</td>
+                          </tr>`
+                        )
+                        .join('')}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        `
+        : ''
+    }
+
+    ${
+      subtab === 'reception'
+        ? `
+          <div class="two-col">
+            <div class="card">
+              <div class="section-head"><h3>📱 Moyens de réception RestoGest</h3></div>
+              <div class="table-wrap" style="margin-bottom:16px;">
+                <table class="responsive-table">
+                  <thead><tr><th>Pays</th><th>Compte</th><th>Numéro / IBAN</th><th>Statut</th></tr></thead>
+                  <tbody>
+                    ${receptionAccounts
+                      .map(
+                        (ra) => `<tr>
+                          <td><strong>${esc(ra.country_code)}</strong> (${esc(ra.currency_code)})</td>
+                          <td>${esc(ra.account_label)}</td>
+                          <td class="mono"><strong>${esc(ra.merchant_number_or_iban)}</strong></td>
+                          <td><span class="status-pill status-pending">${esc(ra.verification_status)}</span></td>
+                        </tr>`
+                      )
+                      .join('')}
+                  </tbody>
+                </table>
+              </div>
+
+              <form id="form-sa-reception-account" class="form-stack">
+                <div class="field-row">
+                  <div class="field">
+                    <label>Pays</label>
+                    <select id="ra-country">
+                      ${countries.map((c) => `<option value="${esc(c.code)}" data-cur="${esc(c.currency_code)}">${esc(c.name)}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Devise</label>
+                    <input id="ra-currency" required value="XOF" />
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label>Prestataire / Méthode</label>
+                    <input id="ra-provider" required placeholder="wave, orange_money, bank_transfer" />
+                  </div>
+                  <div class="field">
+                    <label>Numéro Marchand ou IBAN</label>
+                    <input id="ra-number" required placeholder="+221788979342" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Libellé du compte</label>
+                  <input id="ra-label" required placeholder="Compte Marchand RestoGest" />
+                </div>
+                <button type="submit" class="btn btn-primary">Ajouter / Mettre à jour ce compte de réception</button>
+              </form>
+            </div>
+
+            <div class="card">
+              <div class="section-head"><h3>🔌 Adaptateurs &amp; Prestataires de Paiement</h3></div>
+              <div class="table-wrap">
+                <table class="responsive-table">
+                  <thead><tr><th>Prestataire</th><th>Mode / Clés Env</th><th>Statut</th><th>Action</th></tr></thead>
+                  <tbody>
+                    ${providers
+                      .map(
+                        (p) => `<tr>
+                          <td><strong>${esc(p.name)}</strong><div class="muted-text" style="font-size:11px;">${esc(p.settlement_delay_label)}</div></td>
+                          <td>${esc(p.mode)} • ${p.isEnvConfigured ? '<span style="color:#10b981;">Clés OK</span>' : '<span style="color:#f59e0b;">Clés manquantes</span>'}</td>
+                          <td><span class="status-pill ${p.is_active ? 'status-open' : 'status-closed'}">${p.is_active ? 'Actif' : 'Inactif'}</span></td>
+                          <td>
+                            <button type="button" class="btn btn-outline btn-sm" data-sa-toggle-provider="${esc(p.code)}" data-curr-active="${p.is_active ? '1' : '0'}">
+                              ${p.is_active ? 'Désactiver' : 'Activer'}
+                            </button>
+                          </td>
+                        </tr>`
+                      )
+                      .join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        `
+        : ''
+    }
+
+    ${
+      subtab === 'payouts'
+        ? `
+          <div class="card">
+            <div class="section-head"><h3>Enregistrer un Reversement Reçu (Payout)</h3></div>
+            <form id="form-sa-create-payout" class="form-stack">
+              <div class="field-row">
+                <div class="field">
+                  <label>Prestataire source</label>
+                  <input id="po-provider" required value="PayDunya / Wave Business" />
+                </div>
+                <div class="field">
+                  <label>Compte récepteur RESTOGEST</label>
+                  <input id="po-dest" required value="UBA / Wave +221788979342" />
+                </div>
+                <div class="field">
+                  <label>Devise</label>
+                  <input id="po-currency" required value="XOF" />
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label>Montant brut collecté</label>
+                  <input id="po-gross" type="number" min="1" required placeholder="100000" />
+                </div>
+                <div class="field">
+                  <label>Frais retenus</label>
+                  <input id="po-fees" type="number" min="0" value="0" />
+                </div>
+              </div>
+              <div class="field">
+                <label>Notes / Référence bordereau bancaire</label>
+                <input id="po-notes" placeholder="Ex: Virement hebdomadaire PayDunya #882" />
+              </div>
+              <button type="submit" class="btn btn-primary">Enregistrer le reversement effectif</button>
+            </form>
+
+            <div style="margin-top:16px;">
+              <h4>Historique des reversements (${payouts.length})</h4>
+              <div class="table-wrap">
+                <table class="responsive-table">
+                  <thead><tr><th>Réf.</th><th>Source → Compte</th><th>Net Reçu</th><th>Statut</th></tr></thead>
+                  <tbody>
+                    ${
+                      payouts.length === 0
+                        ? '<tr><td colspan="4" class="muted-text">Aucun reversement enregistré.</td></tr>'
+                        : payouts
+                            .map(
+                              (p) => `<tr>
+                                <td class="mono">${esc(p.payout_ref)}</td>
+                                <td>${esc(p.payment_provider)} → ${esc(p.destination_account)}</td>
+                                <td class="mono"><strong>${esc(fmtMoney(p.net_settled_amount, p.currency))}</strong></td>
+                                <td><span class="status-pill status-open">${esc(p.status)}</span></td>
+                              </tr>`
+                            )
+                            .join('')
+                    }
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         `
@@ -2024,16 +2337,27 @@ export function bindSaasFinancesAdminModule(state, { openModal, closeModal, refr
     });
   });
 
+  document.getElementById('sa-flt-period')?.addEventListener('change', async (e) => {
+    state.saasAdminFilters = { ...(state.saasAdminFilters || {}), period: e.target.value };
+    await refreshAllData();
+  });
+
+  document.getElementById('sa-flt-country')?.addEventListener('change', async (e) => {
+    state.saasAdminFilters = { ...(state.saasAdminFilters || {}), countryCode: e.target.value };
+    await refreshAllData();
+  });
+
   document.getElementById('btn-export-saas-csv')?.addEventListener('click', () => {
     const txs = state.saasAdminOverview?.transactions || [];
     if (txs.length === 0) {
       showToast('Aucune transaction à exporter', 'warning');
       return;
     }
-    const headers = ['Reference', 'Date', 'Etablissement', 'Plan', 'Periode', 'Devise', 'Montant_Brut', 'Frais', 'Montant_Net', 'Methode', 'Statut'];
+    const headers = ['Reference', 'Date', 'Pays', 'Etablissement', 'Plan', 'Periode', 'Devise', 'Montant_Brut', 'Frais', 'Montant_Net', 'Methode', 'Prestataire', 'Statut'];
     const rows = txs.map((t) => [
       t.transaction_ref,
       t.created_at,
+      t.country_code || 'SN',
       `"${String(t.company_name || '').replace(/"/g, '""')}"`,
       t.plan_code,
       t.billing_period,
@@ -2042,6 +2366,7 @@ export function bindSaasFinancesAdminModule(state, { openModal, closeModal, refr
       t.provider_fee_amount,
       t.net_expected_amount,
       t.payment_method,
+      t.payment_provider,
       t.status,
     ]);
     const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
@@ -2059,7 +2384,7 @@ export function bindSaasFinancesAdminModule(state, { openModal, closeModal, refr
       try {
         await apiFetch(`/api/subscriptions/admin/transactions/${btn.dataset.saConfirmTx}/confirm`, {
           method: 'POST',
-          body: { note: 'Confirmé depuis Finances RESTOGEST' },
+          body: { note: 'Confirmé après contrôle réel depuis Finances RESTOGEST' },
         });
         showToast('Paiement confirmé, abonnement activé et facture émise !', 'success');
         await refreshAllData();
@@ -2077,6 +2402,21 @@ export function bindSaasFinancesAdminModule(state, { openModal, closeModal, refr
           body: { reason: 'Référence bancaire / Mobile Money non reçue' },
         });
         showToast('Transaction marquée comme échouée', 'info');
+        await refreshAllData();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-sa-refund-tx]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await apiFetch(`/api/subscriptions/admin/transactions/${btn.dataset.saRefundTx}/refund`, {
+          method: 'POST',
+          body: { reason: 'Remboursement validé par le Super-Administrateur' },
+        });
+        showToast('Transaction marquée comme remboursée et journalisée', 'info');
         await refreshAllData();
       } catch (err) {
         showToast(err.message, 'error');
@@ -2135,6 +2475,96 @@ export function bindSaasFinancesAdminModule(state, { openModal, closeModal, refr
     });
   });
 
+  document.getElementById('cp-country')?.addEventListener('change', (e) => {
+    const opt = e.target.options[e.target.selectedIndex];
+    const curInp = document.getElementById('cp-currency');
+    if (curInp && opt?.dataset?.cur) curInp.value = opt.dataset.cur;
+  });
+
+  document.getElementById('form-sa-country-price')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await apiFetch('/api/subscriptions/admin/country-prices', {
+        method: 'PUT',
+        body: {
+          countryCode: document.getElementById('cp-country').value,
+          planCode: document.getElementById('cp-plan').value,
+          billingPeriod: document.getElementById('cp-period').value,
+          localPrice: parseFloat(document.getElementById('cp-price').value || '0'),
+          setupFee: parseFloat(document.getElementById('cp-setup').value || '0'),
+          currencyCode: document.getElementById('cp-currency').value.trim().toUpperCase(),
+        },
+      });
+      showToast('Tarif local officiel enregistré !', 'success');
+      await refreshAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('form-sa-exchange-rate')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await apiFetch('/api/subscriptions/admin/exchange-rates', {
+        method: 'PUT',
+        body: {
+          baseCurrency: 'XOF',
+          targetCurrency: document.getElementById('er-target').value.trim().toUpperCase(),
+          rate: parseFloat(document.getElementById('er-rate').value || '1'),
+          source: document.getElementById('er-source').value.trim(),
+        },
+      });
+      showToast('Taux de change mis à jour et historisé !', 'success');
+      await refreshAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('ra-country')?.addEventListener('change', (e) => {
+    const opt = e.target.options[e.target.selectedIndex];
+    const curInp = document.getElementById('ra-currency');
+    if (curInp && opt?.dataset?.cur) curInp.value = opt.dataset.cur;
+  });
+
+  document.getElementById('form-sa-reception-account')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const provider = document.getElementById('ra-provider').value.trim().toLowerCase();
+      await apiFetch('/api/subscriptions/admin/reception-accounts', {
+        method: 'POST',
+        body: {
+          countryCode: document.getElementById('ra-country').value,
+          providerCode: provider,
+          methodCode: provider,
+          accountLabel: document.getElementById('ra-label').value.trim(),
+          merchantNumberOrIban: document.getElementById('ra-number').value.trim(),
+          currencyCode: document.getElementById('ra-currency').value.trim().toUpperCase(),
+        },
+      });
+      showToast('Compte de réception enregistré !', 'success');
+      await refreshAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.querySelectorAll('[data-sa-toggle-provider]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        const isActive = btn.dataset.currActive === '1';
+        await apiFetch(`/api/subscriptions/admin/providers/${btn.dataset.saToggleProvider}`, {
+          method: 'PUT',
+          body: { isActive: !isActive },
+        });
+        showToast(`Prestataire ${!isActive ? 'activé' : 'désactivé'}`, 'success');
+        await refreshAllData();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
   document.getElementById('form-sa-create-payout')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
@@ -2143,33 +2573,13 @@ export function bindSaasFinancesAdminModule(state, { openModal, closeModal, refr
         body: {
           paymentProvider: document.getElementById('po-provider').value.trim(),
           destinationAccount: document.getElementById('po-dest').value.trim(),
+          currency: document.getElementById('po-currency')?.value.trim().toUpperCase() || 'XOF',
           grossCollectedAmount: parseFloat(document.getElementById('po-gross').value || '0'),
           providerFeesAmount: parseFloat(document.getElementById('po-fees').value || '0'),
           notes: document.getElementById('po-notes').value.trim() || null,
         },
       });
       showToast('Reversement (payout) enregistré !', 'success');
-      await refreshAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  });
-
-  document.getElementById('form-sa-merchant-settings')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try {
-      await apiFetch('/api/subscriptions/admin/merchant-settings', {
-        method: 'PUT',
-        body: {
-          legalName: document.getElementById('ms-legal').value.trim(),
-          supportEmail: document.getElementById('ms-email').value.trim(),
-          waveMerchantNumber: document.getElementById('ms-wave').value.trim(),
-          orangeMoneyMerchantNumber: document.getElementById('ms-om').value.trim(),
-          bankName: document.getElementById('ms-bank').value.trim(),
-          bankIban: document.getElementById('ms-iban').value.trim(),
-        },
-      });
-      showToast('Coordonnées marchandes RESTOGEST mises à jour', 'success');
       await refreshAllData();
     } catch (err) {
       showToast(err.message, 'error');

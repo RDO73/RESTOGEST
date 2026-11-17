@@ -24,7 +24,8 @@ export const authRouter = Router();
 const RegisterSchema = z.object({
   companyName: z.string().min(2).max(255),
   businessType: z.enum(['restaurant', 'pastry_shop', 'both']),
-  currency: z.string().default('XOF'),
+  countryCode: z.string().min(2).max(10).default('SN'),
+  currency: z.string().min(2).max(10).optional(),
   email: z.string().email(),
   password: z.string().min(8),
   fullName: z.string().min(2),
@@ -87,6 +88,15 @@ authRouter.post('/register', async (req, res, next) => {
     const data = RegisterSchema.parse(req.body);
     const passwordHash = await hashPassword(data.password);
     const normalizedEmail = data.email.toLowerCase();
+    const countryCode = data.countryCode.trim().toUpperCase();
+
+    // Détermination automatique de la devise officielle depuis le référentiel pays
+    const countryRes = await adminPool.query(
+      `SELECT code, currency_code FROM public.saas_countries WHERE code = $1 AND is_active = TRUE`,
+      [countryCode]
+    );
+    const resolvedCurrency = data.currency?.trim().toUpperCase() || countryRes.rows[0]?.currency_code || 'XOF';
+    const resolvedCountryCode = countryRes.rows[0]?.code || countryCode;
 
     // Exécution de la fonction PostgreSQL SECURITY DEFINER
     const result = await appPool.query(
@@ -96,7 +106,7 @@ authRouter.post('/register', async (req, res, next) => {
       [
         data.companyName,
         data.businessType,
-        data.currency,
+        resolvedCurrency,
         normalizedEmail,
         passwordHash,
         data.fullName,
@@ -104,6 +114,18 @@ authRouter.post('/register', async (req, res, next) => {
     );
 
     const { company_id, user_id } = result.rows[0];
+
+    await adminPool.query(
+      `UPDATE public.companies SET country_code = $2, currency = $3 WHERE id = $1`,
+      [company_id, resolvedCountryCode, resolvedCurrency]
+    );
+    await adminPool.query(
+      `INSERT INTO public.company_settings (company_id, currency, country, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (company_id) DO UPDATE
+       SET currency = EXCLUDED.currency, country = EXCLUDED.country, updated_at = NOW()`,
+      [company_id, resolvedCurrency, resolvedCountryCode]
+    );
 
     // Génération de la session auto-porteuse signée HMAC-SHA256
     const session = generateSessionToken(user_id, company_id, {
@@ -113,7 +135,7 @@ authRouter.post('/register', async (req, res, next) => {
       fullName: data.fullName,
       companyName: data.companyName,
       businessType: data.businessType,
-      currency: data.currency,
+      currency: resolvedCurrency,
       isDemo: false,
     });
 
@@ -133,6 +155,8 @@ authRouter.post('/register', async (req, res, next) => {
         companyId: company_id,
         tenantId: company_id,
         userId: user_id,
+        countryCode: resolvedCountryCode,
+        currency: resolvedCurrency,
         isDemo: false,
       },
     });
@@ -248,7 +272,7 @@ authRouter.get('/me', requireAuth, async (req, res, next) => {
         [auth.userId]
       );
       const companyRes = await client.query(
-        `SELECT id, name, business_type, currency, default_tax_rate, allow_negative_stock FROM public.companies WHERE id = $1`,
+        `SELECT id, name, business_type, country_code, currency, default_tax_rate, allow_negative_stock FROM public.companies WHERE id = $1`,
         [auth.companyId]
       );
       return {

@@ -155,15 +155,14 @@
               <input id="reg-fullname" type="text" required minlength="2" placeholder="Mamadou Kane" />
             </div>
             <div class="field">
-              <label for="reg-currency">Devise</label>
-              <select id="reg-currency">
-                <option value="XOF">XOF (FCFA — Sénégal / UEMOA)</option>
-                <option value="GNF">GNF (Franc Guinéen — Guinée)</option>
-                <option value="EUR">EUR (€)</option>
-                <option value="USD">USD ($)</option>
-                <option value="MAD">MAD (DH)</option>
-                <option value="CAD">CAD ($)</option>
+              <label for="reg-country">Pays de l'établissement</label>
+              <select id="reg-country">
+                <option value="SN" data-currency="XOF">🇸🇳 Sénégal (XOF — FCFA)</option>
+                <option value="GN" data-currency="GNF">🇬🇳 Guinée (GNF — FG)</option>
+                <option value="CI" data-currency="XOF">🇨🇮 Côte d'Ivoire (XOF — FCFA)</option>
+                <option value="CM" data-currency="XAF">🇨🇲 Cameroun (XAF — FCFA)</option>
               </select>
+              <input id="reg-currency" type="hidden" value="XOF" />
             </div>
           </div>
           <div class="field">
