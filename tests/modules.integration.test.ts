@@ -119,6 +119,17 @@ describe('Modules Métiers Backend RESTOGEST V1', () => {
     expect(healthRes.status).toBe(200);
     expect(healthData.status).toBe('ok');
 
+    const [robotsRes, sitemapRes] = await Promise.all([
+      fetch(`${baseUrl}/robots.txt`),
+      fetch(`${baseUrl}/sitemap.xml`),
+    ]);
+    const robotsTxt = await robotsRes.text();
+    const sitemapXml = await sitemapRes.text();
+    expect(robotsRes.status).toBe(200);
+    expect(robotsTxt).toContain('Sitemap: https://myrestogest.com/sitemap.xml');
+    expect(sitemapRes.status).toBe(200);
+    expect(sitemapXml).toContain('<loc>https://myrestogest.com/</loc>');
+
     // Vérifier aussi la sérialisation de requêtes parallèles en mode PGlite/Postgres
     const [rCat, rSales, rCash, rInv] = await Promise.all([
       fetch(`${baseUrl}/api/catalog/products`, { headers: { Authorization: `Bearer ${authToken}` } }),

@@ -55,6 +55,26 @@ const apiInfoPayload = () => ({
   ],
 });
 
+app.get('/robots.txt', (_req, res) => {
+  res.type('text/plain').send(
+    'User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: https://myrestogest.com/sitemap.xml\n'
+  );
+});
+
+app.get('/sitemap.xml', (_req, res) => {
+  res.type('application/xml').send(
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+      '  <url>\n' +
+      '    <loc>https://myrestogest.com/</loc>\n' +
+      '    <lastmod>2026-11-17</lastmod>\n' +
+      '    <changefreq>weekly</changefreq>\n' +
+      '    <priority>1.0</priority>\n' +
+      '  </url>\n' +
+      '</urlset>\n'
+  );
+});
+
 // Interface Web principale sur /
 app.get('/', (_req, res) => {
   if (publicDir) {
