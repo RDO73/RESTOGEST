@@ -9,6 +9,7 @@ const state = {
   statusFilter: '',
   overview: null,
   establishments: [],
+  lastCreatedDemo: null,
 };
 
 async function saFetch(url, opts = {}) {
@@ -138,6 +139,9 @@ function renderAdminDashboard() {
           <button type="button" class="subtab ${state.subtab === 'reception' ? 'active' : ''}" data-sa-tab="reception">
             📱 Comptes Marchands &amp; Tarifs
           </button>
+          <button type="button" class="subtab ${state.subtab === 'control' ? 'active' : ''}" data-sa-tab="control">
+            ⚙️ Centre de Contrôle Admin
+          </button>
         </div>
 
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -194,6 +198,69 @@ function renderAdminDashboard() {
     ${
       state.subtab === 'establishments'
         ? `
+          <div class="card" style="margin-bottom:16px;border-color:rgba(249,115,22,0.45);">
+            <div class="section-head">
+              <div>
+                <h3 style="margin:0;">✨ Créer un compte / restaurant de démonstration</h3>
+                <p class="muted-text" style="margin:4px 0 0;font-size:12px;">
+                  Enregistrement immédiat dans PostgreSQL — le testeur peut se connecter tout de suite sur l'accueil.
+                </p>
+              </div>
+            </div>
+            <form id="form-sa-create-demo" class="form-stack" style="margin-top:12px;">
+              <div class="field-row">
+                <div class="field">
+                  <label for="demo-company-name">Nom de l'établissement (mention « (Démo) » ajoutée auto.)</label>
+                  <input id="demo-company-name" type="text" required minlength="2" placeholder="Ex: Restaurant Teranga (Démo)" />
+                </div>
+                <div class="field">
+                  <label for="demo-email">E-mail de connexion</label>
+                  <input id="demo-email" type="email" required placeholder="testeur@myrestogest.com" />
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="demo-password">Mot de passe provisoire (8 car. min.)</label>
+                  <div style="display:flex;gap:6px;">
+                    <input id="demo-password" type="text" required minlength="8" placeholder="DemoResto2026!" style="flex:1;" />
+                    <button type="button" id="btn-gen-demo-pwd" class="btn btn-outline btn-sm">Aléatoire</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="demo-country">Pays &amp; Devise</label>
+                  <select id="demo-country">
+                    <option value="SN">🇸🇳 Sénégal (XOF — FCFA)</option>
+                    <option value="GN">🇬🇳 Guinée (GNF — Franc Guinéen)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="demo-status">Statut du compte</label>
+                  <select id="demo-status">
+                    <option value="trial">Essai (14 jours)</option>
+                    <option value="active">Actif (30 jours)</option>
+                  </select>
+                </div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                <button type="submit" class="btn btn-primary">Créer l'accès Démo immédiatement</button>
+              </div>
+            </form>
+
+            ${
+              state.lastCreatedDemo
+                ? `<div style="margin-top:14px;padding:12px 14px;border-radius:10px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.4);font-size:13px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                      <strong>✅ Compte démo prêt : ${esc(state.lastCreatedDemo.companyName)} (${esc(state.lastCreatedDemo.countryCode)} / ${esc(state.lastCreatedDemo.currency)})</strong>
+                      <button type="button" id="btn-copy-demo-creds" class="btn btn-success btn-sm">📋 Copier les accès</button>
+                    </div>
+                    <div class="mono" style="margin-top:6px;font-size:12px;">
+                      URL : ${esc(window.location.origin)}/ &nbsp;|&nbsp; E-mail : <strong>${esc(state.lastCreatedDemo.email)}</strong> &nbsp;|&nbsp; Mot de passe : <strong>${esc(state.lastCreatedDemo.password)}</strong> &nbsp;|&nbsp; Statut : ${esc(state.lastCreatedDemo.status)}
+                    </div>
+                  </div>`
+                : ''
+            }
+          </div>
+
           <div class="card">
             <div class="section-head">
               <h3>Liste des Établissements Inscrits (Sénégal &amp; Guinée)</h3>
@@ -290,12 +357,95 @@ function renderAdminDashboard() {
                         <td>${esc(ra.account_label)}</td>
                         <td class="mono"><strong>${esc(ra.merchant_number_or_iban)}</strong></td>
                         <td>${esc(ra.currency_code)}</td>
-                        <td>${statusPill('pending')}</td>
+                        <td>${statusPill(ra.is_active ? 'active' : 'expired')}</td>
                       </tr>`
                     )
                     .join('')}
                 </tbody>
               </table>
+            </div>
+          </div>
+        `
+        : ''
+    }
+
+    ${
+      state.subtab === 'control'
+        ? `
+          <div class="two-col">
+            <div class="card">
+              <div class="section-head"><h3>🧭 Actions &amp; Paramètres Essentiels Super-Admin</h3></div>
+              <div class="form-stack" style="font-size:13px;">
+                <div style="padding:10px 12px;border:1px solid var(--border);border-radius:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+                  <div>
+                    <strong>1. Créer un compte / restaurant Démo</strong>
+                    <div class="muted-text" style="font-size:12px;">Génère un accès immédiat (Sénégal XOF ou Guinée GNF) pour votre informaticien ou un prospect.</div>
+                  </div>
+                  <button type="button" class="btn btn-primary btn-sm" data-sa-goto="establishments">Ouvrir</button>
+                </div>
+                <div style="padding:10px 12px;border:1px solid var(--border);border-radius:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+                  <div>
+                    <strong>2. Valider ou refuser les paiements reçus (${pendingTxs.length})</strong>
+                    <div class="muted-text" style="font-size:12px;">Contrôle Wave (+221 78 897 93 42), Orange Money et Carte UBA avant activation.</div>
+                  </div>
+                  <button type="button" class="btn btn-outline btn-sm" data-sa-goto="pending">Voir (${pendingTxs.length})</button>
+                </div>
+                <div style="padding:10px 12px;border:1px solid var(--border);border-radius:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+                  <div>
+                    <strong>3. Piloter les établissements (+30j / Expirer)</strong>
+                    <div class="muted-text" style="font-size:12px;">Prolongez manuellement un abonnement, vérifiez les dates d'échéance ou suspendez un compte.</div>
+                  </div>
+                  <button type="button" class="btn btn-outline btn-sm" data-sa-goto="establishments">Gérer (${establishments.length})</button>
+                </div>
+                <div style="padding:10px 12px;border:1px solid var(--border);border-radius:10px;">
+                  <strong>4. Identifiants &amp; Sécurité du compte Propriétaire</strong>
+                  <div class="muted-text" style="font-size:12px;margin-top:4px;">
+                    Modifiables via les variables d'environnement Vercel : <code class="mono">SUPER_ADMIN_EMAIL</code> et <code class="mono">SUPER_ADMIN_PASSWORD</code>.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="section-head"><h3>💱 Taux de change &amp; Tarifs Locaux (XOF / GNF)</h3></div>
+              <form id="form-sa-exchange-rate" class="form-stack" style="margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+                <div class="field-row">
+                  <div class="field">
+                    <label for="sa-fx-rate">Taux 1 XOF → GNF</label>
+                    <input id="sa-fx-rate" type="number" step="0.01" min="0.01" required value="${esc(String(mc.exchangeRates?.find((r) => r.base_currency === 'XOF' && r.target_currency === 'GNF')?.rate || 15))}" />
+                  </div>
+                  <div class="field">
+                    <label for="sa-fx-source">Source</label>
+                    <input id="sa-fx-source" type="text" required value="Référence Super-Admin" />
+                  </div>
+                </div>
+                <button type="submit" class="btn btn-outline btn-sm">Mettre à jour le taux XOF → GNF</button>
+              </form>
+
+              <form id="form-sa-country-price" class="form-stack">
+                <div class="field-row">
+                  <div class="field">
+                    <label for="sa-cp-country">Pays</label>
+                    <select id="sa-cp-country">
+                      <option value="SN">🇸🇳 Sénégal (XOF)</option>
+                      <option value="GN">🇬🇳 Guinée (GNF)</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="sa-cp-plan">Plan</label>
+                    <select id="sa-cp-plan">
+                      <option value="ESSENTIEL">ESSENTIEL</option>
+                      <option value="PRO" selected>PRO</option>
+                      <option value="ENTREPRISE">ENTREPRISE</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="sa-cp-price">Prix mensuel local</label>
+                    <input id="sa-cp-price" type="number" min="0" required placeholder="29000 ou 435000" />
+                  </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">Enregistrer le tarif mensuel local</button>
+              </form>
             </div>
           </div>
         `
@@ -378,6 +528,98 @@ function renderAdminDashboard() {
         showToast(err.message, 'error');
       }
     });
+  });
+
+  root.querySelectorAll('[data-sa-goto]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.subtab = btn.dataset.saGoto;
+      renderAdminDashboard();
+    });
+  });
+
+  document.getElementById('btn-gen-demo-pwd')?.addEventListener('click', () => {
+    const pwdInput = document.getElementById('demo-password');
+    if (pwdInput) {
+      pwdInput.value = `DemoRG-${Math.random().toString(36).slice(2, 8).toUpperCase()}26`;
+    }
+  });
+
+  document.getElementById('form-sa-create-demo')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const companyName = document.getElementById('demo-company-name').value.trim();
+      const email = document.getElementById('demo-email').value.trim();
+      const password = document.getElementById('demo-password').value;
+      const countryCode = document.getElementById('demo-country').value;
+      const status = document.getElementById('demo-status').value;
+
+      const res = await saFetch('/api/admin/establishments/demo', {
+        method: 'POST',
+        body: { companyName, email, password, countryCode, status },
+      });
+
+      state.lastCreatedDemo = {
+        ...res.data,
+        password,
+      };
+      showToast(`Compte démo « ${res.data.companyName} » créé et prêt !`, 'success');
+      await loadAdminData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('btn-copy-demo-creds')?.addEventListener('click', async () => {
+    if (!state.lastCreatedDemo) return;
+    const text = `Accès Démo RESTOGEST\nURL: ${window.location.origin}/\nÉtablissement: ${state.lastCreatedDemo.companyName}\nE-mail: ${state.lastCreatedDemo.email}\nMot de passe: ${state.lastCreatedDemo.password}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Identifiants démo copiés dans le presse-papiers', 'success');
+    } catch {
+      showToast('Copiez manuellement les identifiants affichés ci-dessous', 'info');
+    }
+  });
+
+  document.getElementById('form-sa-exchange-rate')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const rate = Number(document.getElementById('sa-fx-rate').value);
+      const source = document.getElementById('sa-fx-source').value.trim();
+      await saFetch('/api/subscriptions/admin/exchange-rates', {
+        method: 'PUT',
+        body: { baseCurrency: 'XOF', targetCurrency: 'GNF', rate, source },
+      });
+      showToast(`Taux mis à jour : 1 XOF = ${rate} GNF`, 'success');
+      await loadAdminData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('form-sa-country-price')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const countryCode = document.getElementById('sa-cp-country').value;
+      const planCode = document.getElementById('sa-cp-plan').value;
+      const localPrice = Number(document.getElementById('sa-cp-price').value);
+      const currencyCode = countryCode === 'GN' ? 'GNF' : 'XOF';
+      await saFetch('/api/subscriptions/admin/country-prices', {
+        method: 'PUT',
+        body: {
+          countryCode,
+          planCode,
+          billingPeriod: 'monthly',
+          referencePrice: localPrice,
+          localPrice,
+          currencyCode,
+          setupFee: 0,
+        },
+      });
+      showToast(`Tarif ${planCode} (${countryCode}) mis à jour : ${localPrice} ${currencyCode}`, 'success');
+      await loadAdminData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
   });
 }
 

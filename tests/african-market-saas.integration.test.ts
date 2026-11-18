@@ -219,7 +219,7 @@ describe('RESTOGEST V1.3 — Marché Africain, Multi-Devises & Wave SN (+2217889
     // Liste des établissements SN & GN dans l'espace Super-Admin
     const estRes = await api('/api/admin/establishments', { token: superAdminToken });
     expect(estRes.status).toBe(200);
-    expect(estRes.body.data.establishments.length).toBeGreaterThanOrEqual(2);
+    expect(estRes.body.data.length).toBeGreaterThanOrEqual(2);
 
     // Validation réelle par le Super-Administrateur -> active l'abonnement & émet la facture
     const confirmRes = await api(`/api/subscriptions/admin/transactions/${waveSnTxId}/confirm`, {
@@ -298,5 +298,38 @@ describe('RESTOGEST V1.3 — Marché Africain, Multi-Devises & Wave SN (+2217889
     });
     expect(refRes.status).toBe(200);
     expect(refRes.body.data.status).toBe('refunded');
+  });
+
+  it('5. Permet au Super-Admin de créer un compte restaurant de démonstration immédiatement opérationnel', async () => {
+    const demoRes = await api('/api/admin/establishments/demo', {
+      method: 'POST',
+      token: superAdminToken,
+      body: {
+        companyName: 'Bistro Plateau',
+        email: 'info-demo@myrestogest.com',
+        password: 'DemoPassword2026!',
+        countryCode: 'SN',
+        status: 'active',
+      },
+    });
+    expect(demoRes.status).toBe(201);
+    expect(demoRes.body.data.companyName).toBe('Bistro Plateau (Démo)');
+    expect(demoRes.body.data.currency).toBe('XOF');
+    expect(demoRes.body.data.status).toBe('active');
+
+    // Le compte démo peut se connecter immédiatement via /api/auth/login
+    const loginDemo = await api('/api/auth/login', {
+      method: 'POST',
+      body: {
+        email: 'info-demo@myrestogest.com',
+        password: 'DemoPassword2026!',
+      },
+    });
+    expect(loginDemo.status).toBe(200);
+    expect(loginDemo.body.data.company.name).toBe('Bistro Plateau (Démo)');
+
+    const meDemo = await api('/api/auth/me', { token: loginDemo.body.data.token });
+    expect(meDemo.status).toBe(200);
+    expect(meDemo.body.data.company.currency).toBe('XOF');
   });
 });

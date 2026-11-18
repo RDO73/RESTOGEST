@@ -2,7 +2,8 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { config } from '../../config/env.js';
-import { adminPool, ensureDatabaseReady } from '../../db/pool.js';
+import { adminPool, appPool, ensureDatabaseReady } from '../../db/pool.js';
+import { hashPassword } from '../../auth/password.js';
 import { generateSessionToken, markTokenRevoked } from '../../auth/jwt.js';
 import { requireAuth } from '../../middlewares/auth-middleware.js';
 
@@ -172,6 +173,118 @@ superAdminRouter.get('/establishments', requireAuth, async (req, res, next) => {
     } finally {
       client.release();
     }
+  } catch (err) {
+    next(err);
+  }
+});
+
+const createDemoEstablishmentSchema = z.object({
+  companyName: z.string().min(2).max(160),
+  email: z.string().email().max(180),
+  password: z.string().min(8).max(128),
+  countryCode: z.enum(['SN', 'GN']).default('SN'),
+  status: z.enum(['active', 'trial']).default('trial'),
+  fullName: z.string().min(2).max(120).optional(),
+  businessType: z
+    .enum(['restaurant', 'patisserie', 'cafe', 'boulangerie', 'traiteur'])
+    .default('restaurant'),
+  durationDays: z.number().int().min(1).max(365).optional(),
+});
+
+// Création directe d'un compte / établissement de démonstration par le Super-Admin
+superAdminRouter.post('/establishments/demo', requireAuth, async (req, res, next) => {
+  try {
+    if (req.auth?.role !== 'SUPER_ADMIN') {
+      res.status(403).json({
+        success: false,
+        error: { code: 'SUPER_ADMIN_REQUIRED', message: 'Accès réservé au Super-Admin.' },
+      });
+      return;
+    }
+
+    await ensureDatabaseReady();
+    const parsed = createDemoEstablishmentSchema.parse(req.body);
+    const normalizedEmail = parsed.email.trim().toLowerCase();
+    const rawName = parsed.companyName.trim();
+    const finalCompanyName = /d[ée]mo/i.test(rawName) ? rawName : `${rawName} (Démo)`;
+    const countryCode = parsed.countryCode;
+    const currency = countryCode === 'GN' ? 'GNF' : 'XOF';
+    const fullName = parsed.fullName?.trim() || 'Gérant Démo';
+    const durationDays = parsed.durationDays ?? (parsed.status === 'active' ? 30 : 14);
+
+    const existingUser = await adminPool.query(
+      `SELECT id FROM public.users WHERE lower(email) = $1 LIMIT 1`,
+      [normalizedEmail]
+    );
+    if (existingUser.rows.length > 0) {
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'EMAIL_ALREADY_EXISTS',
+          message: 'Un compte utilisateur existe déjà avec cet e-mail.',
+        },
+      });
+      return;
+    }
+
+    const passwordHash = await hashPassword(parsed.password);
+
+    const regResult = await appPool.query(
+      `SELECT company_id, user_id FROM public.register_company_and_owner(
+        $1::VARCHAR, $2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::TEXT, $6::VARCHAR
+      )`,
+      [
+        finalCompanyName,
+        parsed.businessType,
+        currency,
+        normalizedEmail,
+        passwordHash,
+        fullName,
+      ]
+    );
+
+    const { company_id: companyId, user_id: userId } = regResult.rows[0];
+
+    await adminPool.query(
+      `UPDATE public.companies SET country_code = $2, currency = $3, is_active = TRUE WHERE id = $1`,
+      [companyId, countryCode, currency]
+    );
+    await adminPool.query(
+      `INSERT INTO public.company_settings (company_id, currency, country, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (company_id) DO UPDATE
+       SET currency = EXCLUDED.currency, country = EXCLUDED.country, updated_at = NOW()`,
+      [companyId, currency, countryCode]
+    );
+
+    await adminPool.query(
+      `UPDATE public.company_subscriptions
+       SET status = $2,
+           plan_code = 'PRO',
+           billing_period = 'monthly',
+           trial_ends_at = NOW() + make_interval(days => $3),
+           current_period_start = NOW(),
+           current_period_end = NOW() + make_interval(days => $3),
+           last_payment_method = 'admin_demo',
+           last_payment_ref = 'DEMO-SUPERADMIN',
+           updated_at = NOW()
+       WHERE company_id = $1`,
+      [companyId, parsed.status, durationDays]
+    );
+
+    res.status(201).json({
+      success: true,
+      data: {
+        companyId,
+        userId,
+        companyName: finalCompanyName,
+        email: normalizedEmail,
+        countryCode,
+        currency,
+        status: parsed.status,
+        durationDays,
+      },
+    });
   } catch (err) {
     next(err);
   }
