@@ -14,6 +14,8 @@ import { subscriptionsRouter } from './modules/subscriptions/subscriptions.route
 import { qrPublicRouter } from './modules/qr/qr-public.router.js';
 import { qrAdminRouter } from './modules/qr/qr-admin.router.js';
 import { superAdminRouter } from './modules/admin/super-admin.router.js';
+import { staffRouter } from './modules/staff/staff.router.js';
+import { customersRouter } from './modules/customers/customers.router.js';
 import { errorHandler } from './middlewares/error-handler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -80,6 +82,8 @@ const apiInfoPayload = () => ({
   health: '/health',
   endpoints: [
     '/api/auth',
+    '/api/staff',
+    '/api/customers',
     '/api/catalog',
     '/api/sales',
     '/api/purchases',
@@ -207,6 +211,8 @@ app.use('/api/admin', superAdminRouter);
 app.use('/api/public/qr', qrPublicRouter);
 app.use('/api/qr', qrAdminRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/staff', staffRouter);
+app.use('/api/customers', customersRouter);
 app.use('/api/catalog', catalogRouter);
 app.use('/api/sales', salesRouter);
 app.use('/api/purchases', purchasesRouter);

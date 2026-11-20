@@ -11,7 +11,15 @@ import {
   verifySessionToken,
   type VerifiedSession,
 } from '../auth/jwt.js';
+import {
+  hasPermission,
+  inferRoleCode,
+  sanitizePermissions,
+  type PermissionKey,
+  type PermissionsMap,
+} from '../auth/permissions.js';
 import { adminPool } from '../db/pool.js';
+import { evictHydratedSession } from '../db/demo-seed.js';
 
 declare global {
   namespace Express {
@@ -22,6 +30,31 @@ declare global {
 }
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+let adminRevokedTableReady = false;
+
+export async function persistAdminTokenRevocation(tokenHash: string): Promise<void> {
+  markTokenRevoked(tokenHash);
+  try {
+    if (!adminRevokedTableReady) {
+      await adminPool.query(
+        `CREATE TABLE IF NOT EXISTS public.admin_revoked_tokens (
+           token_hash VARCHAR(64) PRIMARY KEY,
+           revoked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+         )`
+      );
+      adminRevokedTableReady = true;
+    }
+    await adminPool.query(
+      `INSERT INTO public.admin_revoked_tokens (token_hash, revoked_at)
+       VALUES ($1, NOW())
+       ON CONFLICT (token_hash) DO NOTHING`,
+      [tokenHash]
+    );
+  } catch {
+    // fallback to in-memory set if DB unavailable
+  }
+}
 
 function isAdminEndpoint(req: Request): boolean {
   const url = req.originalUrl || `${req.baseUrl || ''}${req.path || ''}`;
@@ -73,27 +106,89 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    // Vérification persistante dans public.user_sessions (survit aux redémarrages & multi-instances serverless)
-    if (session.role !== 'SUPER_ADMIN') {
+    if (session.role === 'SUPER_ADMIN') {
+      // Vérification persistante de la révocation Super-Admin (survit aux redémarrages serverless)
       try {
-        const dbSession = await adminPool.query(
-          `SELECT revoked_at, expires_at FROM public.user_sessions WHERE token_hash = $1 LIMIT 1`,
-          [session.tokenHash]
+        const regRes = await adminPool.query(
+          `SELECT to_regclass('public.admin_revoked_tokens') AS tbl`
         );
-        if (dbSession.rows.length > 0) {
-          const row = dbSession.rows[0];
-          const isExpired = row.expires_at && new Date(row.expires_at).getTime() <= Date.now();
-          if (row.revoked_at !== null || isExpired) {
+        if (regRes.rows[0]?.tbl) {
+          adminRevokedTableReady = true;
+          const revRes = await adminPool.query(
+            `SELECT 1 FROM public.admin_revoked_tokens WHERE token_hash = $1 LIMIT 1`,
+            [session.tokenHash]
+          );
+          if (revRes.rows.length > 0) {
             markTokenRevoked(session.tokenHash);
             res.status(401).json({
               success: false,
-              error: 'Session révoquée ou expirée',
+              error: 'Session Super-Admin révoquée. Veuillez vous reconnecter.',
             });
             return;
           }
         }
       } catch {
-        // Si la table n'est pas encore initialisée (ex. cold-start démo PGlite), le contexte RLS vérifie ensuite
+        // non-blocking if DB not yet initialized
+      }
+      session.roleName = 'Super-Administrateur';
+      session.permissions = { all: true };
+    } else {
+      // Vérification persistante dans public.user_sessions + chargement temps réel du rôle & permissions
+      let resolvedPermissions: PermissionsMap | null = null;
+      try {
+        const dbSession = await adminPool.query(
+          `SELECT s.revoked_at, s.expires_at,
+                  u.is_active AS user_active,
+                  c.is_active AS company_active,
+                  cu.is_active AS membership_active,
+                  r.name AS role_name,
+                  r.permissions AS role_permissions
+           FROM public.user_sessions s
+           JOIN public.users u ON u.id = s.user_id
+           JOIN public.companies c ON c.id = s.company_id
+           LEFT JOIN public.company_users cu ON cu.company_id = s.company_id AND cu.user_id = s.user_id
+           LEFT JOIN public.roles r ON r.company_id = cu.company_id AND r.id = cu.role_id
+           WHERE s.token_hash = $1
+           LIMIT 1`,
+          [session.tokenHash]
+        );
+        if (dbSession.rows.length > 0) {
+          const row = dbSession.rows[0];
+          const isExpired = row.expires_at && new Date(row.expires_at).getTime() <= Date.now();
+          if (
+            row.revoked_at !== null ||
+            isExpired ||
+            row.user_active === false ||
+            row.company_active === false ||
+            row.membership_active === false
+          ) {
+            markTokenRevoked(session.tokenHash);
+            evictHydratedSession(session.tokenHash);
+            res.status(401).json({
+              success: false,
+              error: 'Session révoquée, expirée ou compte désactivé',
+            });
+            return;
+          }
+          const livePerms = sanitizePermissions(row.role_permissions);
+          resolvedPermissions = livePerms;
+          session.roleName = row.role_name || session.roleName || 'Utilisateur';
+          session.role = inferRoleCode(row.role_name, livePerms);
+          session.permissions = livePerms;
+        }
+      } catch {
+        // Si la table n'est pas encore initialisée (ex. cold-start démo PGlite), repli contrôlé ci-dessous
+      }
+
+      if (!resolvedPermissions) {
+        if (session.permissions && typeof session.permissions === 'object') {
+          session.permissions = sanitizePermissions(session.permissions);
+        } else if (session.role === 'owner') {
+          session.permissions = { all: true };
+          session.roleName = session.roleName || 'Propriétaire';
+        } else {
+          session.permissions = {};
+        }
       }
     }
 
@@ -129,4 +224,32 @@ export function requireSuperAdmin(req: Request, res: Response, next: NextFunctio
     return;
   }
   next();
+}
+
+/**
+ * Middleware de contrôle d'autorisations côté serveur par permission métier.
+ * Rejette tout utilisateur non autorisé avec HTTP 403.
+ */
+export function requirePermission(...required: PermissionKey[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.auth) {
+      res.status(401).json({
+        success: false,
+        error: 'Authentification requise',
+      });
+      return;
+    }
+    if (!hasPermission(req.auth.permissions, required, req.auth.role)) {
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN_PERMISSION',
+          message: 'Accès refusé : votre rôle ne dispose pas des autorisations nécessaires pour cette action.',
+          requiredPermissions: required,
+        },
+      });
+      return;
+    }
+    next();
+  };
 }

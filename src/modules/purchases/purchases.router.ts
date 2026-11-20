@@ -1,11 +1,18 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middlewares/auth-middleware.js';
+import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
 
 export const purchasesRouter = Router();
 
 purchasesRouter.use(requireAuth);
+purchasesRouter.use((req, res, next) => {
+  if (req.method.toUpperCase() === 'GET') {
+    requirePermission('purchases:read', 'reports:read')(req, res, next);
+  } else {
+    requirePermission('purchases:write')(req, res, next);
+  }
+});
 
 // -------------------------------------------------------------
 // FOURNISSEURS (SUPPLIERS)

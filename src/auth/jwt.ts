@@ -2,12 +2,15 @@ import crypto from 'node:crypto';
 import type { Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config/env.js';
+import type { PermissionsMap } from './permissions.js';
 
 export interface TokenPayload {
   userId: string;
   companyId: string;
   tenantId: string;
   role: string;
+  roleName?: string;
+  permissions?: PermissionsMap;
   email: string;
   fullName?: string;
   companyName?: string;
@@ -167,6 +170,8 @@ export function generateSessionToken(
     companyId,
     tenantId: meta?.tenantId || companyId,
     role: meta?.role || 'owner',
+    ...(meta?.roleName ? { roleName: meta.roleName } : {}),
+    ...(meta?.permissions ? { permissions: meta.permissions } : {}),
     email: meta?.email || 'owner@restogest.sn',
     ...(meta?.fullName ? { fullName: meta.fullName } : {}),
     ...(meta?.companyName ? { companyName: meta.companyName } : {}),
@@ -205,6 +210,8 @@ export function verifySessionToken(token: string): VerifiedSession {
     companyId,
     tenantId,
     role: decoded.role || 'owner',
+    ...(decoded.roleName ? { roleName: decoded.roleName } : {}),
+    ...(decoded.permissions ? { permissions: decoded.permissions } : {}),
     email: decoded.email || 'owner@restogest.sn',
     ...(decoded.fullName ? { fullName: decoded.fullName } : {}),
     ...(decoded.companyName ? { companyName: decoded.companyName } : {}),

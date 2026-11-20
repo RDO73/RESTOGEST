@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middlewares/auth-middleware.js';
+import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
 import type { IDbClient } from '../../db/pool.js';
 import { generateTableQrPosterSvg } from '../../utils/qrcode-svg.js';
@@ -9,6 +9,36 @@ import { generateTableQrPosterSvg } from '../../utils/qrcode-svg.js';
 export const qrAdminRouter = Router();
 
 qrAdminRouter.use(requireAuth);
+qrAdminRouter.use((req, res, next) => {
+  const method = req.method.toUpperCase();
+  const pathStr = req.path || '';
+
+  if (pathStr.startsWith('/analytics')) {
+    requirePermission('reports:read', 'dashboard:read', 'qr_orders:read')(req, res, next);
+    return;
+  }
+  if (pathStr.startsWith('/orders') || pathStr.startsWith('/service-requests')) {
+    if (method === 'GET') {
+      requirePermission('qr_orders:read', 'tables:read', 'pos:read')(req, res, next);
+      return;
+    }
+    if (/\/pay$/i.test(pathStr)) {
+      requirePermission('pos:pay', 'cash:write')(req, res, next);
+      return;
+    }
+    requirePermission('qr_orders:write')(req, res, next);
+    return;
+  }
+  if (method === 'GET') {
+    requirePermission('tables:read', 'qr_orders:read', 'catalog:read')(req, res, next);
+    return;
+  }
+  if (/\/close-session$/i.test(pathStr)) {
+    requirePermission('tables:write', 'pos:write', 'pos:pay')(req, res, next);
+    return;
+  }
+  requirePermission('tables:write')(req, res, next);
+});
 
 function generateSecureToken(bytes = 24): string {
   return crypto.randomBytes(bytes).toString('hex');
