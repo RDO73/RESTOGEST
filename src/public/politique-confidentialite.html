@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Politique de confidentialité — RESTOGEST</title>
+  <meta name="description" content="Politique de confidentialité de RESTOGEST : données collectées, finalités, durées de conservation, sécurité PostgreSQL RLS et droits des utilisateurs." />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="canonical" href="https://myrestogest.com/politique-confidentialite" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/landing.css" />
+  <style>
+    .legal-page { max-width: 860px; margin: 0 auto; padding: 112px 20px 72px; }
+    .legal-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 20px; padding: 36px 32px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05); }
+    .legal-card h1 { font-family: var(--font-display); font-size: clamp(26px, 4vw, 36px); margin: 0 0 8px; color: #0f172a; }
+    .legal-card h2 { font-family: var(--font-display); font-size: 19px; margin: 28px 0 10px; color: #0f172a; }
+    .legal-card p, .legal-card li { font-size: 15px; line-height: 1.7; color: #475569; }
+    .legal-card ul { padding-left: 20px; }
+    .legal-meta { font-size: 13px; color: #64748b; margin-bottom: 24px; }
+    .legal-tag { display: inline-block; background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; border-radius: 6px; padding: 1px 7px; font-size: 12px; font-weight: 700; }
+  </style>
+</head>
+<body class="lp-shell">
+  <div class="lp-nav-wrap">
+    <header class="lp-navbar">
+      <a href="/" class="lp-brand">
+        <span class="lp-brand-mark">RG</span>
+        <span>RESTOGEST</span>
+      </a>
+      <div class="lp-nav-actions" style="display:flex;">
+        <a href="/" class="lp-btn lp-btn-outline">← Retour à l’accueil</a>
+      </div>
+    </header>
+  </div>
+
+  <main class="legal-page">
+    <article class="legal-card">
+      <h1>Politique de confidentialité</h1>
+      <p class="legal-meta">RESTOGEST (<code>https://myrestogest.com</code>) · Document de transparence — certaines mentions juridiques sont marquées <span class="legal-tag">À valider</span> avant publication définitive.</p>
+
+      <h2>1. Données du compte utilisateur</h2>
+      <p>Lors de la création et de l’utilisation d’un compte RESTOGEST, nous enregistrons les informations strictement nécessaires à l’accès sécurisé :</p>
+      <ul>
+        <li>Nom complet du gérant et adresse e-mail professionnelle ;</li>
+        <li>Mot de passe stocké exclusivement sous forme hachée (Argon2), jamais en clair ;</li>
+        <li>Informations techniques de session (jeton de session chiffré et dates de connexion).</li>
+      </ul>
+
+      <h2>2. Données de l’établissement</h2>
+      <p>Pour faire fonctionner le logiciel au quotidien, l’établissement enregistre :</p>
+      <ul>
+        <li>Nom de l’établissement, type d’activité, pays (Sénégal ou Guinée), devise (FCFA ou GNF) et numéro WhatsApp du gérant si renseigné ;</li>
+        <li>Catalogue produits, catégories, fiches recettes, tables, QR codes, fournisseurs et niveaux de stock.</li>
+      </ul>
+
+      <h2>3. Commandes et opérations enregistrées</h2>
+      <p>L’application conserve l’historique opérationnel de votre établissement : tickets de caisse, commandes QR sur table, commandes à emporter ou en livraison (incluant nom/téléphone client si saisis pour la livraison), mouvements de stock, sessions de caisse, rapports Z, dépenses, achats fournisseurs et factures d’abonnement RESTOGEST.</p>
+
+      <h2>4. Finalités de la collecte</h2>
+      <ul>
+        <li>Fournir les fonctionnalités de caisse, menu digital, gestion de stock et clôture Z ;</li>
+        <li>Assurer la sécurité des accès, l’isolation stricte entre établissements (PostgreSQL Row Level Security) et la traçabilité anti-fraude ;</li>
+        <li>Gérer la facturation, la validation des abonnements (Wave, Orange Money, virement, carte UBA) et le support client.</li>
+      </ul>
+
+      <h2>5. Durées de conservation</h2>
+      <ul>
+        <li><strong>Données actives du compte et de l’établissement :</strong> conservées pendant toute la durée d’utilisation du service ;</li>
+        <li><strong>Données après résiliation / fermeture de compte :</strong> suppression ou anonymisation dans un délai à définir <span class="legal-tag">À valider</span> (ex. 30 à 90 jours après clôture, hors obligations comptables légales) ;</li>
+        <li><strong>Pièces comptables et factures d’abonnement :</strong> conservées selon les délais légaux applicables au Sénégal et en Guinée <span class="legal-tag">À valider</span>.</li>
+      </ul>
+
+      <h2>6. Sous-traitants techniques et sécurité</h2>
+      <p>Les données sont hébergées sur une infrastructure Cloud (Vercel pour l’application web/API et Neon pour PostgreSQL). Chaque établissement est isolé en base de données par des politiques de sécurité au niveau des lignes (RLS). Aucune donnée commerciale n’est revendue à des tiers.</p>
+
+      <h2>7. Vos droits (accès, rectification, suppression)</h2>
+      <p>Conformément aux principes de protection des données personnelles <span class="legal-tag">À valider : références légales locales CDP Sénégal / Guinée</span>, tout utilisateur peut demander l’accès, la rectification, l’export ou la suppression de ses données personnelles.</p>
+
+      <h2>8. Coordonnées de contact</h2>
+      <p>
+        Pour toute question relative à vos données personnelles ou pour exercer vos droits :
+      </p>
+      <ul>
+        <li><strong>WhatsApp support RESTOGEST :</strong> <a href="https://wa.me/221788979342" target="_blank" rel="noopener">+221 78 897 93 42</a></li>
+        <li><strong>Identité juridique complète, siège social et e-mail dédié vie privée :</strong> <span class="legal-tag">À valider</span> par l’éditeur.</li>
+      </ul>
+
+      <div style="margin-top:32px;display:flex;gap:12px;flex-wrap:wrap;">
+        <a href="/mentions-legales" class="lp-btn lp-btn-outline">Mentions légales</a>
+        <a href="/cgv" class="lp-btn lp-btn-outline">CGV</a>
+        <a href="/" class="lp-btn lp-btn-primary">Retour à RESTOGEST</a>
+      </div>
+    </article>
+  </main>
+</body>
+</html>

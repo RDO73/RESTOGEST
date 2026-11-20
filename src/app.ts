@@ -118,6 +118,14 @@ app.get('/cgv', (_req, res) => {
   res.status(404).send('Page introuvable.');
 });
 
+app.get('/politique-confidentialite', (_req, res) => {
+  if (publicDir && fs.existsSync(path.join(publicDir, 'politique-confidentialite.html'))) {
+    res.sendFile(path.join(publicDir, 'politique-confidentialite.html'));
+    return;
+  }
+  res.status(404).send('Page introuvable.');
+});
+
 // Interface Super-Admin Propriétaire sur /admin
 app.get('/admin', (_req, res) => {
   if (publicDir && fs.existsSync(path.join(publicDir, 'admin.html'))) {
@@ -168,6 +176,22 @@ app.use('/api/purchases', purchasesRouter);
 app.use('/api/inventory', inventoryRouter);
 app.use('/api/cash', cashRouter);
 app.use('/api/subscriptions', subscriptionsRouter);
+
+// Route 404 dédiée (JSON pour /api/*, page HTML 404.html pour les autres routes)
+app.use((req, res) => {
+  if (req.path.startsWith('/api/')) {
+    res.status(404).json({
+      success: false,
+      error: 'Ressource API introuvable',
+    });
+    return;
+  }
+  if (publicDir && fs.existsSync(path.join(publicDir, '404.html'))) {
+    res.status(404).sendFile(path.join(publicDir, '404.html'));
+    return;
+  }
+  res.status(404).send('Page introuvable (404).');
+});
 
 // Gestionnaire global d'erreurs
 app.use(errorHandler);
