@@ -18,6 +18,11 @@ import {
   setSessionCookie,
 } from '../../auth/jwt.js';
 import { requireAuth } from '../../middlewares/auth-middleware.js';
+import {
+  checkLoginRateLimit,
+  recordLoginFailure,
+  resetLoginFailures,
+} from '../../middlewares/rate-limit.js';
 
 export const authRouter = Router();
 
@@ -165,8 +170,8 @@ authRouter.post('/register', async (req, res, next) => {
   }
 });
 
-// Connexion
-authRouter.post('/login', async (req, res, next) => {
+// Connexion (protégée par limitation à 5 échecs / 15 min)
+authRouter.post('/login', checkLoginRateLimit('client_login'), async (req, res, next) => {
   try {
     await ensureDatabaseReady();
     const data = LoginSchema.parse(req.body);
@@ -181,18 +186,37 @@ authRouter.post('/login', async (req, res, next) => {
     );
 
     if (userResult.rows.length === 0) {
+      recordLoginFailure(req, 'client_login');
       res.status(401).json({ success: false, error: 'Identifiants invalides' });
       return;
     }
 
     const user = userResult.rows[0];
     if (!user.is_active) {
-      res.status(403).json({ success: false, error: 'Compte utilisateur désactivé' });
+      recordLoginFailure(req, 'client_login');
+      res.status(401).json({ success: false, error: 'Identifiants invalides' });
       return;
     }
 
     const validPassword = await verifyPassword(user.password_hash, data.password);
     if (!validPassword) {
+      recordLoginFailure(req, 'client_login');
+      // Journaliser l'échec dans audit_logs sur l'entreprise principale (sans aucun mot de passe)
+      try {
+        const compLookup = await adminPool.query(
+          `SELECT company_id FROM public.company_users WHERE user_id = $1 LIMIT 1`,
+          [user.id]
+        );
+        if (compLookup.rows.length > 0) {
+          await adminPool.query(
+            `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, new_values)
+             VALUES ($1, $2, 'AUTH_LOGIN_FAILED', 'user_sessions', $3::jsonb)`,
+            [compLookup.rows[0].company_id, user.id, JSON.stringify({ reason: 'invalid_credentials' })]
+          );
+        }
+      } catch {
+        // non-blocking
+      }
       res.status(401).json({ success: false, error: 'Identifiants invalides' });
       return;
     }
@@ -213,9 +237,12 @@ authRouter.post('/login', async (req, res, next) => {
 
     const companyResult = await adminPool.query(companyQuery, queryParams);
     if (companyResult.rows.length === 0) {
+      recordLoginFailure(req, 'client_login');
       res.status(403).json({ success: false, error: 'Aucune entreprise active accessible pour ce compte' });
       return;
     }
+
+    resetLoginFailures(req, 'client_login');
 
     const targetCompany = companyResult.rows[0];
     const targetCompanyId = targetCompany.company_id;
@@ -238,6 +265,16 @@ authRouter.post('/login', async (req, res, next) => {
        VALUES ($1, $2, $3, NOW() + INTERVAL '24 hours')`,
       [user.id, targetCompanyId, session.tokenHash]
     );
+
+    try {
+      await adminPool.query(
+        `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, new_values)
+         VALUES ($1, $2, 'AUTH_LOGIN_SUCCESS', 'user_sessions', $3::jsonb)`,
+        [targetCompanyId, user.id, JSON.stringify({ isDemo })]
+      );
+    } catch {
+      // non-blocking
+    }
 
     setSessionCookie(res, session.token);
 

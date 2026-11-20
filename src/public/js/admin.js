@@ -14,6 +14,8 @@ const state = {
   statusFilter: '',
   overview: null,
   establishments: [],
+  users: [],
+  auditLogs: [],
   lastCreatedDemo: null,
 };
 
@@ -89,12 +91,16 @@ function statusPill(status) {
 
 async function loadAdminData() {
   if (!state.authenticated) return;
-  const [ovRes, estRes] = await Promise.all([
+  const [ovRes, estRes, usrRes, auditRes] = await Promise.all([
     saFetch(`/api/subscriptions/admin/overview?countryCode=${encodeURIComponent(state.countryFilter)}`),
     saFetch(`/api/admin/establishments?countryCode=${encodeURIComponent(state.countryFilter)}&status=${encodeURIComponent(state.statusFilter)}`),
+    saFetch(`/api/admin/users?countryCode=${encodeURIComponent(state.countryFilter)}`),
+    saFetch('/api/admin/audit-logs?limit=80'),
   ]);
   state.overview = ovRes.data;
   state.establishments = estRes.data || [];
+  state.users = usrRes.data || [];
+  state.auditLogs = auditRes.data || [];
   renderAdminDashboard();
 }
 
@@ -110,6 +116,8 @@ function renderAdminDashboard() {
   const txs = ov.transactions || [];
   const pendingTxs = txs.filter((t) => t.status === 'pending');
   const establishments = state.establishments || [];
+  const users = state.users || [];
+  const auditLogs = state.auditLogs || [];
   const receptionAccounts = ov.receptionAccounts || [];
 
   root.innerHTML = `
@@ -152,6 +160,12 @@ function renderAdminDashboard() {
           </button>
           <button type="button" class="subtab ${state.subtab === 'reception' ? 'active' : ''}" data-sa-tab="reception">
             📱 Comptes Marchands &amp; Tarifs
+          </button>
+          <button type="button" class="subtab ${state.subtab === 'users' ? 'active' : ''}" data-sa-tab="users">
+            👥 Utilisateurs (${users.length})
+          </button>
+          <button type="button" class="subtab ${state.subtab === 'audit' ? 'active' : ''}" data-sa-tab="audit">
+            📋 Journaux (${auditLogs.length})
           </button>
           <button type="button" class="subtab ${state.subtab === 'control' ? 'active' : ''}" data-sa-tab="control">
             ⚙️ Centre de Contrôle Admin
@@ -302,17 +316,22 @@ function renderAdminDashboard() {
                               <td>${esc(e.owner_name || '—')}<div class="muted-text" style="font-size:11px;">${esc(e.owner_email || '')}</div></td>
                               <td>${e.country_code === 'GN' ? '🇬🇳 Guinée (GNF)' : '🇸🇳 Sénégal (XOF)'}</td>
                               <td>${esc(e.plan_code)} (${esc(e.billing_period)})</td>
-                              <td>${statusPill(e.subscription_status)}</td>
+                              <td>${statusPill(e.is_active === false ? 'suspended' : e.subscription_status)}</td>
                               <td>${e.current_period_end ? esc(fmtDate(e.current_period_end)) : '—'}</td>
                               <td>
-                                ${
-                                  e.subscription_id
-                                    ? `<div style="display:flex;gap:6px;flex-wrap:wrap;">
-                                        <button type="button" class="btn btn-success btn-sm" data-adm-activate-sub="${esc(e.subscription_id)}">Activer +30j</button>
-                                        <button type="button" class="btn btn-outline btn-sm" data-adm-expire-sub="${esc(e.subscription_id)}">Expirer</button>
-                                      </div>`
-                                    : '<span class="muted-text">—</span>'
-                                }
+                                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                                  ${
+                                    e.subscription_id
+                                      ? `<button type="button" class="btn btn-success btn-sm" data-adm-activate-sub="${esc(e.subscription_id)}">Activer +30j</button>
+                                         <button type="button" class="btn btn-outline btn-sm" data-adm-expire-sub="${esc(e.subscription_id)}">Expirer</button>`
+                                      : ''
+                                  }
+                                  ${
+                                    e.is_active === false
+                                      ? `<button type="button" class="btn btn-success btn-sm" data-adm-toggle-company="${esc(e.id)}" data-next-active="true">Réactiver</button>`
+                                      : `<button type="button" class="btn btn-danger btn-sm" data-adm-toggle-company="${esc(e.id)}" data-next-active="false">Suspendre</button>`
+                                  }
+                                </div>
                               </td>
                             </tr>`
                           )
@@ -375,6 +394,88 @@ function renderAdminDashboard() {
                       </tr>`
                     )
                     .join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `
+        : ''
+    }
+
+    ${
+      state.subtab === 'users'
+        ? `
+          <div class="card">
+            <div class="section-head">
+              <h3>Utilisateurs des Établissements &amp; Permissions (${users.length})</h3>
+            </div>
+            <div class="table-wrap">
+              <table class="responsive-table">
+                <thead>
+                  <tr><th>Utilisateur</th><th>Établissement</th><th>Pays</th><th>Rôle / Permissions</th><th>Statut</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                  ${
+                    users.length === 0
+                      ? '<tr><td colspan="6" class="muted-text">Aucun utilisateur enregistré.</td></tr>'
+                      : users
+                          .map((u) => {
+                            const perms = u.role_permissions && typeof u.role_permissions === 'object'
+                              ? (u.role_permissions.all ? 'Accès complet établissement' : Object.keys(u.role_permissions).join(', ') || 'Standard')
+                              : 'Standard';
+                            return `<tr>
+                              <td><strong>${esc(u.full_name || '—')}</strong><div class="muted-text" style="font-size:11px;">${esc(u.email)}</div></td>
+                              <td><strong>${esc(u.company_name || '—')}</strong></td>
+                              <td>${u.country_code === 'GN' ? '🇬🇳 Guinée' : '🇸🇳 Sénégal'}</td>
+                              <td><strong>${esc(u.role_name || 'Utilisateur')}</strong><div class="muted-text" style="font-size:11px;">${esc(perms)}</div></td>
+                              <td>${statusPill(u.is_active ? 'active' : 'suspended')}</td>
+                              <td>
+                                ${
+                                  u.is_active
+                                    ? `<button type="button" class="btn btn-danger btn-sm" data-adm-toggle-user="${esc(u.id)}" data-next-active="false">Suspendre</button>`
+                                    : `<button type="button" class="btn btn-success btn-sm" data-adm-toggle-user="${esc(u.id)}" data-next-active="true">Réactiver</button>`
+                                }
+                              </td>
+                            </tr>`;
+                          })
+                          .join('')
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `
+        : ''
+    }
+
+    ${
+      state.subtab === 'audit'
+        ? `
+          <div class="card">
+            <div class="section-head">
+              <h3>Journaux d'Activité &amp; Sécurité (80 derniers événements)</h3>
+            </div>
+            <div class="table-wrap">
+              <table class="responsive-table">
+                <thead>
+                  <tr><th>Date</th><th>Action</th><th>Cible</th><th>Établissement</th><th>Acteur</th></tr>
+                </thead>
+                <tbody>
+                  ${
+                    auditLogs.length === 0
+                      ? '<tr><td colspan="5" class="muted-text">Aucun événement consigné pour le moment.</td></tr>'
+                      : auditLogs
+                          .map(
+                            (ev) => `<tr>
+                              <td class="mono" style="font-size:11px;">${esc(fmtDate(ev.created_at))}</td>
+                              <td><strong>${esc(ev.action)}</strong></td>
+                              <td class="mono" style="font-size:11px;">${esc(ev.table_name || '—')}</td>
+                              <td>${esc(ev.company_name || 'Plateforme')}</td>
+                              <td class="muted-text" style="font-size:11px;">${esc(ev.user_email || 'Système')}</td>
+                            </tr>`
+                          )
+                          .join('')
+                  }
                 </tbody>
               </table>
             </div>
@@ -539,6 +640,42 @@ function renderAdminDashboard() {
           body: { status: 'expired', reason: 'Marqué expiré depuis /admin' },
         });
         showToast('Statut mis à jour sur Expiré', 'info');
+        await loadAdminData();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  root.querySelectorAll('[data-adm-toggle-company]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const nextActive = btn.dataset.nextActive === 'true';
+      const label = nextActive ? 'réactiver cet établissement' : 'suspendre cet établissement (les sessions en cours seront immédiatement coupées)';
+      if (!window.confirm(`Confirmez-vous vouloir ${label} ?`)) return;
+      try {
+        await saFetch(`/api/admin/establishments/${btn.dataset.admToggleCompany}/status`, {
+          method: 'POST',
+          body: { isActive: nextActive, reason: nextActive ? 'Réactivation manuelle /admin' : 'Suspension manuelle /admin' },
+        });
+        showToast(nextActive ? 'Établissement réactivé' : 'Établissement suspendu', nextActive ? 'success' : 'info');
+        await loadAdminData();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  root.querySelectorAll('[data-adm-toggle-user]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const nextActive = btn.dataset.nextActive === 'true';
+      const label = nextActive ? 'réactiver ce compte utilisateur' : 'suspendre ce compte utilisateur';
+      if (!window.confirm(`Confirmez-vous vouloir ${label} ?`)) return;
+      try {
+        await saFetch(`/api/admin/users/${btn.dataset.admToggleUser}/status`, {
+          method: 'POST',
+          body: { isActive: nextActive, reason: nextActive ? 'Réactivation manuelle /admin' : 'Suspension manuelle /admin' },
+        });
+        showToast(nextActive ? 'Utilisateur réactivé' : 'Utilisateur suspendu', nextActive ? 'success' : 'info');
         await loadAdminData();
       } catch (err) {
         showToast(err.message, 'error');

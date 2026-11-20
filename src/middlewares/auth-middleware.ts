@@ -106,3 +106,27 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     });
   }
 }
+
+export const OWNER_SUPER_ADMIN_USER_ID = '00000000-0000-0000-0000-000000000001';
+
+/**
+ * Middleware strict réservant l'accès exclusivement au compte Propriétaire / Super-Admin.
+ * Tout restaurateur ou employé authentifié reçoit HTTP 403.
+ */
+export function requireSuperAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (
+    !req.auth ||
+    String(req.auth.role || '').toUpperCase() !== 'SUPER_ADMIN' ||
+    req.auth.userId !== OWNER_SUPER_ADMIN_USER_ID
+  ) {
+    res.status(403).json({
+      success: false,
+      error: {
+        code: 'SUPER_ADMIN_REQUIRED',
+        message: 'Accès réservé exclusivement au propriétaire de RESTOGEST.',
+      },
+    });
+    return;
+  }
+  next();
+}

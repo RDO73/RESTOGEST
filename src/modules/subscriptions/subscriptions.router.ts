@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middlewares/auth-middleware.js';
+import { OWNER_SUPER_ADMIN_USER_ID, requireAuth } from '../../middlewares/auth-middleware.js';
 import { adminPool, type IDbClient } from '../../db/pool.js';
 import { config } from '../../config/env.js';
 import {
@@ -1250,11 +1250,12 @@ async function safeAuditLog(
 
 function ensurePlatformAdminAccess(req: any, res: any): boolean {
   const roleUpper = String(req.auth?.role || '').toUpperCase();
-  if (!req.auth || roleUpper !== 'SUPER_ADMIN') {
+  if (!req.auth || roleUpper !== 'SUPER_ADMIN' || req.auth.userId !== OWNER_SUPER_ADMIN_USER_ID) {
     res.status(403).json({
+      success: false,
       error: {
         code: 'SUPER_ADMIN_REQUIRED',
-        message: 'Accès réservé au Propriétaire / Super-Administrateur (/admin).',
+        message: 'Accès réservé exclusivement au propriétaire de RESTOGEST (/admin).',
       },
     });
     return false;

@@ -7,6 +7,8 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ): void {
+  const isProd = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
+
   // Validation d'input Zod
   if (err instanceof ZodError) {
     res.status(400).json({
@@ -27,7 +29,7 @@ export function errorHandler(
         res.status(400).json({
           success: false,
           error: 'Format de paramètre invalide',
-          message: err.message,
+          ...(isProd ? {} : { message: err.message }),
         });
         return;
 
@@ -35,31 +37,31 @@ export function errorHandler(
         res.status(409).json({
           success: false,
           error: "Conflit d'unicité : une ressource avec ces caractéristiques existe déjà",
-          detail: err.detail,
+          ...(isProd ? {} : { detail: err.detail }),
         });
         return;
 
       case '23503': // foreign_key_violation
         res.status(400).json({
           success: false,
-          error: "Violation de contrainte d'intégrité relationnelle",
-          detail: err.detail,
+          error: "Opération refusée : référence associée introuvable ou utilisée",
+          ...(isProd ? {} : { detail: err.detail }),
         });
         return;
 
       case '23514': // check_violation
         res.status(400).json({
           success: false,
-          error: 'Violation de règle métier (Check Constraint)',
-          message: err.message,
+          error: 'Valeur non conforme aux règles métier',
+          ...(isProd ? {} : { message: err.message }),
         });
         return;
 
       case '42501': // insufficient_privilege
         res.status(403).json({
           success: false,
-          error: 'Accès interdit : privilèges insuffisants ou ressource protégée par RLS',
-          message: err.message,
+          error: 'Accès interdit : privilèges insuffisants',
+          ...(isProd ? {} : { message: err.message }),
         });
         return;
 
@@ -68,7 +70,6 @@ export function errorHandler(
           res.status(401).json({
             success: false,
             error: 'Session invalide, expirée ou révoquée',
-            message: err.message,
           });
           return;
         }
@@ -81,11 +82,11 @@ export function errorHandler(
     }
   }
 
-  console.error('[UNHANDLED SERVER ERROR]', err);
+  console.error('[UNHANDLED SERVER ERROR]', isProd ? err?.message || 'Internal error' : err);
 
   res.status(500).json({
     success: false,
     error: 'Erreur interne du serveur',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    ...(isProd ? {} : { message: err?.message }),
   });
 }
