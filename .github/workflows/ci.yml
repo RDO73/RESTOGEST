@@ -82,4 +82,4 @@ jobs:
           DATABASE_ADMIN_URL: postgresql://restogest_admin:restogest_admin_pass@127.0.0.1:5432/restogest
           DATABASE_URL: postgresql://restogest_app:restogest_app_pass@127.0.0.1:5432/restogest
           JWT_SECRET: ci-test-jwt-secret-key-minimum-32-chars
-        run: npx vitest run tests/modules.integration.test.ts tests/security-hardening.integration.test.ts --testTimeout=15000
+        run: npx vitest run tests/modules.integration.test.ts tests/security-hardening.integration.test.ts tests/persistence-and-rbac.integration.test.ts --testTimeout=15000
