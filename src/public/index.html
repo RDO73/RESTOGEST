@@ -39,156 +39,793 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/landing.css" />
 </head>
 <body>
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-  <!-- ÉCRAN AUTHENTIFICATION -->
-  <div id="auth-view" class="auth-shell hidden">
-    <div class="auth-grid">
-      <section class="auth-hero">
-        <div class="auth-hero-top">
-          <div class="brand-badge">
-            <span class="brand-dot"></span>
-            <span>RestoGest Cloud</span>
-          </div>
-          <div id="auth-env-badge" class="env-chip">
-            <span class="status-dot-ok"></span>
-            <span>Système Cloud Opérationnel</span>
-          </div>
+  <!-- PAGE D'ACCUEIL VITRINE + MODALE CONNEXION/INSCRIPTION -->
+  <div id="auth-view" class="lp-shell hidden">
+
+    <!-- 1. MENU FIXE EN PILULE -->
+    <div class="lp-nav-wrap">
+      <header id="lp-navbar" class="lp-navbar" role="banner">
+        <a href="#top" class="lp-brand" aria-label="RestoGest Accueil">
+          <span class="lp-brand-mark">RG</span>
+          <span>RestoGest</span>
+        </a>
+
+        <nav class="lp-nav-links" aria-label="Navigation vitrine">
+          <a href="#fonctionnalites" class="lp-nav-link">Fonctionnalités</a>
+          <a href="#menu-qr" class="lp-nav-link">Menu QR</a>
+          <a href="#tarifs" class="lp-nav-link">Tarifs</a>
+          <a href="#faq" class="lp-nav-link">FAQ</a>
+        </nav>
+
+        <div class="lp-nav-actions">
+          <button type="button" class="lp-login-link" data-open-auth="login">Se connecter</button>
+          <button type="button" class="lp-btn lp-btn-primary" data-trigger-demo>Tester la démo</button>
         </div>
 
-        <h1>La plateforme SaaS dédiée aux restaurants &amp; pâtisseries au Sénégal et en Guinée.</h1>
-        <p class="auth-subtitle">
-          Encaissez plus vite au comptoir ou en salle, pilotez vos menus QR Code &amp; livraisons WhatsApp, maîtrisez vos fiches recettes anti-coulage et contrôlez chaque clôture Z de caisse en <strong>XOF (Sénégal)</strong> ou <strong>GNF (Guinée)</strong>.
-        </p>
+        <button id="lp-burger" type="button" class="lp-burger" aria-label="Ouvrir le menu" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="20" height="20">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+      </header>
 
-        <div class="hero-features">
-          <div class="hero-feature">
-            <div class="hero-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-            </div>
-            <div>
-              <strong>Caisse POS, Menu QR Code &amp; Livraison WhatsApp</strong>
-              <span>Tables en temps réel, paiements locaux Sénégal (Wave, Orange Money, Carte UBA) &amp; Guinée (Orange Money Guinée, Virement, Carte UBA).</span>
-            </div>
-          </div>
-          <div class="hero-feature">
-            <div class="hero-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
-            </div>
-            <div>
-              <strong>Stocks &amp; Recettes Anti-Coulage</strong>
-              <span>Déduction exacte des ingrédients à la vente et alertes automatiques de réapprovisionnement.</span>
-            </div>
-          </div>
-          <div class="hero-feature">
-            <div class="hero-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg>
-            </div>
-            <div>
-              <strong>Sécurité &amp; Isolation Multi-Établissements</strong>
-              <span>Vos chiffres, stocks et recettes sont 100 % isolés, chiffrés et sauvegardés en temps réel.</span>
-            </div>
-          </div>
-        </div>
+      <div id="lp-mobile-drawer" class="lp-mobile-drawer" aria-label="Menu mobile">
+        <a href="#fonctionnalites" class="lp-nav-link">Fonctionnalités</a>
+        <a href="#menu-qr" class="lp-nav-link">Menu QR</a>
+        <a href="#tarifs" class="lp-nav-link">Tarifs</a>
+        <a href="#faq" class="lp-nav-link">FAQ</a>
+        <hr style="border:none;border-top:1px solid #e2e8f0;margin:6px 0;" />
+        <button type="button" class="lp-login-link" data-open-auth="login">Se connecter</button>
+        <button type="button" class="lp-btn lp-btn-primary" data-trigger-demo>Tester la démo</button>
+      </div>
+    </div>
 
-        <div class="auth-demo-card" style="margin-bottom:12px;">
-          <div class="auth-demo-copy">
-            <strong>Espace Client (Gérants &amp; Équipes)</strong>
-            <p>Accédez à votre caisse, vos tables QR Code et votre abonnement en XOF ou GNF, ou testez la démo complète.</p>
+    <!-- 2. HERO (PREMIER ÉCRAN) -->
+    <section id="top" class="lp-hero">
+      <div class="lp-container lp-hero-inner">
+        <div class="lp-hero-copy">
+          <div class="lp-hero-badge">
+            <span>🇸🇳 Sénégal (FCFA)</span>
+            <span>·</span>
+            <span>🇬🇳 Guinée (GNF)</span>
+            <span>·</span>
+            <span>Essai gratuit 14 jours</span>
           </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button id="btn-focus-client-login" type="button" class="btn btn-primary">
-              Connexion Établissement
+
+          <h1 class="lp-hero-h1">
+            Encaissez, contrôlez vos stocks et recevez vos commandes depuis
+            <span class="lp-underline-word">
+              une seule caisse.
+              <svg class="lp-underline-svg" viewBox="0 0 260 16" fill="none" preserveAspectRatio="none" aria-hidden="true">
+                <path d="M4 12C68 4 176 2 256 10" stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round" />
+                <path d="M18 14C92 7 188 6 244 12" stroke="#ea580c" stroke-width="2.5" stroke-linecap="round" opacity="0.85" />
+              </svg>
+            </span>
+          </h1>
+
+          <p class="lp-hero-sub">
+            Caisse tactile, menu digital sur table, commandes WhatsApp, fiches recettes anti-coulage et clôture Z Wave &amp; Orange Money. Sans matériel coûteux.
+          </p>
+
+          <div class="lp-hero-ctas">
+            <button id="btn-demo-quickstart" type="button" class="lp-btn lp-btn-primary lp-btn-lg">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="18" height="18"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+              Tester la démo gratuite
             </button>
-            <button id="btn-demo-quickstart" type="button" class="btn btn-amber">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-              Lancer la Démo
+            <button type="button" class="lp-btn lp-btn-secondary-hero lp-btn-lg" data-open-auth="register">
+              Créer mon établissement
             </button>
           </div>
         </div>
 
-        <div class="auth-demo-card" style="background:rgba(15,23,42,0.75);border-color:rgba(148,163,184,0.28);">
-          <div class="auth-demo-copy">
-            <strong>Accès Propriétaire Plateforme</strong>
-            <p>Interface Super-Admin dédiée : suivi des établissements (Sénégal &amp; Guinée) et validation des paiements Wave / Orange Money / UBA.</p>
+        <!-- GRANDE MAQUETTE ANIMÉE DU PRODUIT (HTML/CSS) -->
+        <div class="lp-hero-stage" aria-label="Aperçu interactif de la caisse RestoGest et du menu QR">
+          <div class="lp-mockup-pos">
+            <div class="lp-pos-topbar">
+              <div class="lp-pos-dots"><span></span><span></span><span></span></div>
+              <span>RestoGest POS · Service Midi — Dakar (FCFA)</span>
+              <span class="lp-pos-live-pill"><i></i> Caisse ouverte</span>
+            </div>
+            <div class="lp-pos-body">
+              <div>
+                <div class="lp-pos-floor-title">
+                  <span>Plan de salle en direct</span>
+                  <span>6 tables</span>
+                </div>
+                <div class="lp-pos-tables">
+                  <div class="lp-table-tile is-busy">
+                    <strong>Table 1</strong>
+                    <span>En service · 14 500 F</span>
+                  </div>
+                  <div class="lp-table-tile">
+                    <strong>Table 2</strong>
+                    <span>Libre · 4 places</span>
+                  </div>
+                  <div class="lp-table-tile is-qr">
+                    <strong>Table 3 · QR</strong>
+                    <span>Commande reçue</span>
+                  </div>
+                  <div class="lp-table-tile is-busy">
+                    <strong>Terrasse 1</strong>
+                    <span>À encaisser · 9 000 F</span>
+                  </div>
+                  <div class="lp-table-tile">
+                    <strong>VIP 1</strong>
+                    <span>Libre · 6 places</span>
+                  </div>
+                  <div class="lp-table-tile is-qr">
+                    <strong>Livraison WA</strong>
+                    <span>Plateau · En cours</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="lp-pos-ticket">
+                <div class="lp-ticket-head">
+                  <span>Ticket #042 · Table 1</span>
+                  <span style="color:#059669;">Cuisine prête</span>
+                </div>
+                <div class="lp-ticket-lines">
+                  <div class="lp-ticket-line">
+                    <span>1× Thiéboudienne Royal</span>
+                    <strong class="mono">4 500 F</strong>
+                  </div>
+                  <div class="lp-ticket-line">
+                    <span>2× Poulet Yassa braisé</span>
+                    <strong class="mono">7 000 F</strong>
+                  </div>
+                  <div class="lp-ticket-line">
+                    <span>2× Jus de Bissap frais</span>
+                    <strong class="mono">2 000 F</strong>
+                  </div>
+                  <div class="lp-ticket-line">
+                    <span>1× Pastels maison (×6)</span>
+                    <strong class="mono">1 000 F</strong>
+                  </div>
+                </div>
+                <div class="lp-ticket-total">
+                  <span>Total à encaisser</span>
+                  <span class="mono">14 500 FCFA</span>
+                </div>
+                <div class="lp-pay-grid">
+                  <span class="lp-pay-pill is-cash">Espèces</span>
+                  <span class="lp-pay-pill is-wave">Wave</span>
+                  <span class="lp-pay-pill is-om">Orange Money</span>
+                  <span class="lp-pay-pill is-uba">Carte UBA</span>
+                </div>
+              </div>
+            </div>
           </div>
-          <a href="/admin" class="btn btn-outline" style="text-decoration:none;white-space:nowrap;">
-            Espace Propriétaire / Super-Admin →
+
+          <div class="lp-mockup-phone" aria-hidden="true">
+            <div class="lp-phone-screen">
+              <div class="lp-phone-notch"></div>
+              <div class="lp-phone-header">
+                <strong>Menu Digital · Table 3</strong>
+                <span class="lp-phone-badge">QR actif</span>
+              </div>
+              <div class="lp-phone-dish">
+                <div>
+                  <strong>Poulet Yassa</strong>
+                  <span>+ Riz blanc, piment</span>
+                </div>
+                <strong class="mono">3 500 F</strong>
+              </div>
+              <div class="lp-phone-dish">
+                <div>
+                  <strong>Dibi d’Agneau</strong>
+                  <span>+ Alloco, moutarde</span>
+                </div>
+                <strong class="mono">5 500 F</strong>
+              </div>
+              <div class="lp-phone-dish">
+                <div>
+                  <strong>Jus de Bouye</strong>
+                  <span>Bien glacé</span>
+                </div>
+                <strong class="mono">1 000 F</strong>
+              </div>
+              <div class="lp-phone-cta">Envoyer en cuisine · 10 000 F</div>
+            </div>
+          </div>
+
+          <div class="lp-hero-fade-bottom"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. BANDEAU DE DÉFILEMENT INFINI -->
+    <section class="lp-marquee-section" aria-label="Moyens de paiement et canaux pris en charge">
+      <div class="lp-marquee-wrap">
+        <div class="lp-marquee-track">
+          <div class="lp-marquee-group">
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>Espèces</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>Wave</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>Orange Money</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>Carte UBA</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>WhatsApp</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>Menu QR</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>PC</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>Tablette</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>Smartphone</span>
+          </div>
+          <div class="lp-marquee-group" aria-hidden="true">
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>Espèces</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>Wave</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>Orange Money</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>Carte UBA</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>WhatsApp</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>Menu QR</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>PC</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>Tablette</span>
+            <span class="lp-marquee-chip"><span class="lp-marquee-dot"></span>Smartphone</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. PROBLÈMES DU RESTAURATEUR -->
+    <section class="lp-section">
+      <div class="lp-container">
+        <div class="lp-pains-box" data-reveal>
+          <div class="lp-section-head" style="margin-bottom:0;">
+            <h2>Vous reconnaissez ces journées ?</h2>
+            <p>Les mêmes pertes de temps et d’argent reviennent chaque semaine quand la caisse, la cuisine et les stocks ne se parlent pas.</p>
+          </div>
+
+          <div class="lp-pains-grid lp-stagger">
+            <article class="lp-pain-card" data-reveal>
+              <div class="lp-pain-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>
+              </div>
+              <h3>La caisse ne tombe jamais juste</h3>
+              <p>Des écarts entre espèces, Wave et Orange Money en fin de service.</p>
+            </article>
+
+            <article class="lp-pain-card" data-reveal>
+              <div class="lp-pain-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+              </div>
+              <h3>Le stock fond sans explication</h3>
+              <p>Des pertes invisibles en cuisine, des plats dont on ne connaît pas le vrai coût.</p>
+            </article>
+
+            <article class="lp-pain-card" data-reveal>
+              <div class="lp-pain-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <h3>Les serveurs débordés aux heures de pointe</h3>
+              <p>Commandes oubliées, tables qui attendent et tickets illisibles en cuisine.</p>
+            </article>
+
+            <article class="lp-pain-card" data-reveal>
+              <div class="lp-pain-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+              </div>
+              <h3>Les commandes WhatsApp en désordre</h3>
+              <p>Messages perdus, adresses mal notées et livreurs qui rappellent sans arrêt.</p>
+            </article>
+          </div>
+
+          <a href="#fonctionnalites" class="lp-btn lp-btn-dark lp-btn-lg">
+            Voir comment RESTOGEST règle ça →
           </a>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <section id="client-auth-panel" class="auth-panel">
-        <div class="auth-panel-head">
-          <div class="logo-mark">RG</div>
-          <div>
-            <h2>Espace Client • Connexion Établissement</h2>
-            <p class="muted-text">Connectez-vous ou créez votre compte RestoGest (Sénégal XOF / Guinée GNF)</p>
+    <!-- 6. LA SOLUTION EN 4 BLOCS ALTERNÉS -->
+    <section id="fonctionnalites" class="lp-section">
+      <div class="lp-container">
+        <div class="lp-section-head" data-reveal>
+          <h2>Tout votre restaurant. Un seul écran.</h2>
+          <p>Caisse, menu QR en salle, stocks anti-coulage et commandes WhatsApp travaillent ensemble en temps réel.</p>
+        </div>
+
+        <div class="lp-feature-stack">
+          <!-- Bloc A : Visuel à gauche, Texte à droite -->
+          <div class="lp-feature-row">
+            <div class="lp-feature-visual" data-reveal="left">
+              <div class="lp-mini-ui">
+                <div class="lp-mini-card">
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <strong>Rapport Z · Clôture du soir</strong>
+                    <span class="lp-mini-badge-ok">Écart : 0 FCFA</span>
+                  </div>
+                  <div class="lp-mini-row"><span>Espèces comptées</span><strong class="mono">185 000 FCFA</strong></div>
+                  <div class="lp-mini-row"><span>Wave encaissé</span><strong class="mono" style="color:#0369a1;">142 500 FCFA</strong></div>
+                  <div class="lp-mini-row"><span>Orange Money</span><strong class="mono" style="color:#c2410c;">96 000 FCFA</strong></div>
+                  <div class="lp-mini-row"><span>Carte bancaire</span><strong class="mono">48 500 FCFA</strong></div>
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid #e2e8f0;">
+                    <strong style="font-size:15px;">Total journée</strong>
+                    <strong class="mono" style="font-size:16px;color:#059669;">472 000 FCFA</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="lp-feature-copy" data-reveal>
+              <span class="lp-feature-tag">CAISSE &amp; CLÔTURE Z</span>
+              <h3>Encaissez vite et fermez la journée en un clic.</h3>
+              <p>Chaque encaissement est ventilé automatiquement par moyen de paiement : en fin de service, votre rapport Z est déjà prêt.</p>
+              <ul class="lp-check-list">
+                <li><span class="lp-check-icon">✓</span>Plan de salle en direct</li>
+                <li><span class="lp-check-icon">✓</span>Encaissement espèces, Wave, Orange Money et carte</li>
+                <li><span class="lp-check-icon">✓</span>Ticket client clair et numéroté</li>
+                <li><span class="lp-check-icon">✓</span>Rapport Z détaillé avec calcul d’écart</li>
+                <li><span class="lp-check-icon">✓</span>Rapport Z envoyé sur WhatsApp en 1 clic</li>
+              </ul>
+              <button type="button" class="lp-feature-link" data-trigger-demo>En savoir plus dans la démo →</button>
+            </div>
+          </div>
+
+          <!-- Bloc B : Texte à gauche, Visuel à droite -->
+          <div id="menu-qr" class="lp-feature-row is-reversed">
+            <div class="lp-feature-visual" data-reveal="right">
+              <div class="lp-mini-ui">
+                <div class="lp-mini-card">
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <strong>Écran Cuisine (KDS) · Commandes QR</strong>
+                    <span class="lp-mini-badge-warn">🔔 Nouvelle</span>
+                  </div>
+                  <div class="lp-mini-row">
+                    <div><strong>Table 7 · Terrasse</strong><div style="font-size:11.5px;color:#64748b;">2× Burger Maison (+ Fromage), 2× Gingembre</div></div>
+                    <span class="lp-mini-badge-warn">En prép.</span>
+                  </div>
+                  <div class="lp-mini-row">
+                    <div><strong>Table 3 · Salle</strong><div style="font-size:11.5px;color:#64748b;">1× Thiof grillé, 1× Attiéké</div></div>
+                    <span class="lp-mini-badge-ok">Prêt ✓</span>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#64748b;">
+                    <span>QR Code unique généré par table</span>
+                    <strong style="color:#0f172a;">Sync caisse auto</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="lp-feature-copy" data-reveal>
+              <span class="lp-feature-tag">MENU DIGITAL &amp; QR CODE</span>
+              <h3>Vos clients commandent à table, la cuisine reçoit tout de suite.</h3>
+              <p>Imprimez le QR code de chaque table depuis votre espace : vos clients parcourent votre carte sur leur téléphone sans attendre.</p>
+              <ul class="lp-check-list">
+                <li><span class="lp-check-icon">✓</span>Un QR code dédié par table et par zone</li>
+                <li><span class="lp-check-icon">✓</span>Options obligatoires et suppléments paramétrables</li>
+                <li><span class="lp-check-icon">✓</span>Commande envoyée instantanément à l’écran cuisine</li>
+                <li><span class="lp-check-icon">✓</span>Commande transmise directement à la caisse</li>
+                <li><span class="lp-check-icon">✓</span>Zéro erreur de saisie ou d’oubli en salle</li>
+              </ul>
+              <button type="button" class="lp-feature-link" data-trigger-demo>En savoir plus dans la démo →</button>
+            </div>
+          </div>
+
+          <!-- Bloc C : Visuel à gauche, Texte à droite -->
+          <div class="lp-feature-row">
+            <div class="lp-feature-visual" data-reveal="left">
+              <div class="lp-mini-ui">
+                <div class="lp-mini-card">
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <strong>Stocks &amp; Recettes Anti-Coulage</strong>
+                    <span class="lp-mini-badge-warn">1 alerte seuil</span>
+                  </div>
+                  <div>
+                    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
+                      <span>Huile de cuisson (L)</span>
+                      <strong class="mono" style="color:#dc2626;">4,2 L / seuil 5 L</strong>
+                    </div>
+                    <div class="lp-progress-bar"><span style="width:24%;background:#ea580c;"></span></div>
+                  </div>
+                  <div>
+                    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
+                      <span>Poulet frais (kg)</span>
+                      <strong class="mono" style="color:#059669;">18,5 kg</strong>
+                    </div>
+                    <div class="lp-progress-bar"><span style="width:74%;background:#059669;"></span></div>
+                  </div>
+                  <div class="lp-mini-row">
+                    <span>Coût matière (PMP) · Poulet Yassa</span>
+                    <strong class="mono">1 180 FCFA / plat</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="lp-feature-copy" data-reveal>
+              <span class="lp-feature-tag">STOCKS &amp; RECETTES</span>
+              <h3>Chaque plat vendu met votre stock à jour.</h3>
+              <p>Reliez vos plats à leurs ingrédients réels : vous voyez immédiatement ce qui sort de la réserve et ce que chaque recette vous rapporte.</p>
+              <ul class="lp-check-list">
+                <li><span class="lp-check-icon">✓</span>Déstockage automatique à chaque vente</li>
+                <li><span class="lp-check-icon">✓</span>Fiches recettes anti-coulage au gramme près</li>
+                <li><span class="lp-check-icon">✓</span>Alertes automatiques avant rupture</li>
+                <li><span class="lp-check-icon">✓</span>Coût matière (PMP) recalculé à chaque achat</li>
+                <li><span class="lp-check-icon">✓</span>Gestion des achats et fournisseurs</li>
+              </ul>
+              <button type="button" class="lp-feature-link" data-trigger-demo>En savoir plus dans la démo →</button>
+            </div>
+          </div>
+
+          <!-- Bloc D : Texte à gauche, Visuel à droite -->
+          <div class="lp-feature-row is-reversed">
+            <div class="lp-feature-visual" data-reveal="right">
+              <div class="lp-mini-ui">
+                <div class="lp-mini-card">
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <strong>Livraison WhatsApp · #LIV-108</strong>
+                    <span class="lp-mini-badge-ok">Récap prêt</span>
+                  </div>
+                  <div class="lp-mini-row"><span>Client</span><strong>Awa Diop · +221 77 ••• ••</strong></div>
+                  <div class="lp-mini-row"><span>Quartier</span><strong>Almadies · Zone 12</strong></div>
+                  <div class="lp-mini-row"><span>Paiement prévu</span><strong style="color:#0369a1;">Wave à la livraison</strong></div>
+                  <div style="background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;font-size:12.5px;font-weight:700;padding:10px 12px;border-radius:10px;text-align:center;">
+                    Message WhatsApp formaté en 1 clic (ticket + adresse)
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="lp-feature-copy" data-reveal>
+              <span class="lp-feature-tag">LIVRAISON WHATSAPP &amp; MULTI-SITES</span>
+              <h3>Commandes à emporter et livraisons, reçues et suivies sur WhatsApp.</h3>
+              <p>Enregistrez la commande, générez le ticket client et partagez le récapitulatif au client ou au livreur en un clic.</p>
+              <ul class="lp-check-list">
+                <li><span class="lp-check-icon">✓</span>Récapitulatif WhatsApp généré en un clic</li>
+                <li><span class="lp-check-icon">✓</span>Suivi en direct depuis votre téléphone</li>
+                <li><span class="lp-check-icon">✓</span>Gestion de plusieurs établissements (offre Entreprise)</li>
+                <li><span class="lp-check-icon">✓</span>Historique complet des commandes et ventes</li>
+                <li><span class="lp-check-icon">✓</span>Ticket client imprimable ou partageable</li>
+              </ul>
+              <button type="button" class="lp-feature-link" data-trigger-demo>En savoir plus dans la démo →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. DÉMARRAGE EN 3 ÉTAPES -->
+    <section class="lp-section lp-section-alt">
+      <div class="lp-container">
+        <div class="lp-section-head" data-reveal>
+          <h2>Prêt en quelques minutes. Votre équipe encaisse ce soir.</h2>
+          <p>Aucune installation complexe ni technicien à attendre : tout fonctionne depuis votre navigateur.</p>
+        </div>
+
+        <div class="lp-steps-grid lp-stagger">
+          <div class="lp-step-card" data-reveal>
+            <span class="lp-step-num">1</span>
+            <h3>Créez votre établissement et choisissez FCFA ou GNF.</h3>
+            <p>Votre espace sécurisé s’ouvre immédiatement avec vos 14 jours d’essai gratuit.</p>
+          </div>
+          <div class="lp-step-card" data-reveal>
+            <span class="lp-step-num">2</span>
+            <h3>Ajoutez vos produits et imprimez les QR codes de vos tables.</h3>
+            <p>Configurez votre carte, vos recettes et vos zones (salle, terrasse, VIP).</p>
+          </div>
+          <div class="lp-step-card" data-reveal>
+            <span class="lp-step-num">3</span>
+            <h3>Ouvrez la caisse et suivez vos ventes depuis votre téléphone.</h3>
+            <p>Encaissez en espèces, Wave ou Orange Money et recevez votre rapport Z le soir.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. TÉMOIGNAGES (COMPOSANT PRÊT — MASQUÉ PAR DRAPEAU SHOW_TESTIMONIALS = false) -->
+    <section id="lp-testimonials-section" class="lp-section hidden" hidden aria-label="Témoignages clients">
+      <div class="lp-container">
+        <div class="lp-section-head">
+          <h2>Ils pilotent leur établissement avec RestoGest.</h2>
+          <p>Retours d’expérience vérifiés de restaurateurs au Sénégal et en Guinée.</p>
+        </div>
+      </div>
+      <div class="lp-testimonials-viewport">
+        <div id="lp-testimonials-track" class="lp-testimonials-track">
+          <!-- Renseigner uniquement avec de vrais témoignages vérifiés avant d'activer SHOW_TESTIMONIALS = true dans landing.js -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. TARIFS FCFA / GNF -->
+    <section id="tarifs" class="lp-section">
+      <div class="lp-container">
+        <div class="lp-section-head" data-reveal>
+          <h2>Des tarifs clairs, sans frais cachés.</h2>
+          <p>Choisissez votre pays pour afficher les tarifs officiels locaux de RESTOGEST.</p>
+
+          <div class="lp-currency-switch" role="group" aria-label="Choix de la devise">
+            <button type="button" class="lp-cur-btn is-active" data-lp-currency="XOF" aria-pressed="true">🇸🇳 Sénégal (FCFA)</button>
+            <button type="button" class="lp-cur-btn" data-lp-currency="GNF" aria-pressed="false">🇬🇳 Guinée (GNF)</button>
           </div>
         </div>
 
-        <div class="tabs-segmented" role="tablist">
-          <button id="tab-login" type="button" class="seg-btn active" data-auth-tab="login">Connexion</button>
-          <button id="tab-register" type="button" class="seg-btn" data-auth-tab="register">Créer un compte</button>
+        <div class="lp-pricing-grid lp-stagger">
+          <!-- Essentiel -->
+          <article class="lp-price-card" data-reveal>
+            <h3 class="lp-price-name">Essentiel</h3>
+            <p class="lp-price-desc">Pour démarrer vite avec une caisse fiable et un suivi de stock clair.</p>
+            <div>
+              <span id="lp-price-essentiel" class="lp-price-amount">15 000 FCFA</span>
+              <span class="lp-price-period">/ mois</span>
+            </div>
+            <div class="lp-price-setup" data-lp-setup="zero">0 FCFA de frais d’installation</div>
+            <ul class="lp-check-list">
+              <li><span class="lp-check-icon">✓</span>Caisse tactile POS &amp; tickets</li>
+              <li><span class="lp-check-icon">✓</span>Menu Digital QR Code (jusqu’à 15 tables)</li>
+              <li><span class="lp-check-icon">✓</span>Suivi des stocks de base</li>
+              <li><span class="lp-check-icon">✓</span>Clôture de caisse Z quotidienne</li>
+              <li><span class="lp-check-icon">✓</span>1 établissement · 3 utilisateurs</li>
+            </ul>
+            <button type="button" class="lp-btn lp-btn-outline" data-open-auth="register">Démarrer l’essai 14 jours</button>
+          </article>
+
+          <!-- Pro (Recommandée) -->
+          <article class="lp-price-card is-featured" data-reveal>
+            <span class="lp-price-badge">Recommandé</span>
+            <h3 class="lp-price-name">Pro Cloud Restaurant</h3>
+            <p class="lp-price-desc">L’offre complète pour encaisser, suivre la cuisine et stopper le coulage.</p>
+            <div>
+              <span id="lp-price-pro" class="lp-price-amount">29 000 FCFA</span>
+              <span class="lp-price-period">/ mois</span>
+            </div>
+            <div class="lp-price-setup" data-lp-setup="zero">0 FCFA de frais d’installation</div>
+            <ul class="lp-check-list">
+              <li><span class="lp-check-icon">✓</span>Plan de salle &amp; commandes QR illimitées (50 tables)</li>
+              <li><span class="lp-check-icon">✓</span>Écran Cuisine (KDS) temps réel &amp; alertes sonores</li>
+              <li><span class="lp-check-icon">✓</span>Recettes &amp; déstockage anti-coulage automatique</li>
+              <li><span class="lp-check-icon">✓</span>Livraison &amp; récapitulatif WhatsApp</li>
+              <li><span class="lp-check-icon">✓</span>Rapports Z exportables · 10 utilisateurs</li>
+            </ul>
+            <button type="button" class="lp-btn lp-btn-primary" data-open-auth="register">Choisir Pro · 14 jours gratuits</button>
+          </article>
+
+          <!-- Entreprise -->
+          <article class="lp-price-card" data-reveal>
+            <h3 class="lp-price-name">Entreprise Multi-Sites</h3>
+            <p class="lp-price-desc">Pour les groupes, chaînes de restaurants et pâtisseries multi-points de vente.</p>
+            <div>
+              <span id="lp-price-entreprise" class="lp-price-amount">59 000 FCFA</span>
+              <span class="lp-price-period">/ mois</span>
+            </div>
+            <div id="lp-setup-entreprise" class="lp-price-setup has-fee">+ 25 000 FCFA d’installation initiale</div>
+            <ul class="lp-check-list">
+              <li><span class="lp-check-icon">✓</span>Jusqu’à 10 établissements &amp; utilisateurs illimités</li>
+              <li><span class="lp-check-icon">✓</span>Audit de sécurité complet &amp; contrôle des écarts</li>
+              <li><span class="lp-check-icon">✓</span>Menu QR multi-zones VIP, Terrasse &amp; À emporter</li>
+              <li><span class="lp-check-icon">✓</span>Support prioritaire 24/7 (Sénégal &amp; Guinée)</li>
+              <li><span class="lp-check-icon">✓</span>Accompagnement déploiement sur site inclus</li>
+            </ul>
+            <button type="button" class="lp-btn lp-btn-outline" data-open-auth="register">Créer un compte Entreprise</button>
+          </article>
         </div>
 
-        <form id="login-form" class="form-stack">
-          <div class="field">
-            <label for="login-email">Adresse e-mail</label>
-            <input id="login-email" type="email" required placeholder="chef@monresto.sn" autocomplete="email" />
-          </div>
-          <div class="field">
-            <label for="login-password">Mot de passe</label>
-            <input id="login-password" type="password" required placeholder="••••••••" autocomplete="current-password" />
-          </div>
-          <button type="submit" class="btn btn-primary btn-full">Se connecter à mon espace</button>
-          <div class="auth-forgot-row">
-            <button id="btn-forgot-password" type="button" class="link-btn">Mot de passe oublié ?</button>
-          </div>
-        </form>
+        <p id="lp-pricing-payment-line" class="lp-pricing-foot" data-reveal>
+          Paiement simple par Wave, Orange Money ou carte UBA · Essai gratuit 14 jours
+        </p>
+      </div>
+    </section>
 
-        <form id="register-form" class="form-stack hidden">
-          <div class="field-row">
-            <div class="field">
-              <label for="reg-company">Nom du restaurant / fournil</label>
-              <input id="reg-company" type="text" required minlength="2" placeholder="Le Palais Gourmand" />
-            </div>
-            <div class="field">
-              <label for="reg-type">Activité</label>
-              <select id="reg-type">
-                <option value="both">Restaurant &amp; Pâtisserie</option>
-                <option value="restaurant">Restaurant</option>
-                <option value="pastry_shop">Pâtisserie / Boulangerie</option>
-              </select>
-            </div>
-          </div>
-          <div class="field-row">
-            <div class="field">
-              <label for="reg-fullname">Nom complet du gérant</label>
-              <input id="reg-fullname" type="text" required minlength="2" placeholder="Mamadou Kane" />
-            </div>
-            <div class="field">
-              <label for="reg-country">Pays de l'établissement</label>
-              <select id="reg-country">
-                <option value="SN" data-currency="XOF">🇸🇳 Sénégal (XOF — FCFA)</option>
-                <option value="GN" data-currency="GNF">🇬🇳 Guinée (GNF — FG)</option>
-              </select>
-              <input id="reg-currency" type="hidden" value="XOF" />
+    <!-- 10. QUESTIONS FRÉQUENTES -->
+    <section id="faq" class="lp-section lp-section-alt">
+      <div class="lp-container">
+        <div class="lp-section-head" data-reveal>
+          <h2>Questions fréquentes</h2>
+          <p>Les réponses directes avant de lancer votre établissement sur RESTOGEST.</p>
+        </div>
+
+        <div class="lp-faq-list" data-reveal>
+          <div class="lp-faq-item">
+            <button type="button" class="lp-faq-trigger" data-faq-trigger aria-expanded="false">
+              <span>Ai-je besoin d’acheter une caisse spéciale ?</span>
+              <span class="lp-faq-plus" aria-hidden="true">+</span>
+            </button>
+            <div class="lp-faq-panel">
+              <div class="lp-faq-panel-inner">
+                <p>Non : RESTOGEST fonctionne directement dans le navigateur sur smartphone, tablette ou ordinateur (PC / Mac), sans matériel dédié obligatoire.</p>
+              </div>
             </div>
           </div>
-          <div class="field">
-            <label for="reg-email">E-mail professionnel</label>
-            <input id="reg-email" type="email" required placeholder="contact@palaisgourmand.sn" autocomplete="email" />
+
+          <div class="lp-faq-item">
+            <button type="button" class="lp-faq-trigger" data-faq-trigger aria-expanded="false">
+              <span>Comment payer mon abonnement ?</span>
+              <span class="lp-faq-plus" aria-hidden="true">+</span>
+            </button>
+            <div class="lp-faq-panel">
+              <div class="lp-faq-panel-inner">
+                <p>Au Sénégal (FCFA), vous pouvez régler par Wave Sénégal (+221 78 897 93 42), Orange Money ou carte bancaire UBA / Visa. En Guinée (GNF), vous pouvez régler par Orange Money Guinée, virement / solution mobile locale ou carte UBA / Visa.</p>
+              </div>
+            </div>
           </div>
-          <div class="field">
-            <label for="reg-password">Mot de passe (8 caractères min.)</label>
-            <input id="reg-password" type="password" required minlength="8" placeholder="Minimum 8 caractères" autocomplete="new-password" />
+
+          <div class="lp-faq-item">
+            <button type="button" class="lp-faq-trigger" data-faq-trigger aria-expanded="false">
+              <span>Combien de temps dure l’essai gratuit ?</span>
+              <span class="lp-faq-plus" aria-hidden="true">+</span>
+            </button>
+            <div class="lp-faq-panel">
+              <div class="lp-faq-panel-inner">
+                <p>Chaque nouvel établissement bénéficie de 14 jours d’essai gratuit dès la création du compte. Vous pouvez aussi explorer la démo instantanée en un clic sans même créer de compte.</p>
+              </div>
+            </div>
           </div>
-          <button type="submit" class="btn btn-primary btn-full">Créer mon espace RestoGest</button>
-        </form>
-      </section>
+
+          <div class="lp-faq-item">
+            <button type="button" class="lp-faq-trigger" data-faq-trigger aria-expanded="false">
+              <span>Comment fonctionne le déstockage anti-coulage ?</span>
+              <span class="lp-faq-plus" aria-hidden="true">+</span>
+            </button>
+            <div class="lp-faq-panel">
+              <div class="lp-faq-panel-inner">
+                <p>Vous définissez la fiche recette de vos plats avec leurs ingrédients. À chaque vente validée en caisse ou via une commande QR, RESTOGEST déduit automatiquement les quantités correspondantes et recalcule le coût matière (PMP) lors de vos achats fournisseurs.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="lp-faq-item">
+            <button type="button" class="lp-faq-trigger" data-faq-trigger aria-expanded="false">
+              <span>Mes données sont-elles séparées des autres restaurants ?</span>
+              <span class="lp-faq-plus" aria-hidden="true">+</span>
+            </button>
+            <div class="lp-faq-panel">
+              <div class="lp-faq-panel-inner">
+                <p>Oui : chaque établissement est isolé en base PostgreSQL par des règles strictes d’isolation par entreprise (Row Level Security). Vos ventes, stocks et recettes ne sont visibles que par votre équipe autorisée.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 11. APPEL À L'ACTION FINAL -->
+    <section class="lp-section">
+      <div class="lp-container">
+        <div class="lp-cta-final" data-reveal>
+          <h2>Prêt à reprendre la main sur votre caisse et vos stocks ?</h2>
+          <p>Testez l’interface complète en un clic ou créez votre établissement en 2 minutes avec 14 jours d’essai gratuit.</p>
+          <div class="lp-hero-ctas">
+            <button type="button" class="lp-btn lp-btn-primary lp-btn-lg" data-trigger-demo>
+              Tester la démo gratuite
+            </button>
+            <button type="button" class="lp-btn lp-btn-secondary-hero lp-btn-lg" data-open-auth="register">
+              Créer mon compte
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 12. FOOTER (4 COLONNES) -->
+    <footer class="lp-footer">
+      <div class="lp-container">
+        <div class="lp-footer-grid">
+          <div class="lp-footer-col">
+            <h4>Produit</h4>
+            <ul class="lp-footer-links">
+              <li><a href="#fonctionnalites">Caisse &amp; Clôture Z</a></li>
+              <li><a href="#menu-qr">Menu QR Code</a></li>
+              <li><a href="#fonctionnalites">Stocks &amp; recettes</a></li>
+              <li><a href="#tarifs">Tarifs</a></li>
+            </ul>
+          </div>
+
+          <div class="lp-footer-col">
+            <h4>Pays couverts</h4>
+            <ul class="lp-footer-links">
+              <li><a href="#tarifs">🇸🇳 Sénégal (FCFA / XOF)</a></li>
+              <li><a href="#tarifs">🇬🇳 Guinée (GNF)</a></li>
+            </ul>
+            <div id="auth-env-badge" class="env-chip" style="margin-top:14px;font-size:11px;padding:4px 10px;">
+              <span class="status-dot-ok"></span>
+              <span>Système Cloud Opérationnel</span>
+            </div>
+          </div>
+
+          <div class="lp-footer-col">
+            <h4>Contact</h4>
+            <ul class="lp-footer-links">
+              <li><button type="button" data-open-auth="register">Demander un accompagnement</button></li>
+              <li><button type="button" data-trigger-demo>Tester la démo en direct</button></li>
+            </ul>
+          </div>
+
+          <div class="lp-footer-col">
+            <h4>Légal</h4>
+            <ul class="lp-footer-links">
+              <li><button type="button" data-legal-modal="mentions">Mentions légales</button></li>
+              <li><button type="button" data-legal-modal="cgv">CGV</button></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="lp-footer-bottom">
+          <span>© 2026 RestoGest Cloud · Logiciel de gestion pour restaurants et pâtisseries</span>
+          <a href="/admin" class="lp-admin-discreet">Administration plateforme</a>
+        </div>
+      </div>
+    </footer>
+
+    <!-- MODALE CONNEXION & INSCRIPTION (PRÉSERVE 100 % DES IDS POUR APP.JS) -->
+    <div id="auth-modal-backdrop" class="lp-auth-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+      <div class="lp-auth-dialog">
+        <button id="lp-auth-close" type="button" class="lp-auth-close" aria-label="Fermer la fenêtre">&times;</button>
+
+        <section id="client-auth-panel" class="auth-panel">
+          <div class="auth-panel-head">
+            <div class="logo-mark">RG</div>
+            <div>
+              <h2 id="auth-modal-title">Espace Établissement</h2>
+              <p class="muted-text">Connectez-vous ou créez votre compte RestoGest (FCFA / GNF)</p>
+            </div>
+          </div>
+
+          <div class="tabs-segmented" role="tablist">
+            <button id="tab-login" type="button" class="seg-btn active" data-auth-tab="login">Connexion</button>
+            <button id="tab-register" type="button" class="seg-btn" data-auth-tab="register">Créer un compte</button>
+          </div>
+
+          <form id="login-form" class="form-stack">
+            <div class="field">
+              <label for="login-email">Adresse e-mail</label>
+              <input id="login-email" type="email" required placeholder="chef@monresto.sn" autocomplete="email" />
+            </div>
+            <div class="field">
+              <label for="login-password">Mot de passe</label>
+              <input id="login-password" type="password" required placeholder="••••••••" autocomplete="current-password" />
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">Se connecter à mon espace</button>
+            <div class="auth-forgot-row">
+              <button id="btn-forgot-password" type="button" class="link-btn">Mot de passe oublié ?</button>
+            </div>
+          </form>
+
+          <form id="register-form" class="form-stack hidden">
+            <div class="field-row">
+              <div class="field">
+                <label for="reg-company">Nom du restaurant / fournil</label>
+                <input id="reg-company" type="text" required minlength="2" placeholder="Le Palais Gourmand" />
+              </div>
+              <div class="field">
+                <label for="reg-type">Activité</label>
+                <select id="reg-type">
+                  <option value="both">Restaurant &amp; Pâtisserie</option>
+                  <option value="restaurant">Restaurant</option>
+                  <option value="pastry_shop">Pâtisserie / Boulangerie</option>
+                </select>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="reg-fullname">Nom complet du gérant</label>
+                <input id="reg-fullname" type="text" required minlength="2" placeholder="Mamadou Kane" />
+              </div>
+              <div class="field">
+                <label for="reg-country">Pays de l'établissement</label>
+                <select id="reg-country">
+                  <option value="SN" data-currency="XOF">🇸🇳 Sénégal (XOF — FCFA)</option>
+                  <option value="GN" data-currency="GNF">🇬🇳 Guinée (GNF — FG)</option>
+                </select>
+                <input id="reg-currency" type="hidden" value="XOF" />
+              </div>
+            </div>
+            <div class="field">
+              <label for="reg-email">E-mail professionnel</label>
+              <input id="reg-email" type="email" required placeholder="contact@palaisgourmand.sn" autocomplete="email" />
+            </div>
+            <div class="field">
+              <label for="reg-password">Mot de passe (8 caractères min.)</label>
+              <input id="reg-password" type="password" required minlength="8" placeholder="Minimum 8 caractères" autocomplete="new-password" />
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">Créer mon espace RestoGest</button>
+          </form>
+        </section>
+      </div>
     </div>
   </div>
 
@@ -330,5 +967,6 @@
   </div>
 
   <script type="module" src="/js/app.js"></script>
+  <script type="module" src="/js/landing.js"></script>
 </body>
 </html>

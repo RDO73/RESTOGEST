@@ -240,6 +240,8 @@ function showAuthView() {
 }
 
 function showAppView() {
+  document.getElementById('auth-modal-backdrop')?.classList.add('hidden');
+  document.body.style.overflow = '';
   document.getElementById('auth-view').classList.add('hidden');
   document.getElementById('app-view').classList.remove('hidden');
   renderChrome();
