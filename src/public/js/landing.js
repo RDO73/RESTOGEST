@@ -14,7 +14,7 @@ const OFFICIAL_PRICING = {
     entreprise: '59 000 FCFA',
     setupZero: '0 FCFA de frais d’installation',
     setupEnt: '+ 25 000 FCFA d’installation initiale',
-    paymentLine: 'Paiement simple par Wave, Orange Money ou carte UBA · Essai gratuit 14 jours',
+    paymentLine: 'Sénégal : Wave (+221 78 897 93 42), Orange Money ou carte UBA · Essai gratuit 14 jours · Activation après validation du paiement',
   },
   GNF: {
     countryCode: 'GN',
@@ -23,7 +23,7 @@ const OFFICIAL_PRICING = {
     entreprise: '885 000 GNF',
     setupZero: '0 GNF de frais d’installation',
     setupEnt: '+ 375 000 GNF d’installation initiale',
-    paymentLine: 'Paiement par Orange Money Guinée, virement / solution mobile locale ou carte UBA · Essai gratuit 14 jours',
+    paymentLine: 'Guinée : Orange Money Guinée, virement / solution mobile locale ou carte UBA · Essai gratuit 14 jours · Activation après validation du paiement',
   },
 };
 
