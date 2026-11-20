@@ -1,11 +1,18 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middlewares/auth-middleware.js';
+import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
 
 export const inventoryRouter = Router();
 
 inventoryRouter.use(requireAuth);
+inventoryRouter.use((req, res, next) => {
+  if (req.method.toUpperCase() === 'GET') {
+    requirePermission('inventory:read', 'reports:read')(req, res, next);
+  } else {
+    requirePermission('inventory:write')(req, res, next);
+  }
+});
 
 // -------------------------------------------------------------
 // 1. NIVEAUX DE STOCKS ACTUELS

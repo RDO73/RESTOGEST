@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middlewares/auth-middleware.js';
+import { OWNER_SUPER_ADMIN_USER_ID, requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { adminPool, type IDbClient } from '../../db/pool.js';
 import { config } from '../../config/env.js';
 import {
@@ -754,7 +754,7 @@ const updateCompanySettingsLegacySchema = z.object({
   allowNegativeStock: z.boolean().optional(),
 });
 
-subscriptionsRouter.put('/company-settings', async (req, res, next) => {
+subscriptionsRouter.put('/company-settings', requirePermission('settings:manage'), async (req, res, next) => {
   try {
     const parsed = updateCompanySettingsLegacySchema.parse(req.body);
     const updated = await withAdminTransaction(async (client) => {
@@ -1079,7 +1079,7 @@ const checkoutSchema = z.object({
   payerReference: z.string().max(80).optional().nullable(),
 });
 
-subscriptionsRouter.post('/checkout', async (req, res, next) => {
+subscriptionsRouter.post('/checkout', requirePermission('settings:manage'), async (req, res, next) => {
   try {
     const parsed = checkoutSchema.parse(req.body);
     const result = await withAdminTransaction(async (client) => {
@@ -1250,11 +1250,12 @@ async function safeAuditLog(
 
 function ensurePlatformAdminAccess(req: any, res: any): boolean {
   const roleUpper = String(req.auth?.role || '').toUpperCase();
-  if (!req.auth || roleUpper !== 'SUPER_ADMIN') {
+  if (!req.auth || roleUpper !== 'SUPER_ADMIN' || req.auth.userId !== OWNER_SUPER_ADMIN_USER_ID) {
     res.status(403).json({
+      success: false,
       error: {
         code: 'SUPER_ADMIN_REQUIRED',
-        message: 'Accès réservé au Propriétaire / Super-Administrateur (/admin).',
+        message: 'Accès réservé exclusivement au propriétaire de RESTOGEST (/admin).',
       },
     });
     return false;

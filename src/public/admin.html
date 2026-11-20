@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Espace Propriétaire / Super-Admin — RESTOGEST Cloud</title>
+  <title>Espace Propriétaire / Super-Admin — RESTOGEST</title>
   <meta name="robots" content="noindex, nofollow" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
@@ -90,6 +91,17 @@
     <main id="admin-main-content"></main>
   </div>
 
-  <script type="module" src="/js/admin.js"></script>
+  <!-- MODALE FICHE DÉTAILLÉE SUPER-ADMIN -->
+  <div id="sa-modal-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="sa-modal-title">
+    <div class="modal-card" style="max-width:780px;width:95%;">
+      <div class="modal-header">
+        <h3 id="sa-modal-title">Fiche Établissement</h3>
+        <button id="sa-modal-close" type="button" class="icon-btn" aria-label="Fermer">&times;</button>
+      </div>
+      <div id="sa-modal-body" class="modal-body" style="max-height:78vh;overflow:auto;"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/admin.js?v=20261120b"></script>
 </body>
 </html>

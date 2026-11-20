@@ -738,14 +738,30 @@ export function bindTablesAndQrModule(state, { cur, openModal, closeModal, refre
   });
 
   document.querySelectorAll('[data-delete-qr-table]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      try {
-        await apiFetch(`/api/qr/tables/${btn.dataset.deleteQrTable}`, { method: 'DELETE' });
-        showToast('Table supprimée', 'success');
-        await refreshAllData();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+    btn.addEventListener('click', () => {
+      const tableId = btn.dataset.deleteQrTable;
+      openModal(
+        'Confirmer la suppression de la table',
+        `<div class="form-stack">
+          <p class="muted-text">Voulez-vous vraiment supprimer définitivement cette table et son QR code ? Cette action est irréversible.</p>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button type="button" id="btn-cancel-del-table" class="btn btn-outline">Annuler</button>
+            <button type="button" id="btn-confirm-del-table" class="btn btn-danger">Supprimer définitivement</button>
+          </div>
+        </div>`
+      );
+      document.getElementById('btn-cancel-del-table')?.addEventListener('click', closeModal);
+      document.getElementById('btn-confirm-del-table')?.addEventListener('click', async () => {
+        try {
+          await apiFetch(`/api/qr/tables/${tableId}`, { method: 'DELETE' });
+          closeModal();
+          showToast('Table supprimée', 'success');
+          await refreshAllData();
+        } catch (err) {
+          closeModal();
+          showToast(err.message, 'error');
+        }
+      });
     });
   });
 

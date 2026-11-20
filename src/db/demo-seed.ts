@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { adminPool } from './pool.js';
+import { config } from '../config/env.js';
 import { isTokenRevoked } from '../auth/jwt.js';
 
 export const DEMO_TENANT_ID = '00000000-0000-4000-8000-000000000001';
@@ -50,6 +51,40 @@ function createSessionAuthError(message: string): Error & { code: string } {
 let demoSeedMutex: Promise<void> = Promise.resolve();
 let standardHydrateMutex: Promise<void> = Promise.resolve();
 
+// Cache mémoire court des sessions déjà présentes en base (évite la sérialisation sur adminPool lors de requêtes parallèles)
+const hydratedSessions = new Map<string, number>();
+const HYDRATION_CACHE_TTL_MS = 60_000;
+let demoEnvironmentSeeded = false;
+
+export function clearHydrationCaches(): void {
+  hydratedSessions.clear();
+  demoEnvironmentSeeded = false;
+}
+
+export function evictHydratedSession(tokenHash: string): void {
+  hydratedSessions.delete(tokenHash);
+}
+
+function isSessionCachedAsHydrated(tokenHash?: string): boolean {
+  if (!tokenHash) return false;
+  const ts = hydratedSessions.get(tokenHash);
+  if (!ts) return false;
+  if (Date.now() - ts > HYDRATION_CACHE_TTL_MS) {
+    hydratedSessions.delete(tokenHash);
+    return false;
+  }
+  return true;
+}
+
+function markSessionHydrated(tokenHash?: string): void {
+  if (!tokenHash) return;
+  hydratedSessions.set(tokenHash, Date.now());
+  if (hydratedSessions.size > 500) {
+    const oldest = hydratedSessions.keys().next().value;
+    if (oldest) hydratedSessions.delete(oldest);
+  }
+}
+
 function runSerialized(mutex: 'demo' | 'standard', task: () => Promise<void>): Promise<void> {
   const prev = mutex === 'demo' ? demoSeedMutex : standardHydrateMutex;
   const next = prev.then(task, task);
@@ -66,9 +101,20 @@ function runSerialized(mutex: 'demo' | 'standard', task: () => Promise<void>): P
  * ses produits, sa recette Espresso, son achat reçu PMP, sa caisse ouverte et sa session.
  */
 export async function ensureDemoEnvironment(tokenHash?: string): Promise<void> {
+  if (tokenHash && isTokenRevoked(tokenHash)) {
+    throw createSessionAuthError('Authentification refusée : session invalide, expirée ou révoquée');
+  }
+  if (demoEnvironmentSeeded && isSessionCachedAsHydrated(tokenHash)) {
+    return;
+  }
+
   return runSerialized('demo', async () => {
     if (tokenHash && isTokenRevoked(tokenHash)) {
       throw createSessionAuthError('Authentification refusée : session invalide, expirée ou révoquée');
+    }
+
+    if (demoEnvironmentSeeded && isSessionCachedAsHydrated(tokenHash)) {
+      return;
     }
 
     if (tokenHash) {
@@ -77,7 +123,12 @@ export async function ensureDemoEnvironment(tokenHash?: string): Promise<void> {
         [tokenHash]
       );
       if (tokRes.rows[0]?.revoked_at) {
+        evictHydratedSession(tokenHash);
         throw createSessionAuthError('Authentification refusée : session invalide, expirée ou révoquée');
+      }
+      if (demoEnvironmentSeeded && tokRes.rows.length > 0) {
+        markSessionHydrated(tokenHash);
+        return;
       }
     }
 
@@ -92,6 +143,7 @@ export async function ensureDemoEnvironment(tokenHash?: string): Promise<void> {
     const hasEspresso = Boolean(probe.rows[0]?.has_espresso);
 
     if (hasCompany && hasEspresso) {
+      demoEnvironmentSeeded = true;
       if (tokenHash) {
         await adminPool.query(
           `INSERT INTO public.user_sessions (user_id, company_id, token_hash, expires_at)
@@ -99,6 +151,7 @@ export async function ensureDemoEnvironment(tokenHash?: string): Promise<void> {
            ON CONFLICT DO NOTHING`,
           [DEMO_USER_ID, DEMO_TENANT_ID, tokenHash]
         );
+        markSessionHydrated(tokenHash);
       }
       return;
     }
@@ -269,6 +322,10 @@ export async function ensureDemoEnvironment(tokenHash?: string): Promise<void> {
       );
 
       await client.query('COMMIT');
+      demoEnvironmentSeeded = true;
+      if (tokenHash) {
+        markSessionHydrated(tokenHash);
+      }
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
       throw error;
@@ -297,7 +354,15 @@ export async function ensureSessionHydrated(context: StatelessHydrationContext):
     return;
   }
 
+  if (isSessionCachedAsHydrated(context.tokenHash)) {
+    return;
+  }
+
   return runSerialized('standard', async () => {
+    if (isSessionCachedAsHydrated(context.tokenHash)) {
+      return;
+    }
+
     const existingRes = await adminPool.query(
       'SELECT revoked_at, expires_at FROM public.user_sessions WHERE token_hash = $1',
       [context.tokenHash]
@@ -306,8 +371,15 @@ export async function ensureSessionHydrated(context: StatelessHydrationContext):
     if (existingRes.rows.length > 0) {
       const row = existingRes.rows[0];
       if (row.revoked_at) {
+        evictHydratedSession(context.tokenHash);
         throw createSessionAuthError('Authentification refusée : session invalide, expirée ou révoquée');
       }
+      markSessionHydrated(context.tokenHash);
+      return;
+    }
+
+    // En mode PostgreSQL persistant (Neon), ne jamais recréer une session absente
+    if (config.databaseType === 'postgres') {
       return;
     }
 

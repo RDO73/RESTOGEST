@@ -14,6 +14,8 @@ import { subscriptionsRouter } from './modules/subscriptions/subscriptions.route
 import { qrPublicRouter } from './modules/qr/qr-public.router.js';
 import { qrAdminRouter } from './modules/qr/qr-admin.router.js';
 import { superAdminRouter } from './modules/admin/super-admin.router.js';
+import { staffRouter } from './modules/staff/staff.router.js';
+import { customersRouter } from './modules/customers/customers.router.js';
 import { errorHandler } from './middlewares/error-handler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -21,7 +23,38 @@ const __dirname = path.dirname(__filename);
 
 export const app = express();
 
-app.use(express.json());
+app.disable('x-powered-by');
+
+// En-têtes de sécurité HTTP (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy)
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' data: https:",
+      "connect-src 'self' https://app.paydunya.com https://api-checkout.cinetpay.com",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join('; ')
+  );
+  if (
+    process.env.NODE_ENV === 'production' ||
+    Boolean(process.env.VERCEL) ||
+    req.headers['x-forwarded-proto'] === 'https'
+  ) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
+app.use(express.json({ limit: '256kb' }));
 
 const publicCandidates = [
   path.resolve(__dirname, './public'),
@@ -49,6 +82,8 @@ const apiInfoPayload = () => ({
   health: '/health',
   endpoints: [
     '/api/auth',
+    '/api/staff',
+    '/api/customers',
     '/api/catalog',
     '/api/sales',
     '/api/purchases',
@@ -62,7 +97,7 @@ const apiInfoPayload = () => ({
 
 app.get('/robots.txt', (_req, res) => {
   res.type('text/plain').send(
-    'User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: https://myrestogest.com/sitemap.xml\n'
+    'User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nDisallow: /menu/\n\nSitemap: https://myrestogest.com/sitemap.xml\n'
   );
 });
 
@@ -84,6 +119,12 @@ app.get('/sitemap.xml', (_req, res) => {
       '  </url>\n' +
       '  <url>\n' +
       '    <loc>https://myrestogest.com/cgv</loc>\n' +
+      '    <lastmod>2026-11-20</lastmod>\n' +
+      '    <changefreq>monthly</changefreq>\n' +
+      '    <priority>0.3</priority>\n' +
+      '  </url>\n' +
+      '  <url>\n' +
+      '    <loc>https://myrestogest.com/politique-confidentialite</loc>\n' +
       '    <lastmod>2026-11-20</lastmod>\n' +
       '    <changefreq>monthly</changefreq>\n' +
       '    <priority>0.3</priority>\n' +
@@ -113,6 +154,14 @@ app.get('/mentions-legales', (_req, res) => {
 app.get('/cgv', (_req, res) => {
   if (publicDir && fs.existsSync(path.join(publicDir, 'cgv.html'))) {
     res.sendFile(path.join(publicDir, 'cgv.html'));
+    return;
+  }
+  res.status(404).send('Page introuvable.');
+});
+
+app.get('/politique-confidentialite', (_req, res) => {
+  if (publicDir && fs.existsSync(path.join(publicDir, 'politique-confidentialite.html'))) {
+    res.sendFile(path.join(publicDir, 'politique-confidentialite.html'));
     return;
   }
   res.status(404).send('Page introuvable.');
@@ -162,12 +211,30 @@ app.use('/api/admin', superAdminRouter);
 app.use('/api/public/qr', qrPublicRouter);
 app.use('/api/qr', qrAdminRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/staff', staffRouter);
+app.use('/api/customers', customersRouter);
 app.use('/api/catalog', catalogRouter);
 app.use('/api/sales', salesRouter);
 app.use('/api/purchases', purchasesRouter);
 app.use('/api/inventory', inventoryRouter);
 app.use('/api/cash', cashRouter);
 app.use('/api/subscriptions', subscriptionsRouter);
+
+// Route 404 dédiée (JSON pour /api/*, page HTML 404.html pour les autres routes)
+app.use((req, res) => {
+  if (req.path.startsWith('/api/')) {
+    res.status(404).json({
+      success: false,
+      error: 'Ressource API introuvable',
+    });
+    return;
+  }
+  if (publicDir && fs.existsSync(path.join(publicDir, '404.html'))) {
+    res.status(404).sendFile(path.join(publicDir, '404.html'));
+    return;
+  }
+  res.status(404).send('Page introuvable (404).');
+});
 
 // Gestionnaire global d'erreurs
 app.use(errorHandler);

@@ -1,27 +1,64 @@
-import { esc, fmtDate, fmtMoney, showToast } from './api.js';
+import { esc, fmtDate, fmtMoney, getCsrfToken, showToast } from './api.js';
 
-const SA_TOKEN_KEY = 'restogest_super_admin_token';
+// Nettoyage de l'ancien jeton localStorage (migration vers cookie HttpOnly)
+try {
+  localStorage.removeItem('restogest_super_admin_token');
+} catch {
+  // ignore
+}
 
 const state = {
-  token: localStorage.getItem(SA_TOKEN_KEY) || null,
+  authenticated: false,
   subtab: 'pending',
   countryFilter: '',
   statusFilter: '',
+  searchEst: '',
+  searchUsers: '',
+  searchAudit: '',
   overview: null,
   establishments: [],
+  users: [],
+  auditLogs: [],
+  alerts: [],
+  alertCounts: null,
   lastCreatedDemo: null,
 };
 
-async function saFetch(url, opts = {}) {
-  const headers = { ...(opts.headers || {}) };
-  if (state.token) headers.Authorization = `Bearer ${state.token}`;
-  if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+function openSaModal(title, html) {
+  const titleEl = document.getElementById('sa-modal-title');
+  const bodyEl = document.getElementById('sa-modal-body');
+  if (titleEl) titleEl.textContent = title;
+  if (bodyEl) bodyEl.innerHTML = html;
+  document.getElementById('sa-modal-backdrop')?.classList.remove('hidden');
+}
 
-  const res = await fetch(url, {
-    method: opts.method || 'GET',
-    headers,
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-  });
+function closeSaModal() {
+  document.getElementById('sa-modal-backdrop')?.classList.add('hidden');
+  const bodyEl = document.getElementById('sa-modal-body');
+  if (bodyEl) bodyEl.innerHTML = '';
+}
+
+async function saFetch(url, opts = {}) {
+  const method = (opts.method || 'GET').toUpperCase();
+  const headers = { ...(opts.headers || {}) };
+  if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    const csrf = getCsrfToken();
+    if (csrf) headers['X-CSRF-Token'] = csrf;
+  }
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      credentials: 'same-origin',
+      headers,
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    });
+  } catch {
+    throw new Error('Impossible de joindre le serveur RESTOGEST. Vérifiez votre connexion internet.');
+  }
+
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {
@@ -35,10 +72,8 @@ async function saFetch(url, opts = {}) {
   return data;
 }
 
-function setAdminToken(token) {
-  state.token = token;
-  if (token) localStorage.setItem(SA_TOKEN_KEY, token);
-  else localStorage.removeItem(SA_TOKEN_KEY);
+function setAdminToken(active) {
+  state.authenticated = Boolean(active);
 }
 
 function showLoginView() {
@@ -74,14 +109,200 @@ function statusPill(status) {
 }
 
 async function loadAdminData() {
-  if (!state.token) return;
-  const [ovRes, estRes] = await Promise.all([
-    saFetch(`/api/subscriptions/admin/overview?countryCode=${encodeURIComponent(state.countryFilter)}`),
-    saFetch(`/api/admin/establishments?countryCode=${encodeURIComponent(state.countryFilter)}&status=${encodeURIComponent(state.statusFilter)}`),
-  ]);
-  state.overview = ovRes.data;
-  state.establishments = estRes.data || [];
-  renderAdminDashboard();
+  if (!state.authenticated) return;
+  const refreshBtn = document.getElementById('btn-sa-refresh');
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = 'Actualisation...';
+  }
+  try {
+    const settled = await Promise.allSettled([
+      saFetch(`/api/subscriptions/admin/overview?countryCode=${encodeURIComponent(state.countryFilter)}`),
+      saFetch(`/api/admin/establishments?countryCode=${encodeURIComponent(state.countryFilter)}&status=${encodeURIComponent(state.statusFilter)}`),
+      saFetch(`/api/admin/users?countryCode=${encodeURIComponent(state.countryFilter)}`),
+      saFetch('/api/admin/audit-logs?limit=100'),
+      saFetch('/api/admin/alerts'),
+    ]);
+
+    if (settled[0].status === 'fulfilled') state.overview = settled[0].value.data;
+    if (settled[1].status === 'fulfilled') state.establishments = settled[1].value.data || [];
+    if (settled[2].status === 'fulfilled') state.users = settled[2].value.data || [];
+    if (settled[3].status === 'fulfilled') state.auditLogs = settled[3].value.data || [];
+    if (settled[4].status === 'fulfilled') {
+      state.alerts = settled[4].value.data?.alerts || [];
+      state.alertCounts = settled[4].value.data?.counts || null;
+    }
+
+    if (settled.every((r) => r.status === 'rejected')) {
+      showToast(settled[0].reason?.message || 'Impossible de charger les données Super-Admin', 'error');
+      return;
+    }
+    renderAdminDashboard();
+  } finally {
+    if (refreshBtn) {
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = '🔄 Actualiser';
+    }
+  }
+}
+
+async function openEstablishmentDetail(companyId) {
+  openSaModal('Chargement de la fiche...', '<p class="muted-text">Récupération des données de l’établissement...</p>');
+  try {
+    const res = await saFetch(`/api/admin/establishments/${encodeURIComponent(companyId)}`);
+    const d = res.data;
+    const est = d.establishment;
+    const users = d.users || [];
+    const stats = d.stats || {};
+    const txs = d.transactions || [];
+    const logs = d.recentAudit || [];
+
+    openSaModal(
+      `Fiche : ${est.name}`,
+      `
+        <div class="form-stack" style="gap:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:12px;">
+            <div>
+              <strong style="font-size:16px;">${esc(est.name)}</strong>
+              <div class="muted-text" style="font-size:12px;">
+                ${est.country_code === 'GN' ? '🇬🇳 Guinée (GNF)' : '🇸🇳 Sénégal (XOF)'} • Type : ${esc(est.business_type)} • Inscrit le ${esc(fmtDate(est.created_at))}
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              ${statusPill(est.is_active === false ? 'suspended' : est.subscription_status)}
+              ${est.subscription_id
+        ? `<button type="button" class="btn btn-success btn-sm" id="sa-det-extend">+30j</button>`
+        : ''
+      }
+              <button type="button" class="btn ${est.is_active === false ? 'btn-success' : 'btn-danger'} btn-sm" id="sa-det-toggle">
+                ${est.is_active === false ? 'Réactiver l’établissement' : 'Suspendre l’établissement'}
+              </button>
+            </div>
+          </div>
+
+          <div class="kpi-grid">
+            <div class="card kpi-card"><div class="kpi-label">Utilisateurs</div><div class="kpi-value">${users.length}</div></div>
+            <div class="card kpi-card"><div class="kpi-label">Produits</div><div class="kpi-value">${stats.products_count || 0}</div></div>
+            <div class="card kpi-card"><div class="kpi-label">Ventes validées</div><div class="kpi-value">${stats.completed_sales_count || 0}</div></div>
+            <div class="card kpi-card"><div class="kpi-label">Tables QR / Caisses</div><div class="kpi-value">${stats.tables_count || 0} / ${stats.open_cash_sessions_count || 0}</div></div>
+          </div>
+
+          <div class="card">
+            <h4 style="margin:0 0 8px;">Abonnement</h4>
+            <div style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;">
+              <div>Plan : <strong>${esc(est.plan_code)}</strong> (${esc(est.billing_period)})</div>
+              <div>Échéance : <strong>${est.current_period_end ? esc(fmtDate(est.current_period_end)) : '—'}</strong></div>
+              <div>Dernier paiement : <strong>${esc(est.last_payment_method || '—')}</strong> ${est.last_payment_ref ? `(${esc(est.last_payment_ref)})` : ''}</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h4 style="margin:0 0 8px;">Utilisateurs &amp; Rôles (${users.length})</h4>
+            <div class="table-wrap">
+              <table class="responsive-table">
+                <thead><tr><th>Nom / E-mail</th><th>Rôle</th><th>Statut</th></tr></thead>
+                <tbody>
+                  ${users.length === 0
+        ? '<tr><td colspan="3" class="muted-text">Aucun utilisateur</td></tr>'
+        : users
+          .map(
+            (u) => `<tr>
+                              <td><strong>${esc(u.full_name)}</strong><div class="muted-text" style="font-size:11px;">${esc(u.email)}</div></td>
+                              <td>${esc(u.role_name || 'Utilisateur')}</td>
+                              <td>${statusPill(u.is_active && u.membership_active ? 'active' : 'suspended')}</td>
+                            </tr>`
+          )
+          .join('')
+      }
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <h4 style="margin:0 0 8px;">Historique paiements abonnement (${txs.length})</h4>
+            <div class="table-wrap">
+              <table class="responsive-table">
+                <thead><tr><th>Réf.</th><th>Montant</th><th>Moyen</th><th>Statut</th></tr></thead>
+                <tbody>
+                  ${txs.length === 0
+        ? '<tr><td colspan="4" class="muted-text">Aucune transaction enregistrée.</td></tr>'
+        : txs
+          .map(
+            (tx) => `<tr>
+                              <td class="mono">${esc(tx.transaction_ref)}<div class="muted-text" style="font-size:10px;">${esc(fmtDate(tx.created_at))}</div></td>
+                              <td class="mono">${esc(fmtMoney(tx.gross_amount, tx.currency))}</td>
+                              <td>${esc(tx.payment_method)} ${tx.manual_reference ? `(${esc(tx.manual_reference)})` : ''}</td>
+                              <td>${statusPill(tx.status)}</td>
+                            </tr>`
+          )
+          .join('')
+      }
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <h4 style="margin:0 0 8px;">Activité récente (${logs.length})</h4>
+            <div class="table-wrap">
+              <table class="responsive-table">
+                <thead><tr><th>Date</th><th>Action</th><th>Cible</th><th>Acteur</th></tr></thead>
+                <tbody>
+                  ${logs.length === 0
+        ? '<tr><td colspan="4" class="muted-text">Aucune activité récente.</td></tr>'
+        : logs
+          .slice(0, 12)
+          .map(
+            (l) => `<tr>
+                              <td class="mono" style="font-size:11px;">${esc(fmtDate(l.created_at))}</td>
+                              <td><strong>${esc(l.action)}</strong></td>
+                              <td class="mono" style="font-size:11px;">${esc(l.table_name)}</td>
+                              <td class="muted-text" style="font-size:11px;">${esc(l.user_email || 'Système')}</td>
+                            </tr>`
+          )
+          .join('')
+      }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `
+    );
+
+    document.getElementById('sa-det-extend')?.addEventListener('click', async () => {
+      try {
+        await saFetch(`/api/subscriptions/admin/subscriptions/${est.subscription_id}/status`, {
+          method: 'POST',
+          body: { status: 'active', extendDays: 30, reason: 'Activation +30j depuis fiche /admin' },
+        });
+        showToast('Abonnement prolongé (+30 jours)', 'success');
+        await loadAdminData();
+        await openEstablishmentDetail(companyId);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+
+    document.getElementById('sa-det-toggle')?.addEventListener('click', async () => {
+      const nextActive = est.is_active === false;
+      if (!window.confirm(nextActive ? 'Réactiver cet établissement ?' : 'Suspendre cet établissement et couper ses sessions ?')) return;
+      try {
+        await saFetch(`/api/admin/establishments/${est.id}/status`, {
+          method: 'POST',
+          body: { isActive: nextActive, reason: nextActive ? 'Réactivation fiche /admin' : 'Suspension fiche /admin' },
+        });
+        showToast(nextActive ? 'Établissement réactivé' : 'Établissement suspendu', nextActive ? 'success' : 'info');
+        await loadAdminData();
+        await openEstablishmentDetail(companyId);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  } catch (err) {
+    openSaModal('Erreur', `<p class="muted-text">${esc(err.message)}</p>`);
+  }
 }
 
 function renderAdminDashboard() {
@@ -95,10 +316,54 @@ function renderAdminDashboard() {
   const gnfStats = byCur.find((c) => c.currency === 'GNF') || { grossConfirmed: 0, pendingAmount: 0, confirmedCount: 0, pendingCount: 0 };
   const txs = ov.transactions || [];
   const pendingTxs = txs.filter((t) => t.status === 'pending');
-  const establishments = state.establishments || [];
+  const qEst = (state.searchEst || '').toLowerCase();
+  const establishments = (state.establishments || []).filter(
+    (e) =>
+      !qEst ||
+      String(e.name || '').toLowerCase().includes(qEst) ||
+      String(e.owner_email || '').toLowerCase().includes(qEst) ||
+      String(e.owner_name || '').toLowerCase().includes(qEst)
+  );
+  const qUsr = (state.searchUsers || '').toLowerCase();
+  const users = (state.users || []).filter(
+    (u) =>
+      !qUsr ||
+      String(u.full_name || '').toLowerCase().includes(qUsr) ||
+      String(u.email || '').toLowerCase().includes(qUsr) ||
+      String(u.company_name || '').toLowerCase().includes(qUsr)
+  );
+  const qAud = (state.searchAudit || '').toLowerCase();
+  const auditLogs = (state.auditLogs || []).filter(
+    (ev) =>
+      !qAud ||
+      String(ev.action || '').toLowerCase().includes(qAud) ||
+      String(ev.company_name || '').toLowerCase().includes(qAud) ||
+      String(ev.user_email || '').toLowerCase().includes(qAud)
+  );
+  const alerts = state.alerts || [];
   const receptionAccounts = ov.receptionAccounts || [];
 
   root.innerHTML = `
+    ${alerts.length > 0
+      ? `<div class="card" style="margin-bottom:16px;border-color:rgba(245,158,11,0.5);background:rgba(245,158,11,0.06);">
+            <div class="section-head" style="margin-bottom:8px;"><h3 style="margin:0;">🔔 Alertes &amp; Notifications Plateforme (${alerts.length})</h3></div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              ${alerts
+        .map(
+          (a) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);font-size:13px;">
+                    <div>
+                      <strong>${esc(a.title)}</strong>
+                      <div class="muted-text" style="font-size:12px;">${esc(a.detail)}</div>
+                    </div>
+                    <button type="button" class="btn btn-outline btn-sm" data-sa-goto="${esc(a.targetTab)}">Consulter</button>
+                  </div>`
+        )
+        .join('')}
+            </div>
+          </div>`
+      : ''
+    }
+
     <div class="kpi-grid" style="margin-bottom:20px;">
       <div class="card kpi-card">
         <div class="kpi-label">🇸🇳 Sénégal (XOF — FCFA)</div>
@@ -139,6 +404,12 @@ function renderAdminDashboard() {
           <button type="button" class="subtab ${state.subtab === 'reception' ? 'active' : ''}" data-sa-tab="reception">
             📱 Comptes Marchands &amp; Tarifs
           </button>
+          <button type="button" class="subtab ${state.subtab === 'users' ? 'active' : ''}" data-sa-tab="users">
+            👥 Utilisateurs (${users.length})
+          </button>
+          <button type="button" class="subtab ${state.subtab === 'audit' ? 'active' : ''}" data-sa-tab="audit">
+            📋 Journaux (${auditLogs.length})
+          </button>
           <button type="button" class="subtab ${state.subtab === 'control' ? 'active' : ''}" data-sa-tab="control">
             ⚙️ Centre de Contrôle Admin
           </button>
@@ -154,9 +425,8 @@ function renderAdminDashboard() {
       </div>
     </div>
 
-    ${
-      state.subtab === 'pending'
-        ? `
+    ${state.subtab === 'pending'
+      ? `
           <div class="card">
             <div class="section-head"><h3>Validation des Paiements d'Abonnement (Wave, Orange Money, UBA)</h3></div>
             <div class="table-wrap">
@@ -165,12 +435,11 @@ function renderAdminDashboard() {
                   <tr><th>Date / Réf.</th><th>Établissement</th><th>Pays</th><th>Formule</th><th>Montant</th><th>Moyen / Réf. Client</th><th>Décision</th></tr>
                 </thead>
                 <tbody>
-                  ${
-                    pendingTxs.length === 0
-                      ? '<tr><td colspan="7" class="muted-text">Aucun paiement en attente de validation.</td></tr>'
-                      : pendingTxs
-                          .map(
-                            (tx) => `<tr>
+                  ${pendingTxs.length === 0
+        ? '<tr><td colspan="7" class="muted-text">Aucun paiement en attente de validation.</td></tr>'
+        : pendingTxs
+          .map(
+            (tx) => `<tr>
                               <td class="mono"><strong>${esc(tx.transaction_ref)}</strong><div class="muted-text" style="font-size:11px;">${esc(fmtDate(tx.created_at))}</div></td>
                               <td><strong>${esc(tx.company_name)}</strong><div class="muted-text" style="font-size:11px;">${esc(tx.payer_phone || '')}</div></td>
                               <td>${tx.country_code === 'GN' ? '🇬🇳 Guinée' : '🇸🇳 Sénégal'}</td>
@@ -184,20 +453,19 @@ function renderAdminDashboard() {
                                 </div>
                               </td>
                             </tr>`
-                          )
-                          .join('')
-                  }
+          )
+          .join('')
+      }
                 </tbody>
               </table>
             </div>
           </div>
         `
-        : ''
+      : ''
     }
 
-    ${
-      state.subtab === 'establishments'
-        ? `
+    ${state.subtab === 'establishments'
+      ? `
           <div class="card" style="margin-bottom:16px;border-color:rgba(249,115,22,0.45);">
             <div class="section-head">
               <div>
@@ -246,9 +514,8 @@ function renderAdminDashboard() {
               </div>
             </form>
 
-            ${
-              state.lastCreatedDemo
-                ? `<div style="margin-top:14px;padding:12px 14px;border-radius:10px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.4);font-size:13px;">
+            ${state.lastCreatedDemo
+        ? `<div style="margin-top:14px;padding:12px 14px;border-radius:10px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.4);font-size:13px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
                       <strong>✅ Compte démo prêt : ${esc(state.lastCreatedDemo.companyName)} (${esc(state.lastCreatedDemo.countryCode)} / ${esc(state.lastCreatedDemo.currency)})</strong>
                       <button type="button" id="btn-copy-demo-creds" class="btn btn-success btn-sm">📋 Copier les accès</button>
@@ -257,20 +524,23 @@ function renderAdminDashboard() {
                       URL : ${esc(window.location.origin)}/ &nbsp;|&nbsp; E-mail : <strong>${esc(state.lastCreatedDemo.email)}</strong> &nbsp;|&nbsp; Mot de passe : <strong>${esc(state.lastCreatedDemo.password)}</strong> &nbsp;|&nbsp; Statut : ${esc(state.lastCreatedDemo.status)}
                     </div>
                   </div>`
-                : ''
-            }
+        : ''
+      }
           </div>
 
           <div class="card">
-            <div class="section-head">
+            <div class="section-head" style="gap:8px;flex-wrap:wrap;">
               <h3>Liste des Établissements Inscrits (Sénégal &amp; Guinée)</h3>
-              <select id="adm-flt-status" class="input-inline" style="max-width:160px;">
-                <option value="" ${state.statusFilter === '' ? 'selected' : ''}>Tous les statuts</option>
-                <option value="active" ${state.statusFilter === 'active' ? 'selected' : ''}>Actif</option>
-                <option value="pending_payment" ${state.statusFilter === 'pending_payment' ? 'selected' : ''}>En attente</option>
-                <option value="trial" ${state.statusFilter === 'trial' ? 'selected' : ''}>Essai</option>
-                <option value="expired" ${state.statusFilter === 'expired' ? 'selected' : ''}>Expiré</option>
-              </select>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <input id="adm-search-est" class="input-inline" style="max-width:210px;" placeholder="Rechercher resto / e-mail..." value="${esc(state.searchEst)}" />
+                <select id="adm-flt-status" class="input-inline" style="max-width:160px;">
+                  <option value="" ${state.statusFilter === '' ? 'selected' : ''}>Tous les statuts</option>
+                  <option value="active" ${state.statusFilter === 'active' ? 'selected' : ''}>Actif</option>
+                  <option value="pending_payment" ${state.statusFilter === 'pending_payment' ? 'selected' : ''}>En attente</option>
+                  <option value="trial" ${state.statusFilter === 'trial' ? 'selected' : ''}>Essai</option>
+                  <option value="expired" ${state.statusFilter === 'expired' ? 'selected' : ''}>Expiré</option>
+                </select>
+              </div>
             </div>
             <div class="table-wrap">
               <table class="responsive-table">
@@ -278,43 +548,45 @@ function renderAdminDashboard() {
                   <tr><th>Établissement</th><th>Gérant</th><th>Pays / Devise</th><th>Plan</th><th>Statut</th><th>Échéance</th><th>Action</th></tr>
                 </thead>
                 <tbody>
-                  ${
-                    establishments.length === 0
-                      ? '<tr><td colspan="7" class="muted-text">Aucun établissement trouvé.</td></tr>'
-                      : establishments
-                          .map(
-                            (e) => `<tr>
+                  ${establishments.length === 0
+        ? '<tr><td colspan="7" class="muted-text">Aucun établissement trouvé.</td></tr>'
+        : establishments
+          .map(
+            (e) => `<tr>
                               <td><strong>${esc(e.name)}</strong><div class="muted-text" style="font-size:11px;">Inscrit le ${esc(fmtDate(e.created_at))}</div></td>
                               <td>${esc(e.owner_name || '—')}<div class="muted-text" style="font-size:11px;">${esc(e.owner_email || '')}</div></td>
                               <td>${e.country_code === 'GN' ? '🇬🇳 Guinée (GNF)' : '🇸🇳 Sénégal (XOF)'}</td>
                               <td>${esc(e.plan_code)} (${esc(e.billing_period)})</td>
-                              <td>${statusPill(e.subscription_status)}</td>
+                              <td>${statusPill(e.is_active === false ? 'suspended' : e.subscription_status)}</td>
                               <td>${e.current_period_end ? esc(fmtDate(e.current_period_end)) : '—'}</td>
                               <td>
-                                ${
-                                  e.subscription_id
-                                    ? `<div style="display:flex;gap:6px;flex-wrap:wrap;">
-                                        <button type="button" class="btn btn-success btn-sm" data-adm-activate-sub="${esc(e.subscription_id)}">Activer +30j</button>
-                                        <button type="button" class="btn btn-outline btn-sm" data-adm-expire-sub="${esc(e.subscription_id)}">Expirer</button>
-                                      </div>`
-                                    : '<span class="muted-text">—</span>'
-                                }
+                                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                                  <button type="button" class="btn btn-primary btn-sm" data-adm-view-company="${esc(e.id)}">Voir fiche</button>
+                                  ${e.subscription_id
+                ? `<button type="button" class="btn btn-success btn-sm" data-adm-activate-sub="${esc(e.subscription_id)}">+30j</button>
+                                         <button type="button" class="btn btn-outline btn-sm" data-adm-expire-sub="${esc(e.subscription_id)}">Expirer</button>`
+                : ''
+              }
+                                  ${e.is_active === false
+                ? `<button type="button" class="btn btn-success btn-sm" data-adm-toggle-company="${esc(e.id)}" data-next-active="true">Réactiver</button>`
+                : `<button type="button" class="btn btn-danger btn-sm" data-adm-toggle-company="${esc(e.id)}" data-next-active="false">Suspendre</button>`
+              }
+                                </div>
                               </td>
                             </tr>`
-                          )
-                          .join('')
-                  }
+          )
+          .join('')
+      }
                 </tbody>
               </table>
             </div>
           </div>
         `
-        : ''
+      : ''
     }
 
-    ${
-      state.subtab === 'history'
-        ? `
+    ${state.subtab === 'history'
+      ? `
           <div class="card">
             <div class="section-head"><h3>Historique des Transactions SaaS</h3></div>
             <div class="table-wrap">
@@ -322,8 +594,8 @@ function renderAdminDashboard() {
                 <thead><tr><th>Réf.</th><th>Établissement</th><th>Pays</th><th>Montant</th><th>Moyen</th><th>Statut</th></tr></thead>
                 <tbody>
                   ${txs
-                    .map(
-                      (tx) => `<tr>
+        .map(
+          (tx) => `<tr>
                         <td class="mono"><strong>${esc(tx.transaction_ref)}</strong><div class="muted-text" style="font-size:10px;">${esc(fmtDate(tx.created_at))}</div></td>
                         <td><strong>${esc(tx.company_name)}</strong></td>
                         <td>${tx.country_code === 'GN' ? '🇬🇳 GN' : '🇸🇳 SN'}</td>
@@ -331,19 +603,18 @@ function renderAdminDashboard() {
                         <td>${esc(tx.payment_method)} ${tx.manual_reference ? `(${esc(tx.manual_reference)})` : ''}</td>
                         <td>${statusPill(tx.status)}</td>
                       </tr>`
-                    )
-                    .join('')}
+        )
+        .join('')}
                 </tbody>
               </table>
             </div>
           </div>
         `
-        : ''
+      : ''
     }
 
-    ${
-      state.subtab === 'reception'
-        ? `
+    ${state.subtab === 'reception'
+      ? `
           <div class="card">
             <div class="section-head"><h3>Moyens de Réception Propriétaire RESTOGEST</h3></div>
             <div class="table-wrap">
@@ -351,27 +622,103 @@ function renderAdminDashboard() {
                 <thead><tr><th>Pays</th><th>Libellé</th><th>Numéro Marchand / IBAN</th><th>Devise</th><th>Statut</th></tr></thead>
                 <tbody>
                   ${receptionAccounts
-                    .map(
-                      (ra) => `<tr>
+        .map(
+          (ra) => `<tr>
                         <td><strong>${esc(ra.country_code)}</strong></td>
                         <td>${esc(ra.account_label)}</td>
                         <td class="mono"><strong>${esc(ra.merchant_number_or_iban)}</strong></td>
                         <td>${esc(ra.currency_code)}</td>
                         <td>${statusPill(ra.is_active ? 'active' : 'expired')}</td>
                       </tr>`
-                    )
-                    .join('')}
+        )
+        .join('')}
                 </tbody>
               </table>
             </div>
           </div>
         `
-        : ''
+      : ''
     }
 
-    ${
-      state.subtab === 'control'
-        ? `
+    ${state.subtab === 'users'
+      ? `
+          <div class="card">
+            <div class="section-head">
+              <h3>Utilisateurs des Établissements &amp; Permissions (${users.length})</h3>
+            </div>
+            <div class="table-wrap">
+              <table class="responsive-table">
+                <thead>
+                  <tr><th>Utilisateur</th><th>Établissement</th><th>Pays</th><th>Rôle / Permissions</th><th>Statut</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                  ${users.length === 0
+        ? '<tr><td colspan="6" class="muted-text">Aucun utilisateur enregistré.</td></tr>'
+        : users
+          .map((u) => {
+            const perms = u.role_permissions && typeof u.role_permissions === 'object'
+              ? (u.role_permissions.all ? 'Accès complet établissement' : Object.keys(u.role_permissions).join(', ') || 'Standard')
+              : 'Standard';
+            return `<tr>
+                              <td><strong>${esc(u.full_name || '—')}</strong><div class="muted-text" style="font-size:11px;">${esc(u.email)}</div></td>
+                              <td><strong>${esc(u.company_name || '—')}</strong></td>
+                              <td>${u.country_code === 'GN' ? '🇬🇳 Guinée' : '🇸🇳 Sénégal'}</td>
+                              <td><strong>${esc(u.role_name || 'Utilisateur')}</strong><div class="muted-text" style="font-size:11px;">${esc(perms)}</div></td>
+                              <td>${statusPill(u.is_active ? 'active' : 'suspended')}</td>
+                              <td>
+                                ${u.is_active
+                ? `<button type="button" class="btn btn-danger btn-sm" data-adm-toggle-user="${esc(u.id)}" data-next-active="false">Suspendre</button>`
+                : `<button type="button" class="btn btn-success btn-sm" data-adm-toggle-user="${esc(u.id)}" data-next-active="true">Réactiver</button>`
+              }
+                              </td>
+                            </tr>`;
+          })
+          .join('')
+      }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `
+      : ''
+    }
+
+    ${state.subtab === 'audit'
+      ? `
+          <div class="card">
+            <div class="section-head">
+              <h3>Journaux d'Activité &amp; Sécurité (80 derniers événements)</h3>
+            </div>
+            <div class="table-wrap">
+              <table class="responsive-table">
+                <thead>
+                  <tr><th>Date</th><th>Action</th><th>Cible</th><th>Établissement</th><th>Acteur</th></tr>
+                </thead>
+                <tbody>
+                  ${auditLogs.length === 0
+        ? '<tr><td colspan="5" class="muted-text">Aucun événement consigné pour le moment.</td></tr>'
+        : auditLogs
+          .map(
+            (ev) => `<tr>
+                              <td class="mono" style="font-size:11px;">${esc(fmtDate(ev.created_at))}</td>
+                              <td><strong>${esc(ev.action)}</strong></td>
+                              <td class="mono" style="font-size:11px;">${esc(ev.table_name || '—')}</td>
+                              <td>${esc(ev.company_name || 'Plateforme')}</td>
+                              <td class="muted-text" style="font-size:11px;">${esc(ev.user_email || 'Système')}</td>
+                            </tr>`
+          )
+          .join('')
+      }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `
+      : ''
+    }
+
+    ${state.subtab === 'control'
+      ? `
           <div class="two-col">
             <div class="card">
               <div class="section-head"><h3>🧭 Actions &amp; Paramètres Essentiels Super-Admin</h3></div>
@@ -449,7 +796,7 @@ function renderAdminDashboard() {
             </div>
           </div>
         `
-        : ''
+      : ''
     }
   `;
 
@@ -517,12 +864,50 @@ function renderAdminDashboard() {
 
   root.querySelectorAll('[data-adm-expire-sub]').forEach((btn) => {
     btn.addEventListener('click', async () => {
+      const ok = window.confirm('Confirmer la mise en statut « Expiré » pour cet établissement ?');
+      if (!ok) return;
       try {
         await saFetch(`/api/subscriptions/admin/subscriptions/${btn.dataset.admExpireSub}/status`, {
           method: 'POST',
           body: { status: 'expired', reason: 'Marqué expiré depuis /admin' },
         });
         showToast('Statut mis à jour sur Expiré', 'info');
+        await loadAdminData();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  root.querySelectorAll('[data-adm-toggle-company]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const nextActive = btn.dataset.nextActive === 'true';
+      const label = nextActive ? 'réactiver cet établissement' : 'suspendre cet établissement (les sessions en cours seront immédiatement coupées)';
+      if (!window.confirm(`Confirmez-vous vouloir ${label} ?`)) return;
+      try {
+        await saFetch(`/api/admin/establishments/${btn.dataset.admToggleCompany}/status`, {
+          method: 'POST',
+          body: { isActive: nextActive, reason: nextActive ? 'Réactivation manuelle /admin' : 'Suspension manuelle /admin' },
+        });
+        showToast(nextActive ? 'Établissement réactivé' : 'Établissement suspendu', nextActive ? 'success' : 'info');
+        await loadAdminData();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  root.querySelectorAll('[data-adm-toggle-user]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const nextActive = btn.dataset.nextActive === 'true';
+      const label = nextActive ? 'réactiver ce compte utilisateur' : 'suspendre ce compte utilisateur';
+      if (!window.confirm(`Confirmez-vous vouloir ${label} ?`)) return;
+      try {
+        await saFetch(`/api/admin/users/${btn.dataset.admToggleUser}/status`, {
+          method: 'POST',
+          body: { isActive: nextActive, reason: nextActive ? 'Réactivation manuelle /admin' : 'Suspension manuelle /admin' },
+        });
+        showToast(nextActive ? 'Utilisateur réactivé' : 'Utilisateur suspendu', nextActive ? 'success' : 'info');
         await loadAdminData();
       } catch (err) {
         showToast(err.message, 'error');
@@ -621,10 +1006,35 @@ function renderAdminDashboard() {
       showToast(err.message, 'error');
     }
   });
+
+  root.querySelectorAll('[data-adm-view-company]').forEach((btn) => {
+    btn.addEventListener('click', () => openEstablishmentDetail(btn.dataset.admViewCompany));
+  });
+
+  document.getElementById('adm-search-est')?.addEventListener('input', (e) => {
+    state.searchEst = e.target.value;
+    renderAdminDashboard();
+    const inp = document.getElementById('adm-search-est');
+    if (inp) {
+      inp.focus();
+      inp.setSelectionRange(inp.value.length, inp.value.length);
+    }
+  });
 }
+
+document.getElementById('sa-modal-close')?.addEventListener('click', closeSaModal);
+document.getElementById('sa-modal-backdrop')?.addEventListener('click', (e) => {
+  if (e.target.id === 'sa-modal-backdrop') closeSaModal();
+});
 
 document.getElementById('admin-login-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  const prevLabel = submitBtn?.textContent;
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Connexion en cours...';
+  }
   try {
     const res = await saFetch('/api/admin/auth/login', {
       method: 'POST',
@@ -640,6 +1050,11 @@ document.getElementById('admin-login-form')?.addEventListener('submit', async (e
     showToast('Bienvenue dans votre Espace Propriétaire', 'success');
   } catch (err) {
     showToast(err.message, 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = prevLabel || 'Connexion Espace Propriétaire';
+    }
   }
 });
 
@@ -656,15 +1071,14 @@ document.getElementById('btn-sa-logout')?.addEventListener('click', async () => 
 });
 
 async function init() {
-  if (state.token) {
-    try {
-      await saFetch('/api/admin/auth/me', { skipAuthReset: true });
-      showAppView();
-      await loadAdminData();
-      return;
-    } catch {
-      setAdminToken(null);
-    }
+  try {
+    await saFetch('/api/admin/auth/me', { skipAuthReset: true });
+    setAdminToken(true);
+    showAppView();
+    await loadAdminData();
+    return;
+  } catch {
+    setAdminToken(null);
   }
   showLoginView();
 }

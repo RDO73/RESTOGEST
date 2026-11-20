@@ -1,11 +1,15 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middlewares/auth-middleware.js';
+import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
 
 export const catalogRouter = Router();
 
 catalogRouter.use(requireAuth);
+catalogRouter.use((req, res, next) => {
+  const perm = req.method.toUpperCase() === 'GET' ? 'catalog:read' : 'catalog:write';
+  requirePermission(perm)(req, res, next);
+});
 
 // -------------------------------------------------------------
 // CATÉGORIES
@@ -113,6 +117,70 @@ catalogRouter.post('/products', async (req, res, next) => {
     });
 
     res.status(201).json({ success: true, data: product });
+  } catch (error) {
+    next(error);
+  }
+});
+
+catalogRouter.put('/products/:id', async (req, res, next) => {
+  try {
+    const productId = z.string().uuid().parse(req.params.id);
+    const schema = z.object({
+      categoryId: z.string().uuid().nullable().optional(),
+      name: z.string().min(1).max(255).optional(),
+      sku: z.string().max(100).nullable().optional(),
+      productType: z.enum(['raw_material', 'semi_finished', 'finished_good', 'service']).optional(),
+      unit: z.string().max(20).optional(),
+      sellingPrice: z.number().min(0).optional(),
+      costPrice: z.number().min(0).optional(),
+      inventoryTracking: z.enum(['direct', 'recipe_on_sale', 'none']).optional(),
+      minStockAlert: z.number().min(0).optional(),
+      isActive: z.boolean().optional(),
+    });
+    const data = schema.parse(req.body);
+
+    const updated = await withTenantContext(req.auth!, async (client) => {
+      const existing = await client.query(`SELECT * FROM public.products WHERE id = $1`, [productId]);
+      if (existing.rows.length === 0) return null;
+      const cur = existing.rows[0];
+      const result = await client.query(
+        `UPDATE public.products
+         SET category_id = $2,
+             name = $3,
+             sku = $4,
+             product_type = $5,
+             unit = $6,
+             selling_price = $7,
+             cost_price = $8,
+             inventory_tracking = $9,
+             min_stock_alert = $10,
+             is_active = $11,
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [
+          productId,
+          data.categoryId !== undefined ? data.categoryId : cur.category_id,
+          data.name !== undefined ? data.name.trim() : cur.name,
+          data.sku !== undefined ? data.sku : cur.sku,
+          data.productType ?? cur.product_type,
+          data.unit ?? cur.unit,
+          data.sellingPrice !== undefined ? data.sellingPrice : cur.selling_price,
+          data.costPrice !== undefined ? data.costPrice : cur.cost_price,
+          data.inventoryTracking ?? cur.inventory_tracking,
+          data.minStockAlert !== undefined ? data.minStockAlert : cur.min_stock_alert,
+          data.isActive !== undefined ? data.isActive : cur.is_active,
+        ]
+      );
+      return result.rows[0];
+    });
+
+    if (!updated) {
+      res.status(404).json({ success: false, error: 'Produit introuvable' });
+      return;
+    }
+
+    res.json({ success: true, message: 'Produit mis à jour avec succès', data: updated });
   } catch (error) {
     next(error);
   }

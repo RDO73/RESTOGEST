@@ -1,11 +1,24 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middlewares/auth-middleware.js';
+import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
 
 export const salesRouter = Router();
 
 salesRouter.use(requireAuth);
+salesRouter.use((req, res, next) => {
+  const method = req.method.toUpperCase();
+  if (method === 'GET') {
+    requirePermission('pos:read', 'reports:read', 'tables:read', 'cash:read')(req, res, next);
+    return;
+  }
+  const pathStr = req.path || '';
+  if (/\/(payments|complete|cancel)$/i.test(pathStr)) {
+    requirePermission('pos:pay', 'cash:write')(req, res, next);
+    return;
+  }
+  requirePermission('pos:write')(req, res, next);
+});
 
 // -------------------------------------------------------------
 // 1. LISTE DES VENTES AVEC FILTRES AVANCÉS

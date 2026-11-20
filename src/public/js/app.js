@@ -20,6 +20,12 @@ import {
   renderSaasFinancesAdminModule,
   bindSaasFinancesAdminModule,
 } from './qr-and-saas-ui.js';
+import {
+  renderStaffModule,
+  bindStaffModule,
+  renderCustomersModule,
+  bindCustomersModule,
+} from './staff-ui.js';
 
 const FLOOR_TABLES = [
   ...Array.from({ length: 12 }, (_, idx) => ({
@@ -46,6 +52,11 @@ const state = {
   health: null,
   user: null,
   company: null,
+  role: { code: 'owner', name: 'Propriétaire', isOwner: true, defaultRoute: 'dashboard', permissions: { all: true } },
+  isDemo: false,
+  isRefreshing: false,
+  refreshSeq: 0,
+  appliedRefreshSeq: 0,
   subscriptionData: null,
   route: 'dashboard',
   subtabs: {
@@ -73,6 +84,13 @@ const state = {
   cashCurrent: null,
   cashSessions: [],
   expenses: [],
+  customers: [],
+  customerSearch: '',
+  staffMembers: [],
+  staffPresets: null,
+  staffActivity: [],
+  staffActivityUserFilter: '',
+  lastCreatedStaff: null,
   qrTables: [],
   qrSettings: {},
   qrOptions: [],
@@ -98,9 +116,79 @@ const ROUTE_META = {
   inventory: { title: 'Stocks & Alertes', sub: 'Niveaux, valorisation PMP, alertes et ajustements' },
   purchases: { title: 'Achats & Fournisseurs', sub: 'Approvisionnement, réception et calcul automatique du PMP' },
   cash: { title: 'Trésorerie & Caisse', sub: 'Ouverture, dépenses et clôture Z détaillée' },
+  customers: { title: 'Fichier Clients', sub: 'Répertoire clients, historique de commandes et points de fidélité' },
+  staff: { title: 'Équipe & Employés', sub: 'Comptes individuels, rôles métiers, autorisations et suivi d’activité' },
   subscription: { title: 'Abonnement & Licence', sub: 'Comparateur des plans, souscription SaaS et factures XOF / GNF' },
   'saas-admin': { title: 'Finances RESTOGEST', sub: 'Pilotage des revenus SaaS, abonnements clients, factures et reversements' },
 };
+
+const ROUTE_PERMISSIONS = {
+  dashboard: ['dashboard:read', 'reports:read'],
+  tables: ['tables:read', 'tables:write'],
+  'qr-orders': ['qr_orders:read', 'qr_orders:write'],
+  pos: ['pos:read', 'pos:write', 'pos:pay'],
+  catalog: ['catalog:read', 'catalog:write'],
+  inventory: ['inventory:read', 'inventory:write'],
+  purchases: ['purchases:read', 'purchases:write'],
+  cash: ['cash:read', 'cash:write', 'reports:read'],
+  customers: ['customers:read', 'customers:write'],
+  staff: ['staff:manage'],
+  subscription: ['settings:manage'],
+  'saas-admin': ['__super_admin_only__'],
+};
+
+function can(required) {
+  const perms = state.role?.permissions || {};
+  if (perms.all === true) return true;
+  const list = Array.isArray(required) ? required : [required];
+  return list.some((p) => perms[p] === true);
+}
+
+function canAccessRoute(route) {
+  const req = ROUTE_PERMISSIONS[route];
+  if (!req) return true;
+  return can(req);
+}
+
+function getPreferredRoute() {
+  const def = state.role?.defaultRoute || 'dashboard';
+  if (canAccessRoute(def)) return def;
+  for (const r of ['dashboard', 'pos', 'tables', 'qr-orders', 'inventory', 'cash', 'catalog', 'purchases', 'customers', 'staff', 'subscription']) {
+    if (canAccessRoute(r)) return r;
+  }
+  return 'dashboard';
+}
+
+async function withFormSubmit(form, task) {
+  if (!form || form.dataset.submitting === '1') return;
+  form.dataset.submitting = '1';
+  const btn = form.querySelector('button[type="submit"]');
+  const prevText = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Enregistrement...';
+  }
+  try {
+    await task();
+  } catch (err) {
+    showToast(err?.message || 'Erreur lors de l’enregistrement. Vos données saisies sont conservées.', 'error');
+  } finally {
+    delete form.dataset.submitting;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = prevText;
+    }
+  }
+}
+
+function isUserActivelyEditingForm() {
+  const active = document.activeElement;
+  if (!active) return false;
+  const main = document.getElementById('main-content');
+  if (!main || !main.contains(active)) return false;
+  const tag = active.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
 
 const CURRENCY = () => state.company?.currency || state.subscriptionData?.settings?.currency || state.subscriptionData?.company?.currency || 'XOF';
 
@@ -217,6 +305,34 @@ function closeModal() {
   document.getElementById('modal-body').innerHTML = '';
 }
 
+function confirmActionModal({ title, message, confirmLabel = 'Confirmer', variant = 'danger', onConfirm }) {
+  openModal(
+    title,
+    `<div class="form-stack">
+      <p class="muted-text" style="line-height:1.6;">${esc(message)}</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+        <button type="button" id="btn-confirm-cancel" class="btn btn-outline">Annuler</button>
+        <button type="button" id="btn-confirm-accept" class="btn btn-${esc(variant)}">${esc(confirmLabel)}</button>
+      </div>
+    </div>`
+  );
+  document.getElementById('btn-confirm-cancel')?.addEventListener('click', closeModal);
+  document.getElementById('btn-confirm-accept')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-confirm-accept');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Traitement...';
+    }
+    try {
+      await onConfirm();
+      closeModal();
+    } catch (err) {
+      closeModal();
+      showToast(err?.message || 'Action impossible pour le moment.', 'error');
+    }
+  });
+}
+
 function toggleSidebar(forceOpen) {
   const sb = document.getElementById('app-sidebar');
   const bd = document.getElementById('sidebar-backdrop');
@@ -239,20 +355,40 @@ function showAuthView() {
   document.getElementById('app-view').classList.add('hidden');
 }
 
+function applyRoleNavigation() {
+  document.querySelectorAll('.nav-item, .mobile-nav-item').forEach((el) => {
+    const r = el.dataset.route;
+    if (!r) return;
+    const allowed = canAccessRoute(r);
+    el.classList.toggle('hidden', !allowed);
+    el.classList.toggle('active', r === state.route);
+  });
+  const soundBtn = document.getElementById('btn-toggle-qr-sound');
+  if (soundBtn) soundBtn.classList.toggle('hidden', !can(['qr_orders:read', 'qr_orders:write']));
+  const cashPill = document.getElementById('cash-status-pill');
+  if (cashPill) cashPill.classList.toggle('hidden', !can(['cash:read', 'cash:write', 'reports:read']));
+}
+
 function showAppView() {
   document.getElementById('auth-modal-backdrop')?.classList.add('hidden');
   document.body.style.overflow = '';
   document.getElementById('auth-view').classList.add('hidden');
   document.getElementById('app-view').classList.remove('hidden');
+  if (!canAccessRoute(state.route)) {
+    state.route = getPreferredRoute();
+  }
+  applyRoleNavigation();
   renderChrome();
   renderRoute();
 }
 
 function setRoute(route) {
+  if (!canAccessRoute(route)) {
+    showToast('Votre rôle ne dispose pas des autorisations pour accéder à cette rubrique.', 'warning');
+    return;
+  }
   state.route = route;
-  document.querySelectorAll('.nav-item, .mobile-nav-item').forEach((el) => {
-    el.classList.toggle('active', el.dataset.route === route);
-  });
+  applyRoleNavigation();
   toggleSidebar(false);
   renderChrome();
   renderRoute();
@@ -260,14 +396,22 @@ function setRoute(route) {
 }
 
 function renderChrome() {
+  if (!canAccessRoute(state.route)) {
+    state.route = getPreferredRoute();
+  }
+  applyRoleNavigation();
   const meta = ROUTE_META[state.route] || ROUTE_META.dashboard;
   document.getElementById('page-title').textContent = meta.title;
-  document.getElementById('page-subtitle').textContent = meta.sub;
+  document.getElementById('page-subtitle').textContent = `${meta.sub}${state.role?.name ? ` · Profil : ${state.role.name}` : ''}`;
 
   if (state.company && state.user) {
     document.getElementById('sidebar-company-name').textContent = `${state.company.name} (${CURRENCY()})`;
     document.getElementById('user-fullname').textContent = state.user.full_name;
     document.getElementById('user-email').textContent = state.user.email;
+    const roleBadgeEl = document.getElementById('user-role-badge');
+    if (roleBadgeEl) {
+      roleBadgeEl.textContent = state.role?.name || 'Propriétaire';
+    }
     const initials = (state.user.full_name || 'RG')
       .split(/\s+/)
       .slice(0, 2)
@@ -277,12 +421,14 @@ function renderChrome() {
   }
 
   const cashPill = document.getElementById('cash-status-pill');
-  if (state.cashCurrent) {
-    cashPill.className = 'status-pill status-open';
-    cashPill.textContent = `Caisse : ${fmtMoney(state.cashCurrent.metrics?.theoreticalCashInDrawer, CURRENCY())}`;
-  } else {
-    cashPill.className = 'status-pill status-closed';
-    cashPill.textContent = 'Caisse fermée';
+  if (cashPill && !cashPill.classList.contains('hidden')) {
+    if (state.cashCurrent) {
+      cashPill.className = 'status-pill status-open';
+      cashPill.textContent = `Caisse : ${fmtMoney(state.cashCurrent.metrics?.theoreticalCashInDrawer, CURRENCY())}`;
+    } else {
+      cashPill.className = 'status-pill status-closed';
+      cashPill.textContent = 'Caisse fermée';
+    }
   }
 
   const licPill = document.getElementById('license-status-pill');
@@ -301,14 +447,55 @@ function renderChrome() {
   }
 
   const dbPill = document.getElementById('sidebar-db-pill');
+  const isEphemeral = state.health?.database === 'pglite-ephemeral';
   if (dbPill) {
-    dbPill.textContent = 'Système Cloud Opérationnel';
-    dbPill.classList.remove('is-ephemeral');
+    if (isEphemeral) {
+      dbPill.textContent = 'Mode bac à sable temporaire';
+      dbPill.classList.add('is-ephemeral');
+    } else {
+      dbPill.textContent = 'Base PostgreSQL persistante';
+      dbPill.classList.remove('is-ephemeral');
+    }
+  }
+
+  const demoBanner = document.getElementById('demo-mode-banner');
+  if (demoBanner) {
+    if (state.isDemo) {
+      demoBanner.classList.remove('hidden');
+      demoBanner.innerHTML = `
+        <div>
+          <strong>Mode Démonstration isolé (${esc(state.company?.name || 'Le Palais Gourmand (Démo)')})</strong> —
+          ${
+            isEphemeral
+              ? 'Cet aperçu tourne sans base externe : les saisies peuvent être réinitialisées entre redémarrages serveur.'
+              : 'Vos opérations de test sont enregistrées dans cet espace de démonstration séparé des vrais établissements.'
+          }
+        </div>
+        <button id="btn-demo-create-real" type="button" class="btn btn-primary btn-sm">Créer mon vrai établissement</button>
+      `;
+      document.getElementById('btn-demo-create-real')?.addEventListener('click', async () => {
+        try {
+          await apiFetch('/api/auth/logout', { method: 'POST', ignoreUnauthorized: true });
+        } catch {
+          // ignore
+        }
+        setToken(null);
+        state.user = null;
+        state.company = null;
+        state.isDemo = false;
+        showAuthView();
+        document.getElementById('auth-modal-backdrop')?.classList.remove('hidden');
+        switchAuthTab('register');
+      });
+    } else {
+      demoBanner.classList.add('hidden');
+      demoBanner.innerHTML = '';
+    }
   }
 }
 
 // -------------------------------------------------------------
-// CHARGEMENT DES DONNÉES
+// CHARGEMENT DES DONNÉES (ANTI-ÉCRASEMENT & SÉQUENCÉ)
 // -------------------------------------------------------------
 async function loadHealth() {
   const badge = document.getElementById('auth-env-badge');
@@ -316,7 +503,10 @@ async function loadHealth() {
     const h = await apiFetch('/health', { skipAuth: true, ignoreUnauthorized: true });
     state.health = h;
     if (badge) {
-      badge.innerHTML = '<span class="status-dot-ok"></span><span>Système Cloud Opérationnel</span>';
+      badge.innerHTML =
+        h?.database === 'pglite-ephemeral'
+          ? '<span>Mode Aperçu Local</span>'
+          : '<span class="status-dot-ok"></span><span>Système Cloud Opérationnel</span>';
     }
   } catch {
     if (badge) {
@@ -325,109 +515,224 @@ async function loadHealth() {
   }
 }
 
-async function refreshAllData() {
+function showNetworkRetryBanner(message) {
+  const main = document.getElementById('main-content');
+  if (!main) return;
+  let banner = document.getElementById('app-network-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'app-network-banner';
+    banner.className = 'card';
+    banner.style.cssText =
+      'background:#fef2f2;border:1px solid #fecaca;color:#991b1b;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;';
+    main.prepend(banner);
+  }
+  banner.innerHTML = `
+    <div style="font-size:13px;font-weight:600;">
+      ${esc(message)}
+    </div>
+    <button id="btn-retry-sync" type="button" class="btn btn-danger btn-sm">Réessayer</button>
+  `;
+  document.getElementById('btn-retry-sync')?.addEventListener('click', () => refreshAllData({ force: true }));
+}
+
+function clearNetworkRetryBanner() {
+  document.getElementById('app-network-banner')?.remove();
+}
+
+async function refreshAllData(opts = {}) {
   if (!getToken()) return;
-  const results = await Promise.allSettled([
-    apiFetch('/api/auth/me'),
-    apiFetch('/api/catalog/categories'),
-    apiFetch('/api/catalog/products'),
-    apiFetch('/api/catalog/recipes'),
-    apiFetch('/api/inventory/levels'),
-    apiFetch('/api/inventory/alerts'),
-    apiFetch('/api/inventory/summary'),
-    apiFetch('/api/inventory/movements?limit=50'),
-    apiFetch('/api/purchases/suppliers'),
-    apiFetch('/api/purchases?limit=30'),
-    apiFetch('/api/sales?limit=50'),
-    apiFetch('/api/cash/sessions/current'),
-    apiFetch('/api/cash/sessions?limit=20'),
-    apiFetch('/api/cash/expenses?limit=30'),
-    apiFetch('/api/subscriptions/current'),
-    apiFetch('/api/qr/tables'),
-    apiFetch('/api/qr/settings'),
-    apiFetch('/api/qr/options'),
-    apiFetch('/api/qr/orders?limit=60'),
-    apiFetch(`/api/qr/analytics?period=${encodeURIComponent(state.qrAnalyticsPeriod || 'month')}`),
-  ]);
+  const silent = Boolean(opts.silent);
+  const force = Boolean(opts.force);
 
-  const val = (idx, fallback = null) =>
-    results[idx]?.status === 'fulfilled' ? results[idx].value.data : fallback;
+  // Ne jamais chevaucher un rafraîchissement silencieux si un chargement est déjà en cours
+  if (silent && state.isRefreshing) return;
 
-  const me = val(0);
-  if (me) {
-    state.user = me.user;
-    state.company = me.company;
-  }
-  state.categories = val(1, []);
-  state.products = val(2, []);
-  state.recipes = val(3, []);
-  state.levels = val(4, []);
-  state.alerts = val(5, []);
-  state.invSummary = val(6, null);
-  state.movements = val(7, []);
-  state.suppliers = val(8, []);
-  state.purchases = val(9, []);
-  state.sales = val(10, []);
-  state.cashCurrent = val(11, null);
-  state.cashSessions = val(12, []);
-  state.expenses = val(13, []);
-  state.subscriptionData = val(14, null);
-  state.qrTables = val(15, []);
-  state.qrSettings = val(16, {});
-  state.qrOptions = val(17, []);
+  const mySeq = ++state.refreshSeq;
+  state.isRefreshing = true;
 
-  const qrOrdersData = val(18, { orders: [], serviceRequests: [] });
-  const incomingOrders = qrOrdersData?.orders || [];
-  const incomingReqs = qrOrdersData?.serviceRequests || [];
-
-  // Notification sonore lors d'une nouvelle commande QR reçue
-  const receivedIds = incomingOrders.filter((o) => o.status === 'received').map((o) => o.id);
-  if (state.knownQrOrderIds !== null && state.qrSoundEnabled) {
-    const hasBrandNew = receivedIds.some((id) => !state.knownQrOrderIds.has(id));
-    if (hasBrandNew) {
-      playQrNotificationSound();
-      showToast('🔔 Nouvelle commande QR reçue depuis une table !', 'info');
-    }
-  }
-  state.knownQrOrderIds = new Set(receivedIds);
-  state.qrOrders = incomingOrders;
-  state.qrServiceRequests = incomingReqs;
-  state.qrAnalytics = val(19, null);
-  state.saasAdminOverview = val(20, null);
-
-  const badgeEl = document.getElementById('qr-pending-badge');
-  const pendingCount = receivedIds.length + incomingReqs.length;
-  if (badgeEl) {
-    badgeEl.textContent = String(pendingCount);
-    badgeEl.classList.toggle('hidden', pendingCount === 0);
+  const refreshBtn = document.getElementById('btn-refresh-all');
+  const prevRefreshHtml = refreshBtn?.innerHTML;
+  if (refreshBtn && !silent) {
+    refreshBtn.disabled = true;
   }
 
-  if (state.activeSale) {
+  try {
+    // 1. Charger d'abord la session active pour connaître le rôle et les permissions réels
+    let meRes;
     try {
-      const detail = await apiFetch(`/api/sales/${state.activeSale.id}`);
-      state.activeSale = detail.data;
-    } catch {
-      state.activeSale = null;
+      meRes = await apiFetch('/api/auth/me');
+    } catch (err) {
+      if (mySeq < state.appliedRefreshSeq) return;
+      state.networkError =
+        err?.message || 'Connexion au serveur interrompue. Vos saisies en cours restent préservées.';
+      if (!silent) showNetworkRetryBanner(state.networkError);
+      return;
     }
-  } else {
-    const pending = state.sales.find((s) => s.status === 'pending');
-    if (pending) {
-      const detail = await apiFetch(`/api/sales/${pending.id}`).catch(() => null);
-      if (detail) state.activeSale = detail.data;
+
+    if (mySeq < state.appliedRefreshSeq) return;
+
+    const me = meRes?.data;
+    if (me) {
+      state.user = me.user;
+      state.company = me.company;
+      if (me.role) state.role = me.role;
+      state.isDemo = Boolean(me.isDemo);
+    }
+
+    // 2. N'interroger QUE les modules autorisés par le rôle de l'utilisateur
+    const fetchTasks = {};
+    const queue = (key, allowed, url) => {
+      if (allowed) fetchTasks[key] = apiFetch(url, { ignoreUnauthorized: silent });
+    };
+
+    queue('categories', can('catalog:read'), '/api/catalog/categories');
+    queue('products', can('catalog:read'), '/api/catalog/products');
+    queue('recipes', can('catalog:read'), '/api/catalog/recipes');
+    queue('levels', can(['inventory:read', 'reports:read']), '/api/inventory/levels');
+    queue('alerts', can(['inventory:read', 'reports:read']), '/api/inventory/alerts');
+    queue('invSummary', can(['inventory:read', 'reports:read']), '/api/inventory/summary');
+    queue('movements', can(['inventory:read', 'reports:read']), '/api/inventory/movements?limit=50');
+    queue('suppliers', can(['purchases:read', 'reports:read']), '/api/purchases/suppliers');
+    queue('purchases', can(['purchases:read', 'reports:read']), '/api/purchases?limit=30');
+    queue('sales', can(['pos:read', 'reports:read', 'tables:read', 'cash:read']), '/api/sales?limit=50');
+    queue('cashCurrent', can(['cash:read', 'reports:read']), '/api/cash/sessions/current');
+    queue('cashSessions', can(['cash:read', 'reports:read']), '/api/cash/sessions?limit=20');
+    queue('expenses', can(['cash:read', 'reports:read']), '/api/cash/expenses?limit=50');
+    queue('customers', can(['customers:read', 'customers:write']), '/api/customers');
+    queue('subscriptionData', true, '/api/subscriptions/current');
+    queue('qrTables', can(['tables:read', 'qr_orders:read']), '/api/qr/tables');
+    queue('qrSettings', can(['tables:read', 'qr_orders:read']), '/api/qr/settings');
+    queue('qrOptions', can(['tables:read', 'catalog:read']), '/api/qr/options');
+    queue('qrOrdersData', can(['qr_orders:read', 'tables:read', 'pos:read']), '/api/qr/orders?limit=60');
+    queue(
+      'qrAnalytics',
+      can(['reports:read', 'dashboard:read', 'qr_orders:read']),
+      `/api/qr/analytics?period=${encodeURIComponent(state.qrAnalyticsPeriod || 'month')}`
+    );
+    queue('staffMembers', can('staff:manage'), '/api/staff');
+    queue('staffPresets', can('staff:manage') && !state.staffPresets, '/api/staff/presets');
+    queue(
+      'staffActivity',
+      can('staff:manage'),
+      `/api/staff/activity?limit=80${state.staffActivityUserFilter ? `&userId=${encodeURIComponent(state.staffActivityUserFilter)}` : ''}`
+    );
+
+    const keys = Object.keys(fetchTasks);
+    const settled = await Promise.allSettled(Object.values(fetchTasks));
+
+    // Ignorer toute réponse obsolète si une mise à jour plus récente a déjà été appliquée
+    if (mySeq < state.appliedRefreshSeq) return;
+    state.appliedRefreshSeq = mySeq;
+
+    state.networkError = null;
+    clearNetworkRetryBanner();
+
+    const dataMap = {};
+    let rejectedCount = 0;
+    keys.forEach((k, i) => {
+      if (settled[i]?.status === 'fulfilled') {
+        dataMap[k] = settled[i].value?.data;
+      } else {
+        rejectedCount++;
+      }
+    });
+
+    // RÈGLE CRITIQUE ANTI-DISPARITION : ne jamais écraser un état valide par [] ou null si un appel échoue
+    const merge = (key, current) => (Object.prototype.hasOwnProperty.call(dataMap, key) ? dataMap[key] : current);
+
+    state.categories = merge('categories', state.categories);
+    state.products = merge('products', state.products);
+    state.recipes = merge('recipes', state.recipes);
+    state.levels = merge('levels', state.levels);
+    state.alerts = merge('alerts', state.alerts);
+    state.invSummary = merge('invSummary', state.invSummary);
+    state.movements = merge('movements', state.movements);
+    state.suppliers = merge('suppliers', state.suppliers);
+    state.purchases = merge('purchases', state.purchases);
+    state.sales = merge('sales', state.sales);
+    state.cashCurrent = merge('cashCurrent', state.cashCurrent);
+    state.cashSessions = merge('cashSessions', state.cashSessions);
+    state.expenses = merge('expenses', state.expenses);
+    state.customers = merge('customers', state.customers);
+    state.subscriptionData = merge('subscriptionData', state.subscriptionData);
+    state.qrTables = merge('qrTables', state.qrTables);
+    state.qrSettings = merge('qrSettings', state.qrSettings);
+    state.qrOptions = merge('qrOptions', state.qrOptions);
+    state.qrAnalytics = merge('qrAnalytics', state.qrAnalytics);
+    state.staffMembers = merge('staffMembers', state.staffMembers);
+    state.staffPresets = merge('staffPresets', state.staffPresets);
+    state.staffActivity = merge('staffActivity', state.staffActivity);
+
+    if (Object.prototype.hasOwnProperty.call(dataMap, 'qrOrdersData')) {
+      const qrOrdersData = dataMap.qrOrdersData || { orders: [], serviceRequests: [] };
+      const incomingOrders = qrOrdersData.orders || [];
+      const incomingReqs = qrOrdersData.serviceRequests || [];
+
+      const receivedIds = incomingOrders.filter((o) => o.status === 'received').map((o) => o.id);
+      if (state.knownQrOrderIds !== null && state.qrSoundEnabled) {
+        const hasBrandNew = receivedIds.some((id) => !state.knownQrOrderIds.has(id));
+        if (hasBrandNew) {
+          playQrNotificationSound();
+          showToast('🔔 Nouvelle commande QR reçue depuis une table !', 'info');
+        }
+      }
+      state.knownQrOrderIds = new Set(receivedIds);
+      state.qrOrders = incomingOrders;
+      state.qrServiceRequests = incomingReqs;
+
+      const badgeEl = document.getElementById('qr-pending-badge');
+      const pendingCount = receivedIds.length + incomingReqs.length;
+      if (badgeEl) {
+        badgeEl.textContent = String(pendingCount);
+        badgeEl.classList.toggle('hidden', pendingCount === 0);
+      }
+    }
+
+    if (can(['pos:read', 'pos:write'])) {
+      if (state.activeSale) {
+        try {
+          const detail = await apiFetch(`/api/sales/${state.activeSale.id}`);
+          if (mySeq >= state.appliedRefreshSeq) state.activeSale = detail.data;
+        } catch {
+          // conserver state.activeSale en cas d'erreur réseau transitoire, sauf 404
+        }
+      } else {
+        const pending = (state.sales || []).find((s) => s.status === 'pending');
+        if (pending) {
+          const detail = await apiFetch(`/api/sales/${pending.id}`).catch(() => null);
+          if (detail && mySeq >= state.appliedRefreshSeq) state.activeSale = detail.data;
+        }
+      }
+    }
+
+    if (state.activePurchase && can(['purchases:read', 'purchases:write'])) {
+      try {
+        const pDetail = await apiFetch(`/api/purchases/${state.activePurchase.id}`);
+        if (mySeq >= state.appliedRefreshSeq) state.activePurchase = pDetail.data;
+      } catch {
+        // conserver
+      }
+    }
+
+    if (rejectedCount > 0 && rejectedCount === keys.length && !silent) {
+      showNetworkRetryBanner('Certaines données n’ont pas pu être actualisées. Vos données affichées sont préservées.');
+    }
+
+    renderChrome();
+
+    // Ne jamais écraser un formulaire en cours de saisie lors d'une actualisation silencieuse
+    const modalOpen = !document.getElementById('modal-backdrop')?.classList.contains('hidden');
+    if (force || (!silent) || (!modalOpen && !isUserActivelyEditingForm())) {
+      renderRoute();
+    }
+  } finally {
+    state.isRefreshing = false;
+    if (refreshBtn && !silent) {
+      refreshBtn.disabled = false;
+      if (prevRefreshHtml) refreshBtn.innerHTML = prevRefreshHtml;
     }
   }
-
-  if (state.activePurchase) {
-    try {
-      const pDetail = await apiFetch(`/api/purchases/${state.activePurchase.id}`);
-      state.activePurchase = pDetail.data;
-    } catch {
-      state.activePurchase = null;
-    }
-  }
-
-  renderChrome();
-  renderRoute();
 }
 
 // -------------------------------------------------------------
@@ -437,6 +742,11 @@ function renderRoute() {
   const root = document.getElementById('main-content');
   if (!root) return;
 
+  if (!canAccessRoute(state.route)) {
+    state.route = getPreferredRoute();
+    applyRoleNavigation();
+  }
+
   const uiHelpers = {
     cur: CURRENCY(),
     statusBadge,
@@ -444,9 +754,12 @@ function renderRoute() {
     serializeSaleMeta,
     openModal,
     closeModal,
+    confirmActionModal,
     refreshAllData,
     renderRoute,
     setRoute,
+    withFormSubmit,
+    can,
   };
 
   switch (state.route) {
@@ -482,6 +795,14 @@ function renderRoute() {
       root.innerHTML = renderCash();
       bindCash();
       break;
+    case 'customers':
+      root.innerHTML = renderCustomersModule(state, CURRENCY(), can('customers:write'));
+      bindCustomersModule(state, uiHelpers);
+      break;
+    case 'staff':
+      root.innerHTML = renderStaffModule(state);
+      bindStaffModule(state, uiHelpers);
+      break;
     case 'subscription':
       root.innerHTML = renderSubscriptionModuleV12(state, uiHelpers);
       bindSubscriptionModuleV12(state, uiHelpers);
@@ -504,7 +825,76 @@ function renderDashboard() {
     pendingSales.some((s) => parseSaleMeta(s.notes).tableCode === t.code)
   ).length;
 
+  const companyKey = state.company?.id || 'default';
+  const onboardingDismissed = localStorage.getItem(`restogest_onboarding_dismissed_${companyKey}`) === '1';
+  const onboardingSteps = [
+    {
+      done: state.products.length > 0,
+      label: '1. Ajouter vos premiers produits',
+      hint: 'Créez votre carte et vos prix de vente.',
+      route: 'catalog',
+      cta: 'Ajouter un produit',
+    },
+    {
+      done: state.qrTables.length > 0,
+      label: '2. Créer vos tables et QR codes',
+      hint: 'Organisez votre salle et imprimez vos QR codes.',
+      route: 'tables',
+      cta: 'Créer une table',
+    },
+    {
+      done: Boolean(state.company?.country_code && state.company?.currency),
+      label: '3. Vérifier les infos de l’établissement',
+      hint: 'Pays, devise (FCFA/GNF) et numéro WhatsApp du gérant.',
+      route: 'subscription',
+      cta: 'Vérifier mes infos',
+    },
+    {
+      done: state.sales.length > 0 || Boolean(state.cashCurrent),
+      label: '4. Effectuer une première opération de caisse',
+      hint: 'Ouvrez votre caisse et enregistrez un premier ticket.',
+      route: state.cashCurrent ? 'pos' : 'cash',
+      cta: state.cashCurrent ? 'Ouvrir le POS' : 'Ouvrir la caisse',
+    },
+  ];
+  const doneStepsCount = onboardingSteps.filter((s) => s.done).length;
+  const showOnboarding = !onboardingDismissed && doneStepsCount < onboardingSteps.length;
+
+  const onboardingHtml = showOnboarding
+    ? `
+    <div class="card" style="border-color:rgba(234,88,12,0.35);background:linear-gradient(135deg,#fff7ed 0%,#ffffff 65%);">
+      <div class="section-head">
+        <div>
+          <h3 style="margin:0;">Configuration guidée (${doneStepsCount}/${onboardingSteps.length})</h3>
+          <p class="muted-text" style="margin-top:4px;">Suivez ces étapes pour démarrer rapidement avec RESTOGEST.</p>
+        </div>
+        <button id="btn-dismiss-onboarding" type="button" class="btn btn-outline btn-sm">Masquer</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:10px;">
+        ${onboardingSteps
+          .map(
+            (st) => `
+          <div style="padding:12px;border-radius:12px;border:1px solid ${st.done ? '#a7f3d0' : '#e2e8f0'};background:${st.done ? '#ecfdf5' : '#ffffff'};display:flex;flex-direction:column;justify-content:space-between;gap:8px;">
+            <div>
+              <strong style="font-size:13px;color:${st.done ? '#047857' : '#0f172a'};">${st.done ? '✓ ' : ''}${esc(st.label)}</strong>
+              <p class="muted-text" style="font-size:12px;margin-top:4px;">${esc(st.hint)}</p>
+            </div>
+            ${
+              st.done
+                ? '<span class="status-pill status-open" style="align-self:flex-start;">Terminé</span>'
+                : `<button type="button" class="btn btn-primary btn-sm" data-jump="${esc(st.route)}" style="align-self:flex-start;">${esc(st.cta)}</button>`
+            }
+          </div>
+        `
+          )
+          .join('')}
+      </div>
+    </div>
+  `
+    : '';
+
   return `
+    ${onboardingHtml}
     <div class="kpi-grid">
       <div class="card kpi-card">
         <div class="kpi-top">
@@ -576,7 +966,7 @@ function renderDashboard() {
             <thead><tr><th>Produit</th><th>Stock</th><th>Seuil</th><th>Niveau</th></tr></thead>
             <tbody>
               ${state.alerts.length === 0
-      ? '<tr><td colspan="4" class="muted-text">Aucune alerte de stock bas.</td></tr>'
+      ? '<tr><td colspan="4" class="muted-text">Aucune alerte de stock bas. Configurez vos seuils dans « Stocks &amp; Alertes » pour être prévenu avant rupture.</td></tr>'
       : state.alerts
         .slice(0, 6)
         .map(
@@ -604,7 +994,7 @@ function renderDashboard() {
             <thead><tr><th>Facture</th><th>Service / Table</th><th>Montant</th><th>Statut</th></tr></thead>
             <tbody>
               ${state.sales.length === 0
-      ? '<tr><td colspan="4" class="muted-text">Aucune commande enregistrée.</td></tr>'
+      ? '<tr><td colspan="4" class="muted-text">Aucune commande enregistrée. Ouvrez la caisse et créez votre premier ticket dans « Caisse &amp; POS ».</td></tr>'
       : state.sales
         .slice(0, 6)
         .map((s) => {
@@ -629,6 +1019,11 @@ function renderDashboard() {
 function bindDashboard() {
   document.querySelectorAll('[data-jump]').forEach((btn) => {
     btn.addEventListener('click', () => setRoute(btn.dataset.jump));
+  });
+  document.getElementById('btn-dismiss-onboarding')?.addEventListener('click', () => {
+    const companyKey = state.company?.id || 'default';
+    localStorage.setItem(`restogest_onboarding_dismissed_${companyKey}`, '1');
+    renderRoute();
   });
 }
 
@@ -1639,6 +2034,7 @@ function bindPos() {
 function renderCatalog() {
   const cur = CURRENCY();
   const sub = state.subtabs.catalog;
+  const canWrite = can('catalog:write');
 
   return `
     <div class="subtabs">
@@ -1648,8 +2044,8 @@ function renderCatalog() {
     </div>
 
     ${sub === 'products'
-      ? `<div class="two-col">
-            <div class="card">
+      ? `<div class="${canWrite ? 'two-col' : ''}">
+            ${canWrite ? `<div class="card">
               <div class="section-head"><h3>Nouveau produit</h3></div>
               <form id="product-create-form" class="form-stack">
                 <div class="field-row">
@@ -1706,16 +2102,16 @@ function renderCatalog() {
                 </div>
                 <button type="submit" class="btn btn-primary">Créer le produit</button>
               </form>
-            </div>
+            </div>` : ''}
 
             <div class="card">
               <div class="section-head"><h3>Catalogue produits</h3></div>
               <div class="table-wrap">
                 <table class="responsive-table">
-                  <thead><tr><th>Nom</th><th>Suivi</th><th>Prix Vente</th><th>PMP</th><th>Stock</th></tr></thead>
+                  <thead><tr><th>Nom</th><th>Suivi</th><th>Prix Vente</th><th>PMP</th><th>Stock</th>${canWrite ? '<th></th>' : ''}</tr></thead>
                   <tbody>
                     ${state.products.length === 0
-        ? '<tr><td colspan="5" class="muted-text">Aucun produit enregistré.</td></tr>'
+        ? `<tr><td colspan="${canWrite ? 6 : 5}" class="muted-text">Aucun produit enregistré.</td></tr>`
         : state.products
           .map(
             (p) => `<tr>
@@ -1724,6 +2120,7 @@ function renderCatalog() {
                                 <td data-label="Prix Vente" class="mono">${esc(fmtMoney(p.selling_price, cur))}</td>
                                 <td data-label="PMP" class="mono">${esc(fmtMoney(p.cost_price, cur))}</td>
                                 <td data-label="Stock" class="mono">${p.inventory_tracking === 'none' ? '—' : esc(fmtQty(p.current_stock) + ' ' + p.unit)}</td>
+                                ${canWrite ? `<td data-label="Action"><button type="button" class="btn btn-outline btn-sm" data-edit-product="${esc(p.id)}">Modifier</button></td>` : ''}
                               </tr>`
           )
           .join('')
@@ -1871,15 +2268,16 @@ function bindCatalog() {
     }
   });
 
-  document.getElementById('product-create-form')?.addEventListener('submit', async (e) => {
+  const prodForm = document.getElementById('product-create-form');
+  prodForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    try {
+    await withFormSubmit(prodForm, async () => {
       const catId = document.getElementById('prod-cat').value;
-      await apiFetch('/api/catalog/products', {
+      const res = await apiFetch('/api/catalog/products', {
         method: 'POST',
         body: {
           categoryId: catId || undefined,
-          name: document.getElementById('prod-name').value,
+          name: document.getElementById('prod-name').value.trim(),
           productType: document.getElementById('prod-type').value,
           inventoryTracking: document.getElementById('prod-tracking').value,
           sellingPrice: parseFloat(document.getElementById('prod-sell').value || '0'),
@@ -1888,11 +2286,84 @@ function bindCatalog() {
           minStockAlert: parseFloat(document.getElementById('prod-alert').value || '0'),
         },
       });
+      if (res?.data) state.products = [...state.products, res.data];
       showToast('Produit ajouté au catalogue', 'success');
-      await refreshAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+      await refreshAllData({ force: true });
+    });
+  });
+
+  document.querySelectorAll('[data-edit-product]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const prod = state.products.find((p) => p.id === btn.dataset.editProduct);
+      if (!prod) return;
+      const cur = CURRENCY();
+      openModal(
+        `Modifier ${prod.name}`,
+        `
+          <form id="product-edit-form" class="form-stack">
+            <div class="field-row">
+              <div class="field">
+                <label for="pe-name">Nom du produit</label>
+                <input id="pe-name" required value="${esc(prod.name)}" />
+              </div>
+              <div class="field">
+                <label for="pe-cat">Catégorie</label>
+                <select id="pe-cat">
+                  <option value="">Sans catégorie</option>
+                  ${state.categories.map((c) => `<option value="${esc(c.id)}" ${prod.category_id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="pe-sell">Prix de vente (${esc(cur)})</label>
+                <input id="pe-sell" type="number" step="0.01" min="0" value="${Number(prod.selling_price || 0)}" required />
+              </div>
+              <div class="field">
+                <label for="pe-cost">Coût / PMP (${esc(cur)})</label>
+                <input id="pe-cost" type="number" step="0.01" min="0" value="${Number(prod.cost_price || 0)}" required />
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="pe-unit">Unité</label>
+                <input id="pe-unit" value="${esc(prod.unit || 'unit')}" required />
+              </div>
+              <div class="field">
+                <label for="pe-alert">Seuil d'alerte stock</label>
+                <input id="pe-alert" type="number" step="0.01" min="0" value="${Number(prod.min_stock_alert || 0)}" required />
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+              <button type="button" id="btn-pe-cancel" class="btn btn-outline">Annuler</button>
+              <button type="submit" class="btn btn-primary">Enregistrer</button>
+            </div>
+          </form>
+        `
+      );
+      document.getElementById('btn-pe-cancel')?.addEventListener('click', closeModal);
+      const editForm = document.getElementById('product-edit-form');
+      editForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await withFormSubmit(editForm, async () => {
+          const catVal = document.getElementById('pe-cat').value;
+          await apiFetch(`/api/catalog/products/${prod.id}`, {
+            method: 'PUT',
+            body: {
+              categoryId: catVal || null,
+              name: document.getElementById('pe-name').value.trim(),
+              sellingPrice: parseFloat(document.getElementById('pe-sell').value || '0'),
+              costPrice: parseFloat(document.getElementById('pe-cost').value || '0'),
+              unit: document.getElementById('pe-unit').value.trim() || 'unit',
+              minStockAlert: parseFloat(document.getElementById('pe-alert').value || '0'),
+            },
+          });
+          closeModal();
+          showToast('Produit mis à jour avec succès', 'success');
+          await refreshAllData({ force: true });
+        });
+      });
+    });
   });
 
   if (document.getElementById('recipe-ing-rows')) {
@@ -2472,10 +2943,12 @@ function renderCash() {
   const cs = state.cashCurrent;
   const z = cs?.zReport;
   const pb = z?.paymentBreakdown || {};
+  const canWrite = can('cash:write');
 
   return `
     ${!cs
-      ? `<div class="card" style="max-width:520px;">
+      ? canWrite
+        ? `<div class="card" style="max-width:520px;">
             <div class="section-head"><h3>Ouvrir une session de caisse</h3></div>
             <p class="muted-text" style="margin-bottom:14px;">Aucune session active. Saisissez le fond de caisse initial pour encaisser et générer votre rapport Z.</p>
             <form id="cash-open-form" class="form-stack">
@@ -2486,6 +2959,7 @@ function renderCash() {
               <button type="submit" class="btn btn-primary">Ouvrir la caisse</button>
             </form>
           </div>`
+        : `<div class="card"><p class="muted-text" style="margin:0;">Aucune session de caisse ouverte actuellement (mode consultation uniquement).</p></div>`
       : `<div class="kpi-grid">
             <div class="card kpi-card">
               <div class="kpi-label">Chiffre d'affaires Net</div>
@@ -2509,7 +2983,7 @@ function renderCash() {
             </div>
           </div>
 
-          <div class="two-col">
+          <div class="${canWrite ? 'two-col' : ''}">
             <div class="card">
               <div class="section-head">
                 <h3>Rapport Z &amp; Ventilation Paiements</h3>
@@ -2538,7 +3012,7 @@ function renderCash() {
               </div>
             </div>
 
-            <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
+            ${canWrite ? `<div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
               <div class="card">
                 <div class="section-head"><h3>Enregistrer une dépense</h3></div>
                 <form id="expense-create-form" class="form-stack">
@@ -2571,7 +3045,7 @@ function renderCash() {
                   <button type="submit" class="btn btn-danger">Clôturer &amp; Générer le Z définitif</button>
                 </form>
               </div>
-            </div>
+            </div>` : ''}
           </div>`
     }
 
@@ -2603,10 +3077,10 @@ function renderCash() {
       </div>
 
       <div class="card">
-        <div class="section-head"><h3>Dépenses récentes</h3></div>
+        <div class="section-head"><h3>Dépenses récentes (${state.expenses.length})</h3></div>
         <div class="table-wrap">
           <table class="responsive-table">
-            <thead><tr><th>Catégorie</th><th>Montant</th><th>Motif</th><th>Date</th></tr></thead>
+            <thead><tr><th>Catégorie</th><th>Montant</th><th>Motif</th><th>Auteur / Date</th></tr></thead>
             <tbody>
               ${state.expenses.length === 0
       ? '<tr><td colspan="4" class="muted-text">Aucune dépense enregistrée.</td></tr>'
@@ -2616,7 +3090,7 @@ function renderCash() {
                           <td data-label="Catégorie"><strong>${esc(ex.category)}</strong></td>
                           <td data-label="Montant" class="mono">${esc(fmtMoney(ex.amount, cur))}</td>
                           <td data-label="Motif">${esc(ex.description)}</td>
-                          <td data-label="Date">${esc(fmtDate(ex.created_at))}</td>
+                          <td data-label="Date"><div>${esc(ex.author_name || '—')}</div><div class="muted-text" style="font-size:11px;">${esc(fmtDate(ex.created_at))}</div></td>
                         </tr>`
         )
         .join('')
@@ -2630,59 +3104,70 @@ function renderCash() {
 }
 
 function bindCash() {
-  document.getElementById('cash-open-form')?.addEventListener('submit', async (e) => {
+  const openForm = document.getElementById('cash-open-form');
+  openForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    try {
+    await withFormSubmit(openForm, async () => {
       await apiFetch('/api/cash/sessions/open', {
         method: 'POST',
         body: { openingAmount: parseFloat(document.getElementById('cash-opening-amount').value || '0') },
       });
-      showToast('Session de caisse ouverte', 'success');
-      await refreshAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+      showToast('Session de caisse ouverte et enregistrée', 'success');
+      await refreshAllData({ force: true });
+    });
   });
 
   document.getElementById('btn-export-current-z')?.addEventListener('click', () => {
     if (state.cashCurrent) openZReportModal(state.cashCurrent);
   });
 
-  document.getElementById('expense-create-form')?.addEventListener('submit', async (e) => {
+  const expForm = document.getElementById('expense-create-form');
+  expForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    try {
-      await apiFetch('/api/cash/expenses', {
+    await withFormSubmit(expForm, async () => {
+      const res = await apiFetch('/api/cash/expenses', {
         method: 'POST',
         body: {
-          cashSessionId: state.cashCurrent.id,
-          category: document.getElementById('exp-cat').value,
+          cashSessionId: state.cashCurrent?.id,
+          category: document.getElementById('exp-cat').value.trim(),
           amount: parseFloat(document.getElementById('exp-amount').value),
-          description: document.getElementById('exp-desc').value,
+          description: document.getElementById('exp-desc').value.trim(),
         },
       });
-      showToast('Dépense enregistrée', 'success');
-      await refreshAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+      if (res?.data) {
+        const confirmed = {
+          ...res.data,
+          author_name: state.user?.full_name || '',
+        };
+        state.expenses = [confirmed, ...(state.expenses || []).filter((ex) => ex.id !== confirmed.id)];
+      }
+      showToast('Dépense enregistrée en base avec succès', 'success');
+      await refreshAllData({ force: true });
+    });
   });
 
-  document.getElementById('cash-close-form')?.addEventListener('submit', async (e) => {
+  document.getElementById('cash-close-form')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    try {
-      const res = await apiFetch(`/api/cash/sessions/${state.cashCurrent.id}/close`, {
-        method: 'POST',
-        body: { actualAmount: parseFloat(document.getElementById('cash-actual-amount').value) },
-      });
-      const diff = parseFloat(res.data.difference_amount || 0);
-      showToast(`Caisse clôturée (écart : ${fmtMoney(diff, CURRENCY())})`, 'success');
-      await refreshAllData();
-      if (res.data?.zReport) {
-        openZReportModal(res.data);
-      }
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+    const actualAmount = parseFloat(document.getElementById('cash-actual-amount').value);
+    const cur = CURRENCY();
+    confirmActionModal({
+      title: 'Confirmer la clôture définitive de la caisse',
+      message: `Vous êtes sur le point de clôturer la session de caisse avec un montant compté de ${fmtMoney(actualAmount, cur)}. Cette opération fige définitivement le rapport Z.`,
+      confirmLabel: 'Clôturer la caisse',
+      variant: 'danger',
+      onConfirm: async () => {
+        const res = await apiFetch(`/api/cash/sessions/${state.cashCurrent.id}/close`, {
+          method: 'POST',
+          body: { actualAmount },
+        });
+        const diff = parseFloat(res.data.difference_amount || 0);
+        showToast(`Caisse clôturée (écart : ${fmtMoney(diff, cur)})`, 'success');
+        await refreshAllData({ force: true });
+        if (res.data?.zReport) {
+          openZReportModal(res.data);
+        }
+      },
+    });
   });
 
   document.querySelectorAll('[data-cash-detail]').forEach((btn) => {
@@ -2985,10 +3470,11 @@ async function init() {
   });
 
   setInterval(() => {
-    if (getToken() && !document.hidden) {
-      refreshAllData();
+    const modalOpen = !document.getElementById('modal-backdrop')?.classList.contains('hidden');
+    if (getToken() && !document.hidden && !state.isRefreshing && !modalOpen && !isUserActivelyEditingForm()) {
+      refreshAllData({ silent: true });
     }
-  }, 12000);
+  }, 25000);
 
   document.getElementById('btn-forgot-password')?.addEventListener('click', () => {
     openModal(
@@ -3029,8 +3515,13 @@ async function init() {
     setToken(null);
     state.user = null;
     state.company = null;
+    state.role = { code: 'owner', name: 'Propriétaire', isOwner: true, defaultRoute: 'dashboard', permissions: { all: true } };
+    state.isDemo = false;
     state.activeSale = null;
     state.activePurchase = null;
+    state.staffMembers = [];
+    state.staffActivity = [];
+    state.customers = [];
     toggleSidebar(false);
     showAuthView();
     showToast('Déconnecté en toute sécurité', 'success');
@@ -3038,6 +3529,12 @@ async function init() {
 
   document.getElementById('login-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const prevLabel = submitBtn?.textContent;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Connexion en cours...';
+    }
     try {
       const res = await apiFetch('/api/auth/login', {
         skipAuth: true,
@@ -3048,11 +3545,21 @@ async function init() {
         },
       });
       setToken(res.data.token);
-      await refreshAllData();
-      showToast('Connexion réussie !', 'success');
+      if (res.data.role) {
+        state.role = res.data.role;
+      }
+      state.isDemo = Boolean(res.data.isDemo);
+      state.route = getPreferredRoute();
+      await refreshAllData({ force: true });
+      showToast(`Connexion réussie (${state.role?.name || 'Espace'}) !`, 'success');
       showAppView();
     } catch (err) {
       showToast(err.message, 'error');
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = prevLabel || 'Se connecter à mon espace';
+      }
     }
   });
 
@@ -3067,6 +3574,12 @@ async function init() {
 
   document.getElementById('register-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const prevLabel = submitBtn?.textContent;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Création en cours...';
+    }
     try {
       const countrySelect = document.getElementById('reg-country');
       const countryCode = countrySelect ? countrySelect.value : 'SN';
@@ -3093,6 +3606,11 @@ async function init() {
       showAppView();
     } catch (err) {
       showToast(err.message, 'error');
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = prevLabel || 'Créer mon espace RESTOGEST';
+      }
     }
   });
 
@@ -3117,14 +3635,20 @@ async function init() {
       // fallback to static options
     });
 
-  if (getToken()) {
-    try {
-      await refreshAllData();
+  // Vérifier silencieusement si un cookie de session HttpOnly est actif
+  try {
+    const meRes = await apiFetch('/api/auth/me', { ignoreUnauthorized: true });
+    if (meRes?.data?.user) {
+      setToken('cookie-session');
+      if (meRes.data.role) state.role = meRes.data.role;
+      state.isDemo = Boolean(meRes.data.isDemo);
+      state.route = getPreferredRoute();
+      await refreshAllData({ force: true });
       showAppView();
       return;
-    } catch {
-      setToken(null);
     }
+  } catch {
+    setToken(null);
   }
   showAuthView();
 }

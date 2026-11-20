@@ -1513,6 +1513,17 @@ tbody tr:hover {
   }
 }
 
+/* Accessibilité : focus clavier visible à fort contraste */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #f97316;
+  outline-offset: 2px;
+}
+
 @media print {
   body * { visibility: hidden; }
   .modal-card, .modal-card * { visibility: visible; }
@@ -1520,5 +1531,8 @@ tbody tr:hover {
 }
 
 @media (max-width: 520px) {
+  html, body { overflow-x: clip; }
   .floor-grid { grid-template-columns: 1fr; }
+  .btn, .subtab, .nav-btn { min-height: 40px; }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }

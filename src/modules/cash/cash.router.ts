@@ -1,12 +1,19 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middlewares/auth-middleware.js';
+import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
 import type { IDbClient } from '../../db/pool.js';
 
 export const cashRouter = Router();
 
 cashRouter.use(requireAuth);
+cashRouter.use((req, res, next) => {
+  if (req.method.toUpperCase() === 'GET') {
+    requirePermission('cash:read', 'reports:read')(req, res, next);
+  } else {
+    requirePermission('cash:write')(req, res, next);
+  }
+});
 
 async function buildZReportForSession(client: IDbClient, sessionRow: any) {
   const paymentsRes = await client.query(

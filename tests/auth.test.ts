@@ -59,7 +59,7 @@ describe('Authentification et Sécurité des Sessions RESTOGEST', () => {
 
     const cookieOpts = getSessionCookieOptions();
     expect(cookieOpts.path).toBe('/');
-    expect(cookieOpts.sameSite).toBe('lax');
+    expect(cookieOpts.sameSite).toBe('strict');
     expect(cookieOpts.httpOnly).toBe(true);
     expect(cookieOpts.secure).toBe(process.env.NODE_ENV === 'production');
   });
