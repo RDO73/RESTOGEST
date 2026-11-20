@@ -3296,14 +3296,17 @@ async function init() {
       // fallback to static options
     });
 
-  if (getToken()) {
-    try {
+  // Vérifier silencieusement si un cookie de session HttpOnly est actif
+  try {
+    const meRes = await apiFetch('/api/auth/me', { ignoreUnauthorized: true });
+    if (meRes?.data?.user) {
+      setToken('cookie-session');
       await refreshAllData();
       showAppView();
       return;
-    } catch {
-      setToken(null);
     }
+  } catch {
+    setToken(null);
   }
   showAuthView();
 }

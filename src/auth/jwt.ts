@@ -22,8 +22,32 @@ export interface VerifiedSession extends TokenPayload {
 }
 
 export const SESSION_COOKIE_NAME = 'restogest_session';
+export const ADMIN_SESSION_COOKIE_NAME = 'restogest_admin_session';
+export const CSRF_COOKIE_NAME = 'restogest_csrf';
 
 const revokedTokenHashes = new Set<string>();
+
+/**
+ * Convertit une durée JWT (ex: "24h", "7d", "30m", "3600s") en millisecondes
+ */
+export function parseExpiresInToMs(expiresIn: string): number {
+  const raw = String(expiresIn || '24h').trim().toLowerCase();
+  const match = raw.match(/^(\d+)\s*([smhd])?$/);
+  if (!match) return 24 * 60 * 60 * 1000;
+  const value = parseInt(match[1], 10);
+  const unit = match[2] || 's';
+  const mult: Record<string, number> = {
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+  };
+  return Math.max(60 * 1000, value * (mult[unit] || 1000));
+}
+
+function isSecureCookieEnv(): boolean {
+  return process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
+}
 
 /**
  * Calcule le token_hash stocké dans public.user_sessions à partir du JTI
@@ -40,34 +64,70 @@ export function isTokenRevoked(tokenHash: string): boolean {
   return revokedTokenHashes.has(tokenHash);
 }
 
+export function clearInMemoryRevocationForTests(tokenHash?: string): void {
+  if (tokenHash) revokedTokenHashes.delete(tokenHash);
+  else revokedTokenHashes.clear();
+}
+
 export function getSessionCookieOptions() {
   return {
     path: '/',
-    sameSite: 'lax' as const,
+    sameSite: 'strict' as const,
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 24 * 60 * 60 * 1000,
+    secure: isSecureCookieEnv(),
+    maxAge: parseExpiresInToMs(config.jwt.expiresIn),
   };
+}
+
+export function getCsrfCookieOptions() {
+  return {
+    path: '/',
+    sameSite: 'strict' as const,
+    httpOnly: false,
+    secure: isSecureCookieEnv(),
+    maxAge: parseExpiresInToMs(config.jwt.expiresIn),
+  };
+}
+
+export function setCsrfCookie(res: Response): string {
+  const csrfToken = crypto.randomBytes(32).toString('hex');
+  res.cookie(CSRF_COOKIE_NAME, csrfToken, getCsrfCookieOptions());
+  return csrfToken;
 }
 
 export function setSessionCookie(res: Response, token: string): void {
   res.cookie(SESSION_COOKIE_NAME, token, getSessionCookieOptions());
+  setCsrfCookie(res);
 }
 
 export function clearSessionCookie(res: Response): void {
   res.clearCookie(SESSION_COOKIE_NAME, {
     path: '/',
-    sameSite: 'lax' as const,
+    sameSite: 'strict' as const,
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isSecureCookieEnv(),
   });
 }
 
-export function extractTokenFromCookieHeader(cookieHeader?: string): string | null {
+export function setAdminSessionCookie(res: Response, token: string): void {
+  res.cookie(ADMIN_SESSION_COOKIE_NAME, token, getSessionCookieOptions());
+  setCsrfCookie(res);
+}
+
+export function clearAdminSessionCookie(res: Response): void {
+  res.clearCookie(ADMIN_SESSION_COOKIE_NAME, {
+    path: '/',
+    sameSite: 'strict' as const,
+    httpOnly: true,
+    secure: isSecureCookieEnv(),
+  });
+}
+
+export function extractNamedCookie(cookieHeader: string | undefined, cookieName: string): string | null {
   if (!cookieHeader) return null;
   for (const part of cookieHeader.split(';')) {
     const [rawName, ...rest] = part.trim().split('=');
-    if (rawName === SESSION_COOKIE_NAME && rest.length > 0) {
+    if (rawName === cookieName && rest.length > 0) {
       try {
         return decodeURIComponent(rest.join('='));
       } catch {
@@ -76,6 +136,21 @@ export function extractTokenFromCookieHeader(cookieHeader?: string): string | nu
     }
   }
   return null;
+}
+
+export function extractTokenFromCookieHeader(
+  cookieHeader?: string,
+  cookieName: string = SESSION_COOKIE_NAME
+): string | null {
+  return extractNamedCookie(cookieHeader, cookieName);
+}
+
+export function verifyCsrfTokenMatch(headerToken: string | undefined, cookieToken: string | null): boolean {
+  if (!headerToken || !cookieToken) return false;
+  const a = Buffer.from(String(headerToken).trim(), 'utf8');
+  const b = Buffer.from(String(cookieToken).trim(), 'utf8');
+  if (a.length === 0 || a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 /**

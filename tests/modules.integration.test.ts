@@ -544,7 +544,7 @@ describe('Modules Métiers Backend RESTOGEST V1', () => {
     expect(setCookieHeader).toContain('restogest_session=');
     expect(setCookieHeader).toContain('Path=/');
     expect(setCookieHeader).toContain('HttpOnly');
-    expect(setCookieHeader).toMatch(/SameSite=Lax/i);
+    expect(setCookieHeader).toMatch(/SameSite=Strict/i);
 
     const cookiePair = setCookieHeader.split(';')[0];
 
@@ -740,5 +740,71 @@ describe('Modules Métiers Backend RESTOGEST V1', () => {
       body: JSON.stringify({ email: 'patron@myrestogest.com' }),
     });
     expect(forgotRes.status).toBe(200);
+  });
+
+  it('10. SESSIONS COOKIE HttpOnly/SameSite=Strict, PROTECTION CSRF & RÉVOCATION PERSISTANTE EN BASE', async () => {
+    const email = `cookie-csrf-${Date.now()}@restogest.sn`;
+    const regRes = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        companyName: 'Café Sécurité Cookie',
+        businessType: 'restaurant',
+        countryCode: 'SN',
+        currency: 'XOF',
+        email,
+        password: 'CookiePassword2026!',
+        fullName: 'Gérant Cookie',
+      }),
+    });
+    expect(regRes.status).toBe(201);
+
+    const setCookies: string[] =
+      typeof (regRes.headers as any).getSetCookie === 'function'
+        ? (regRes.headers as any).getSetCookie()
+        : [regRes.headers.get('set-cookie') || ''];
+    const joined = setCookies.join('\n');
+    expect(joined).toContain('restogest_session=');
+    expect(joined).toMatch(/HttpOnly/i);
+    expect(joined).toMatch(/SameSite=Strict/i);
+    expect(joined).toContain('restogest_csrf=');
+
+    const sessionCookie = setCookies
+      .find((c) => c.startsWith('restogest_session='))!
+      .split(';')[0];
+    const csrfCookie = setCookies
+      .find((c) => c.startsWith('restogest_csrf='))!
+      .split(';')[0];
+    const csrfValue = csrfCookie.split('=')[1];
+    const cookieHeader = `${sessionCookie}; ${csrfCookie}`;
+
+    // Lecture via cookie seul (sans Bearer) -> 200
+    const meViaCookie = await fetch(`${baseUrl}/api/auth/me`, {
+      headers: { Cookie: cookieHeader },
+    });
+    expect(meViaCookie.status).toBe(200);
+
+    // Requête mutante via cookie SANS X-CSRF-Token -> 403 bloqué
+    const noCsrfLogout = await fetch(`${baseUrl}/api/auth/logout`, {
+      method: 'POST',
+      headers: { Cookie: cookieHeader },
+    });
+    expect(noCsrfLogout.status).toBe(403);
+
+    // Requête mutante via cookie AVEC X-CSRF-Token -> 200 révoqué en base
+    const okLogout = await fetch(`${baseUrl}/api/auth/logout`, {
+      method: 'POST',
+      headers: { Cookie: cookieHeader, 'X-CSRF-Token': csrfValue },
+    });
+    expect(okLogout.status).toBe(200);
+
+    // Simuler un redémarrage serverless (vider le cache mémoire) -> doit rester révoqué grâce à user_sessions !
+    const { clearInMemoryRevocationForTests } = await import('../src/auth/jwt.js');
+    clearInMemoryRevocationForTests();
+
+    const afterRestartMe = await fetch(`${baseUrl}/api/auth/me`, {
+      headers: { Cookie: cookieHeader },
+    });
+    expect(afterRestartMe.status).toBe(401);
   });
 });

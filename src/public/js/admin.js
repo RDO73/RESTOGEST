@@ -1,9 +1,14 @@
-import { esc, fmtDate, fmtMoney, showToast } from './api.js';
+import { esc, fmtDate, fmtMoney, getCsrfToken, showToast } from './api.js';
 
-const SA_TOKEN_KEY = 'restogest_super_admin_token';
+// Nettoyage de l'ancien jeton localStorage (migration vers cookie HttpOnly)
+try {
+  localStorage.removeItem('restogest_super_admin_token');
+} catch {
+  // ignore
+}
 
 const state = {
-  token: localStorage.getItem(SA_TOKEN_KEY) || null,
+  authenticated: false,
   subtab: 'pending',
   countryFilter: '',
   statusFilter: '',
@@ -13,15 +18,26 @@ const state = {
 };
 
 async function saFetch(url, opts = {}) {
+  const method = (opts.method || 'GET').toUpperCase();
   const headers = { ...(opts.headers || {}) };
-  if (state.token) headers.Authorization = `Bearer ${state.token}`;
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    const csrf = getCsrfToken();
+    if (csrf) headers['X-CSRF-Token'] = csrf;
+  }
 
-  const res = await fetch(url, {
-    method: opts.method || 'GET',
-    headers,
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      credentials: 'same-origin',
+      headers,
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    });
+  } catch {
+    throw new Error('Impossible de joindre le serveur RESTOGEST. Vérifiez votre connexion internet.');
+  }
+
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {
@@ -35,10 +51,8 @@ async function saFetch(url, opts = {}) {
   return data;
 }
 
-function setAdminToken(token) {
-  state.token = token;
-  if (token) localStorage.setItem(SA_TOKEN_KEY, token);
-  else localStorage.removeItem(SA_TOKEN_KEY);
+function setAdminToken(active) {
+  state.authenticated = Boolean(active);
 }
 
 function showLoginView() {
@@ -74,7 +88,7 @@ function statusPill(status) {
 }
 
 async function loadAdminData() {
-  if (!state.token) return;
+  if (!state.authenticated) return;
   const [ovRes, estRes] = await Promise.all([
     saFetch(`/api/subscriptions/admin/overview?countryCode=${encodeURIComponent(state.countryFilter)}`),
     saFetch(`/api/admin/establishments?countryCode=${encodeURIComponent(state.countryFilter)}&status=${encodeURIComponent(state.statusFilter)}`),
@@ -658,15 +672,14 @@ document.getElementById('btn-sa-logout')?.addEventListener('click', async () => 
 });
 
 async function init() {
-  if (state.token) {
-    try {
-      await saFetch('/api/admin/auth/me', { skipAuthReset: true });
-      showAppView();
-      await loadAdminData();
-      return;
-    } catch {
-      setAdminToken(null);
-    }
+  try {
+    await saFetch('/api/admin/auth/me', { skipAuthReset: true });
+    setAdminToken(true);
+    showAppView();
+    await loadAdminData();
+    return;
+  } catch {
+    setAdminToken(null);
   }
   showLoginView();
 }

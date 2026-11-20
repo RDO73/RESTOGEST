@@ -4,7 +4,12 @@ import { z } from 'zod';
 import { config } from '../../config/env.js';
 import { adminPool, appPool, ensureDatabaseReady } from '../../db/pool.js';
 import { hashPassword } from '../../auth/password.js';
-import { generateSessionToken, markTokenRevoked } from '../../auth/jwt.js';
+import {
+  clearAdminSessionCookie,
+  generateSessionToken,
+  markTokenRevoked,
+  setAdminSessionCookie,
+} from '../../auth/jwt.js';
 import { requireAuth } from '../../middlewares/auth-middleware.js';
 
 export const superAdminRouter = Router();
@@ -54,6 +59,8 @@ superAdminRouter.post('/auth/login', async (req, res, next) => {
       isDemo: false,
     });
 
+    setAdminSessionCookie(res, session.token);
+
     res.json({
       success: true,
       data: {
@@ -100,6 +107,7 @@ superAdminRouter.post('/auth/logout', requireAuth, (req, res) => {
   if (req.auth?.tokenHash) {
     markTokenRevoked(req.auth.tokenHash);
   }
+  clearAdminSessionCookie(res);
   res.json({ success: true, message: 'Session Super-Admin fermée.' });
 });
 
