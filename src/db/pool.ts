@@ -178,13 +178,13 @@ if (config.databaseType === 'embedded') {
       connectionString,
       max,
       idleTimeoutMillis: 15000,
-      connectionTimeoutMillis: 8000,
+      connectionTimeoutMillis: 12000,
       ...(isLocal || disableSsl ? {} : { ssl: { rejectUnauthorized: false } }),
     };
   };
 
-  appPoolInstance = new Pool(buildPgConfig(config.databaseUrl, 12));
-  adminPoolInstance = new Pool(buildPgConfig(config.databaseAdminUrl, 5));
+  appPoolInstance = new Pool(buildPgConfig(config.databaseUrl, 15));
+  adminPoolInstance = new Pool(buildPgConfig(config.databaseAdminUrl, 10));
 
   (appPoolInstance as any).on('error', (err: any) => {
     console.error('[DATABASE APP POOL ERROR]', err);
@@ -244,6 +244,12 @@ export async function ensureDatabaseReady(): Promise<void> {
 
 export async function resetEmbeddedDatabaseForColdStartSimulation(): Promise<void> {
   pgReadyPromise = null;
+  try {
+    const { clearHydrationCaches } = await import('./demo-seed.js');
+    clearHydrationCaches();
+  } catch {
+    // ignore
+  }
   if (appPoolInstance instanceof PGlitePoolAdapter) {
     await appPoolInstance.resetColdStart();
   }
