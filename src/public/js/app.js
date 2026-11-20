@@ -3096,26 +3096,26 @@ async function init() {
     }
   });
 
-  await loadHealth();
-
-  // Charger dynamiquement les pays africains pour l'inscription
-  try {
-    const pubRes = await apiFetch('/api/subscriptions/plans/public', { skipAuth: true, ignoreUnauthorized: true });
-    const countries = pubRes?.data?.countries || [];
-    const countrySel = document.getElementById('reg-country');
-    if (countrySel && countries.length > 0) {
-      countrySel.innerHTML = countries
-        .map(
-          (c) =>
-            `<option value="${esc(c.code)}" data-currency="${esc(c.currency_code)}">${esc(c.name)} (${esc(c.currency_code)} • ${esc(c.dial_code)})</option>`
-        )
-        .join('');
-      const curInp = document.getElementById('reg-currency');
-      if (curInp) curInp.value = countries[0].currency_code || 'XOF';
-    }
-  } catch {
-    // fallback to static options
-  }
+  // Charger l'état serveur et les pays en arrière-plan sans bloquer l'affichage immédiat de l'accueil
+  loadHealth().catch(() => {});
+  apiFetch('/api/subscriptions/plans/public', { skipAuth: true, ignoreUnauthorized: true })
+    .then((pubRes) => {
+      const countries = pubRes?.data?.countries || [];
+      const countrySel = document.getElementById('reg-country');
+      if (countrySel && countries.length > 0) {
+        countrySel.innerHTML = countries
+          .map(
+            (c) =>
+              `<option value="${esc(c.code)}" data-currency="${esc(c.currency_code)}">${esc(c.name)} (${esc(c.currency_code)} • ${esc(c.dial_code)})</option>`
+          )
+          .join('');
+        const curInp = document.getElementById('reg-currency');
+        if (curInp) curInp.value = countries[0].currency_code || 'XOF';
+      }
+    })
+    .catch(() => {
+      // fallback to static options
+    });
 
   if (getToken()) {
     try {
