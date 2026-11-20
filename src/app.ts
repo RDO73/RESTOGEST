@@ -62,7 +62,7 @@ const apiInfoPayload = () => ({
 
 app.get('/robots.txt', (_req, res) => {
   res.type('text/plain').send(
-    'User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: https://myrestogest.com/sitemap.xml\n'
+    'User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nDisallow: /menu/\n\nSitemap: https://myrestogest.com/sitemap.xml\n'
   );
 });
 
@@ -84,6 +84,12 @@ app.get('/sitemap.xml', (_req, res) => {
       '  </url>\n' +
       '  <url>\n' +
       '    <loc>https://myrestogest.com/cgv</loc>\n' +
+      '    <lastmod>2026-11-20</lastmod>\n' +
+      '    <changefreq>monthly</changefreq>\n' +
+      '    <priority>0.3</priority>\n' +
+      '  </url>\n' +
+      '  <url>\n' +
+      '    <loc>https://myrestogest.com/politique-confidentialite</loc>\n' +
       '    <lastmod>2026-11-20</lastmod>\n' +
       '    <changefreq>monthly</changefreq>\n' +
       '    <priority>0.3</priority>\n' +
