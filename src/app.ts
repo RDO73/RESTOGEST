@@ -52,7 +52,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '256kb' }));
 
 const publicCandidates = [
   path.resolve(__dirname, './public'),

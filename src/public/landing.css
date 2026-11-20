@@ -1534,6 +1534,25 @@ html {
   .lp-footer-grid { grid-template-columns: 1fr; gap: 26px; }
 }
 
+/* ---------------- ACCESSIBILITÉ : FOCUS CLAVIER ---------------- */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #ea580c;
+  outline-offset: 3px;
+}
+
+@media (max-width: 390px) {
+  html, body { overflow-x: clip; }
+  .lp-hero-h1 { font-size: 31px; }
+  .lp-nav-inner { gap: 8px; }
+  .lp-btn { min-height: 42px; }
+}
+
 /* ---------------- PREFERS-REDUCED-MOTION ---------------- */
 @media (prefers-reduced-motion: reduce) {
   html {

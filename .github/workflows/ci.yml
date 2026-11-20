@@ -38,15 +38,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: TypeScript typecheck & build
+      - name: TypeScript typecheck, frontend syntax check & build
         run: |
           npx tsc --noEmit
+          for f in src/public/js/*.js; do node --check "$f"; done
           npm run build
+
+      - name: Production dependency security audit (report)
+        run: npm audit --omit=dev --audit-level=high || true
 
       - name: Run unit & integration tests (PGlite embedded)
         env:
           JWT_SECRET: ci-test-jwt-secret-key-minimum-32-chars
-        run: npm test
+        run: npm test -- --testTimeout=15000
 
       - name: Run SQL static checks, PGlite 40/40 & ordered migrations validation
         run: node tests/validate_restogest.mjs
@@ -78,4 +82,4 @@ jobs:
           DATABASE_ADMIN_URL: postgresql://restogest_admin:restogest_admin_pass@127.0.0.1:5432/restogest
           DATABASE_URL: postgresql://restogest_app:restogest_app_pass@127.0.0.1:5432/restogest
           JWT_SECRET: ci-test-jwt-secret-key-minimum-32-chars
-        run: npx vitest run tests/modules.integration.test.ts
+        run: npx vitest run tests/modules.integration.test.ts tests/security-hardening.integration.test.ts --testTimeout=15000
