@@ -75,12 +75,19 @@ export async function apiFetch(url, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(url, {
-    ...options,
-    credentials: 'same-origin',
-    headers,
-    body: options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body,
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      ...options,
+      credentials: 'same-origin',
+      headers,
+      body: options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body,
+    });
+  } catch {
+    const netErr = new Error('Impossible de joindre le serveur RESTOGEST. Vérifiez votre connexion internet et réessayez.');
+    netErr.isNetworkError = true;
+    throw netErr;
+  }
 
   let payload = null;
   const text = await res.text();
@@ -94,13 +101,21 @@ export async function apiFetch(url, options = {}) {
 
   if (!res.ok) {
     if (res.status === 401 && !options.ignoreUnauthorized && onUnauthorizedHandler) {
-      onUnauthorizedHandler(payload?.message || payload?.error || 'Session expirée ou révoquée');
+      onUnauthorizedHandler('Votre session a expiré. Veuillez vous reconnecter.');
     }
-    const issueMsg = payload?.issues?.[0]
-      ? `${payload.issues[0].path ? payload.issues[0].path + ': ' : ''}${payload.issues[0].message}`
-      : null;
-    const msg = issueMsg || payload?.message || payload?.detail || payload?.error || `Erreur HTTP ${res.status}`;
-    const err = new Error(msg);
+    const issueMsg = payload?.issues?.[0]?.message || null;
+    const rawMsg =
+      issueMsg ||
+      (typeof payload?.error === 'object' ? payload?.error?.message : null) ||
+      payload?.message ||
+      (typeof payload?.error === 'string' ? payload.error : null);
+    let friendly = rawMsg || 'Une erreur est survenue. Veuillez réessayer.';
+    if (res.status === 429 && !rawMsg) {
+      friendly = 'Trop de tentatives. Veuillez patienter quelques minutes avant de réessayer.';
+    } else if (res.status >= 500) {
+      friendly = 'Le serveur rencontre un problème temporaire. Veuillez réessayer dans un instant.';
+    }
+    const err = new Error(friendly);
     err.status = res.status;
     throw err;
   }

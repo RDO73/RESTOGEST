@@ -517,6 +517,8 @@ function renderAdminDashboard() {
 
   root.querySelectorAll('[data-adm-expire-sub]').forEach((btn) => {
     btn.addEventListener('click', async () => {
+      const ok = window.confirm('Confirmer la mise en statut « Expiré » pour cet établissement ?');
+      if (!ok) return;
       try {
         await saFetch(`/api/subscriptions/admin/subscriptions/${btn.dataset.admExpireSub}/status`, {
           method: 'POST',
