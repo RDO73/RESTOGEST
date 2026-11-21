@@ -433,16 +433,78 @@ function renderChrome() {
 
   const licPill = document.getElementById('license-status-pill');
   if (licPill) {
-    const sub = state.subscriptionData?.subscription;
-    if (sub?.status === 'active') {
+    const sub = state.subscriptionData?.subscription || state.subscriptionStatus;
+    if (sub?.isReadOnly || sub?.status === 'expired') {
+      licPill.className = 'status-pill status-closed hide-xs';
+      licPill.textContent = 'Mode Lecture Seule (Expiré)';
+    } else if (sub?.status === 'active') {
       licPill.className = 'status-pill status-open hide-xs';
-      licPill.textContent = `Licence : ${sub.plan_name}`;
+      licPill.textContent = `Licence : ${sub.plan_name || sub.planName || sub.plan_code}`;
     } else if (sub?.status === 'trial') {
       licPill.className = 'status-pill status-pending hide-xs';
-      licPill.textContent = `Essai • ${sub.plan_name}`;
+      licPill.textContent = `Essai 14j • ${sub.plan_name || sub.planName || 'Pro'}`;
+    } else if (sub?.status === 'pending_payment') {
+      licPill.className = 'status-pill status-pending hide-xs';
+      licPill.textContent = 'Paiement en vérification';
     } else {
       licPill.className = 'status-pill status-neutral hide-xs';
       licPill.textContent = 'MyRestoGest';
+    }
+  }
+
+  const readOnlyBanner = document.getElementById('readonly-subscription-banner');
+  if (readOnlyBanner) {
+    const sub = state.subscriptionData?.subscription || state.subscriptionStatus;
+    if (!state.isDemo && sub?.isReadOnly) {
+      readOnlyBanner.classList.remove('hidden');
+      readOnlyBanner.innerHTML = `
+        <div>
+          <strong>🔒 Mode Lecture Seule — Période d’essai ou abonnement arrivé à échéance</strong> :
+          vos ventes, rapports Z, stocks et produits restent intégralement consultables et exportables, mais les nouvelles saisies sont suspendues jusqu’à la régularisation de votre abonnement.
+        </div>
+        <button id="btn-readonly-go-sub" type="button" class="btn btn-danger btn-sm">Régulariser mon abonnement</button>
+      `;
+      document.getElementById('btn-readonly-go-sub')?.addEventListener('click', () => setRoute('subscription'));
+    } else {
+      readOnlyBanner.classList.add('hidden');
+      readOnlyBanner.innerHTML = '';
+    }
+  }
+
+  const termsBanner = document.getElementById('terms-reacceptance-banner');
+  if (termsBanner) {
+    if (!state.isDemo && state.termsStatus?.requiresReacceptance) {
+      termsBanner.classList.remove('hidden');
+      termsBanner.innerHTML = `
+        <div>
+          <strong>📋 Mise à jour des conditions contractuelles MyRestoGest</strong> :
+          veuillez consulter et valider la version en vigueur des
+          <a href="/cgu" target="_blank" rel="noopener" style="text-decoration:underline;font-weight:700;">CGU (${esc(state.termsStatus.currentRequiredCguVersion)})</a>
+          et des
+          <a href="/cgv" target="_blank" rel="noopener" style="text-decoration:underline;font-weight:700;">CGV (${esc(state.termsStatus.currentRequiredCgvVersion)})</a>.
+        </div>
+        <button id="btn-reaccept-terms-now" type="button" class="btn btn-primary btn-sm">J’accepte les CGU et CGV mises à jour</button>
+      `;
+      document.getElementById('btn-reaccept-terms-now')?.addEventListener('click', async () => {
+        try {
+          const res = await apiFetch('/api/auth/accept-terms', {
+            method: 'POST',
+            body: {
+              acceptTerms: true,
+              cguVersion: state.termsStatus.currentRequiredCguVersion,
+              cgvVersion: state.termsStatus.currentRequiredCgvVersion,
+            },
+          });
+          state.termsStatus = res.data?.termsStatus || { requiresReacceptance: false };
+          renderChrome();
+          showToast('Acceptation des CGU et CGV enregistrée avec succès.', 'success');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    } else {
+      termsBanner.classList.add('hidden');
+      termsBanner.innerHTML = '';
     }
   }
 
@@ -578,6 +640,8 @@ async function refreshAllData(opts = {}) {
       state.company = me.company;
       if (me.role) state.role = me.role;
       state.isDemo = Boolean(me.isDemo);
+      state.termsStatus = me.termsStatus || null;
+      state.subscriptionStatus = me.subscriptionStatus || null;
     }
 
     // 2. N'interroger QUE les modules autorisés par le rôle de l'utilisateur
@@ -2120,7 +2184,7 @@ function renderCatalog() {
                                 <td data-label="Prix Vente" class="mono">${esc(fmtMoney(p.selling_price, cur))}</td>
                                 <td data-label="PMP" class="mono">${esc(fmtMoney(p.cost_price, cur))}</td>
                                 <td data-label="Stock" class="mono">${p.inventory_tracking === 'none' ? '—' : esc(fmtQty(p.current_stock) + ' ' + p.unit)}</td>
-                                ${canWrite ? `<td data-label="Action"><button type="button" class="btn btn-outline btn-sm" data-edit-product="${esc(p.id)}">Modifier</button></td>` : ''}
+                                ${canWrite ? `<td data-label="Action" style="display:flex;gap:6px;flex-wrap:wrap;"><button type="button" class="btn btn-outline btn-sm" data-edit-product="${esc(p.id)}">Modifier</button><button type="button" class="btn btn-outline btn-sm" data-delete-product="${esc(p.id)}" data-product-name="${esc(p.name)}">Supprimer</button></td>` : ''}
                               </tr>`
           )
           .join('')
@@ -2362,6 +2426,24 @@ function bindCatalog() {
           showToast('Produit mis à jour avec succès', 'success');
           await refreshAllData({ force: true });
         });
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-delete-product]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const prodId = btn.dataset.deleteProduct;
+      const prodName = btn.dataset.productName || 'ce produit';
+      confirmActionModal({
+        title: `Supprimer ${prodName}`,
+        message: `Voulez-vous supprimer « ${prodName} » du catalogue actif ? Si ce produit possède déjà un historique de ventes ou de stocks, il sera archivé sans perte d'historique et libérera une place dans votre quota.`,
+        confirmLabel: 'Supprimer du catalogue',
+        variant: 'danger',
+        onConfirm: async () => {
+          const res = await apiFetch(`/api/catalog/products/${prodId}`, { method: 'DELETE' });
+          showToast(res.message || 'Produit retiré du catalogue actif', 'success');
+          await refreshAllData({ force: true });
+        },
       });
     });
   });
@@ -3381,7 +3463,7 @@ function bindSubscription() {
             },
           });
           closeModal();
-          showToast(`Licence activée (${res.data.licenseReference}) !`, 'success');
+          showToast(`Demande d'abonnement enregistrée en attente de validation (${res.data.licenseReference}) !`, 'info');
           await refreshAllData();
         } catch (err) {
           showToast(err.message, 'error');
@@ -3581,6 +3663,15 @@ async function init() {
       submitBtn.textContent = 'Création en cours...';
     }
     try {
+      const acceptCheckbox = document.getElementById('reg-accept-terms');
+      if (!acceptCheckbox || !acceptCheckbox.checked) {
+        showToast(
+          "Vous devez accepter les Conditions Générales d'Utilisation (CGU) et les Conditions Générales de Vente (CGV) pour créer votre compte.",
+          'warning'
+        );
+        return;
+      }
+
       const countrySelect = document.getElementById('reg-country');
       const countryCode = countrySelect ? countrySelect.value : 'SN';
       const selectedOpt = countrySelect ? countrySelect.options[countrySelect.selectedIndex] : null;
@@ -3598,6 +3689,12 @@ async function init() {
           fullName: document.getElementById('reg-fullname').value,
           email: document.getElementById('reg-email').value,
           password: document.getElementById('reg-password').value,
+          acceptTerms: true,
+          acceptCgu: true,
+          acceptCgv: true,
+          cguVersion: '2026-11-21',
+          cgvVersion: '2026-11-21',
+          privacyPolicyVersion: '2026-11-21',
         },
       });
       setToken(res.data.token);

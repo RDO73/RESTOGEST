@@ -11,13 +11,31 @@ export function errorHandler(
 
   // Validation d'input Zod
   if (err instanceof ZodError) {
+    const firstIssueMsg = err.errors[0]?.message;
     res.status(400).json({
       success: false,
-      error: "Erreur de validation des données d'entrée",
+      error: firstIssueMsg || "Erreur de validation des données d'entrée",
       issues: err.errors.map((e) => ({
         path: e.path.join('.'),
         message: e.message,
       })),
+    });
+    return;
+  }
+
+  // Erreurs applicatives typées (Quotas d'abonnement, Mode lecture seule, Version CGU/CGV)
+  if (typeof err?.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 500) {
+    res.status(err.statusCode).json({
+      success: false,
+      error: {
+        code: err.code || 'APPLICATION_RULE_ERROR',
+        message: err.message || 'Opération refusée.',
+        ...(err.resourceType ? { resourceType: err.resourceType } : {}),
+        ...(err.planCode ? { planCode: err.planCode } : {}),
+        ...(typeof err.currentCount === 'number' ? { currentCount: err.currentCount } : {}),
+        ...(typeof err.maxAllowed === 'number' ? { maxAllowed: err.maxAllowed } : {}),
+      },
+      message: err.message,
     });
     return;
   }

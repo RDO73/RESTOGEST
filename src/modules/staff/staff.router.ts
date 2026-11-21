@@ -12,10 +12,16 @@ import {
   sanitizePermissions,
   type PermissionsMap,
 } from '../../auth/permissions.js';
+import {
+  enforceSubscriptionQuota,
+  requireActiveSubscriptionWriteAccess,
+  withCompanyQuotaLock,
+} from '../subscriptions/subscription-guard.service.js';
 
 export const staffRouter = Router();
 
 staffRouter.use(requireAuth);
+staffRouter.use(requireActiveSubscriptionWriteAccess);
 staffRouter.use(requirePermission('staff:manage'));
 
 function buildUniqueRoleName(baseName: string, userIdShort: string, isCustom: boolean): string {
@@ -123,113 +129,117 @@ staffRouter.post('/', async (req, res, next) => {
 
     const passwordHash = await hashPassword(data.password);
 
-    const client = await adminPool.connect();
-    try {
-      await client.query('BEGIN');
+    await withCompanyQuotaLock(`users:${companyId}`, async () => {
+      const client = await adminPool.connect();
+      try {
+        await client.query('BEGIN');
 
-      const existingUser = await client.query(
-        `SELECT id FROM public.users WHERE LOWER(email) = $1 LIMIT 1`,
-        [normalizedEmail]
-      );
-      if (existingUser.rows.length > 0) {
-        await client.query('ROLLBACK');
-        res.status(409).json({
-          success: false,
-          error: 'Un compte utilisateur existe déjà avec cette adresse e-mail.',
-        });
-        return;
-      }
+        await enforceSubscriptionQuota(client, companyId, 'users');
 
-      const userInsert = await client.query(
-        `INSERT INTO public.users (email, full_name, is_active)
-         VALUES ($1, $2, TRUE)
-         RETURNING id, email, full_name, created_at`,
-        [normalizedEmail, data.fullName.trim()]
-      );
-      const newUser = userInsert.rows[0];
-
-      await client.query(
-        `INSERT INTO public.user_credentials (user_id, password_hash, algo)
-         VALUES ($1, $2, 'argon2id')`,
-        [newUser.id, passwordHash]
-      );
-
-      // Créer un rôle dédié à l'employé ou réutiliser le rôle exact de l'entreprise
-      const finalRoleName = buildUniqueRoleName(
-        resolvedRoleLabel,
-        String(newUser.id).slice(0, 6),
-        isCustomPerms
-      );
-
-      let roleId: string;
-      const existingRole = await client.query(
-        `SELECT id, permissions FROM public.roles WHERE company_id = $1 AND name = $2 LIMIT 1`,
-        [companyId, finalRoleName]
-      );
-
-      if (existingRole.rows.length > 0 && !isCustomPerms) {
-        roleId = existingRole.rows[0].id;
-        await client.query(
-          `UPDATE public.roles SET permissions = $2::jsonb WHERE id = $1`,
-          [roleId, JSON.stringify(resolvedPerms)]
+        const existingUser = await client.query(
+          `SELECT id FROM public.users WHERE LOWER(email) = $1 LIMIT 1`,
+          [normalizedEmail]
         );
-      } else {
-        roleId = crypto.randomUUID();
-        const safeRoleName = existingRole.rows.length > 0
-          ? `${finalRoleName.slice(0, 85)} #${String(newUser.id).slice(0, 6)}`
-          : finalRoleName;
-        await client.query(
-          `INSERT INTO public.roles (id, company_id, name, permissions)
-           VALUES ($1, $2, $3, $4::jsonb)`,
-          [roleId, companyId, safeRoleName, JSON.stringify(resolvedPerms)]
+        if (existingUser.rows.length > 0) {
+          await client.query('ROLLBACK');
+          res.status(409).json({
+            success: false,
+            error: 'Un compte utilisateur existe déjà avec cette adresse e-mail.',
+          });
+          return;
+        }
+
+        const userInsert = await client.query(
+          `INSERT INTO public.users (email, full_name, is_active)
+           VALUES ($1, $2, TRUE)
+           RETURNING id, email, full_name, created_at`,
+          [normalizedEmail, data.fullName.trim()]
         );
-      }
+        const newUser = userInsert.rows[0];
 
-      await client.query(
-        `INSERT INTO public.company_users (company_id, user_id, role_id, is_active)
-         VALUES ($1, $2, $3, TRUE)`,
-        [companyId, newUser.id, roleId]
-      );
+        await client.query(
+          `INSERT INTO public.user_credentials (user_id, password_hash, algo)
+           VALUES ($1, $2, 'argon2id')`,
+          [newUser.id, passwordHash]
+        );
 
-      await client.query(
-        `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, record_id, new_values)
-         VALUES ($1, $2, 'STAFF_MEMBER_CREATED', 'company_users', $3, $4::jsonb)`,
-        [
-          companyId,
-          actorUserId,
-          newUser.id,
-          JSON.stringify({
-            email: normalizedEmail,
-            fullName: data.fullName.trim(),
+        // Créer un rôle dédié à l'employé ou réutiliser le rôle exact de l'entreprise
+        const finalRoleName = buildUniqueRoleName(
+          resolvedRoleLabel,
+          String(newUser.id).slice(0, 6),
+          isCustomPerms
+        );
+
+        let roleId: string;
+        const existingRole = await client.query(
+          `SELECT id, permissions FROM public.roles WHERE company_id = $1 AND name = $2 LIMIT 1`,
+          [companyId, finalRoleName]
+        );
+
+        if (existingRole.rows.length > 0 && !isCustomPerms) {
+          roleId = existingRole.rows[0].id;
+          await client.query(
+            `UPDATE public.roles SET permissions = $2::jsonb WHERE id = $1`,
+            [roleId, JSON.stringify(resolvedPerms)]
+          );
+        } else {
+          roleId = crypto.randomUUID();
+          const safeRoleName = existingRole.rows.length > 0
+            ? `${finalRoleName.slice(0, 85)} #${String(newUser.id).slice(0, 6)}`
+            : finalRoleName;
+          await client.query(
+            `INSERT INTO public.roles (id, company_id, name, permissions)
+             VALUES ($1, $2, $3, $4::jsonb)`,
+            [roleId, companyId, safeRoleName, JSON.stringify(resolvedPerms)]
+          );
+        }
+
+        await client.query(
+          `INSERT INTO public.company_users (company_id, user_id, role_id, is_active)
+           VALUES ($1, $2, $3, TRUE)`,
+          [companyId, newUser.id, roleId]
+        );
+
+        await client.query(
+          `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, record_id, new_values)
+           VALUES ($1, $2, 'STAFF_MEMBER_CREATED', 'company_users', $3, $4::jsonb)`,
+          [
+            companyId,
+            actorUserId,
+            newUser.id,
+            JSON.stringify({
+              email: normalizedEmail,
+              fullName: data.fullName.trim(),
+              roleName: resolvedRoleLabel,
+              roleCode: inferRoleCode(resolvedRoleLabel, resolvedPerms),
+            }),
+          ]
+        );
+
+        await client.query('COMMIT');
+
+        res.status(201).json({
+          success: true,
+          message: `Compte employé créé pour ${data.fullName.trim()}`,
+          data: {
+            id: newUser.id,
+            email: newUser.email,
+            fullName: newUser.full_name,
+            isActive: true,
+            roleId,
             roleName: resolvedRoleLabel,
             roleCode: inferRoleCode(resolvedRoleLabel, resolvedPerms),
-          }),
-        ]
-      );
-
-      await client.query('COMMIT');
-
-      res.status(201).json({
-        success: true,
-        message: `Compte employé créé pour ${data.fullName.trim()}`,
-        data: {
-          id: newUser.id,
-          email: newUser.email,
-          fullName: newUser.full_name,
-          isActive: true,
-          roleId,
-          roleName: resolvedRoleLabel,
-          roleCode: inferRoleCode(resolvedRoleLabel, resolvedPerms),
-          isOwner: resolvedPerms.all === true,
-          permissions: resolvedPerms,
-        },
-      });
-    } catch (err) {
-      await client.query('ROLLBACK').catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
+            isOwner: resolvedPerms.all === true,
+            permissions: resolvedPerms,
+          },
+        });
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw err;
+      } finally {
+        client.release();
+      }
+    });
   } catch (error) {
     next(error);
   }
@@ -415,12 +425,116 @@ staffRouter.post('/:userId/status', async (req, res, next) => {
       return;
     }
 
+    await withCompanyQuotaLock(`users:${companyId}`, async () => {
+      const client = await adminPool.connect();
+      try {
+        await client.query('BEGIN');
+
+        const memberRes = await client.query(
+          `SELECT cu.user_id, cu.is_active, u.email, u.full_name, u.is_active AS user_active
+           FROM public.company_users cu
+           JOIN public.users u ON u.id = cu.user_id
+           WHERE cu.company_id = $1 AND cu.user_id = $2
+           LIMIT 1`,
+          [companyId, targetUserId]
+        );
+        if (memberRes.rows.length === 0) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ success: false, error: 'Employé introuvable dans cet établissement.' });
+          return;
+        }
+
+        const wasActive = Boolean(memberRes.rows[0].is_active && memberRes.rows[0].user_active);
+        if (isActive && !wasActive) {
+          await enforceSubscriptionQuota(client, companyId, 'users');
+        }
+
+        await client.query(
+          `UPDATE public.company_users SET is_active = $3 WHERE company_id = $1 AND user_id = $2`,
+          [companyId, targetUserId, isActive]
+        );
+
+        // Si l'utilisateur n'appartient qu'à cet établissement, synchroniser users.is_active
+        const otherMemberships = await client.query(
+          `SELECT COUNT(*)::INT AS cnt FROM public.company_users WHERE user_id = $1 AND company_id <> $2`,
+          [targetUserId, companyId]
+        );
+        if (Number(otherMemberships.rows[0]?.cnt || 0) === 0) {
+          await client.query(
+            `UPDATE public.users SET is_active = $2, updated_at = NOW() WHERE id = $1`,
+            [targetUserId, isActive]
+          );
+        }
+
+        if (!isActive) {
+          await client.query(
+            `UPDATE public.user_sessions
+             SET revoked_at = NOW()
+             WHERE company_id = $1 AND user_id = $2 AND revoked_at IS NULL`,
+            [companyId, targetUserId]
+          );
+        }
+
+        await client.query(
+          `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, record_id, new_values)
+           VALUES ($1, $2, $3, 'company_users', $4, $5::jsonb)`,
+          [
+            companyId,
+            actorUserId,
+            isActive ? 'STAFF_MEMBER_ACTIVATED' : 'STAFF_MEMBER_SUSPENDED',
+            targetUserId,
+            JSON.stringify({
+              targetEmail: memberRes.rows[0].email,
+              isActive,
+              reason: reason || null,
+            }),
+          ]
+        );
+
+        await client.query('COMMIT');
+
+        res.json({
+          success: true,
+          message: isActive ? 'Compte employé réactivé.' : 'Compte employé suspendu et déconnecté.',
+          data: {
+            userId: targetUserId,
+            isActive,
+          },
+        });
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw err;
+      } finally {
+        client.release();
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 5b. Suppression ou retrait d'un employé de l'établissement (libère une place dans le quota d'utilisateurs)
+staffRouter.delete('/:userId', async (req, res, next) => {
+  try {
+    await ensureDatabaseReady();
+    const companyId = req.auth!.companyId;
+    const actorUserId = req.auth!.userId;
+    const targetUserId = z.string().uuid().parse(req.params.userId);
+
+    if (targetUserId === actorUserId) {
+      res.status(400).json({
+        success: false,
+        error: 'Vous ne pouvez pas supprimer votre propre compte propriétaire.',
+      });
+      return;
+    }
+
     const client = await adminPool.connect();
     try {
       await client.query('BEGIN');
 
       const memberRes = await client.query(
-        `SELECT cu.user_id, cu.is_active, u.email, u.full_name
+        `SELECT cu.user_id, u.email, u.full_name
          FROM public.company_users cu
          JOIN public.users u ON u.id = cu.user_id
          WHERE cu.company_id = $1 AND cu.user_id = $2
@@ -434,56 +548,36 @@ staffRouter.post('/:userId/status', async (req, res, next) => {
       }
 
       await client.query(
-        `UPDATE public.company_users SET is_active = $3 WHERE company_id = $1 AND user_id = $2`,
-        [companyId, targetUserId, isActive]
+        `UPDATE public.user_sessions
+         SET revoked_at = NOW()
+         WHERE company_id = $1 AND user_id = $2 AND revoked_at IS NULL`,
+        [companyId, targetUserId]
       );
 
-      // Si l'utilisateur n'appartient qu'à cet établissement, synchroniser users.is_active
-      const otherMemberships = await client.query(
-        `SELECT COUNT(*)::INT AS cnt FROM public.company_users WHERE user_id = $1 AND company_id <> $2`,
-        [targetUserId, companyId]
+      await client.query(
+        `DELETE FROM public.company_users WHERE company_id = $1 AND user_id = $2`,
+        [companyId, targetUserId]
       );
-      if (Number(otherMemberships.rows[0]?.cnt || 0) === 0) {
-        await client.query(
-          `UPDATE public.users SET is_active = $2, updated_at = NOW() WHERE id = $1`,
-          [targetUserId, isActive]
-        );
-      }
-
-      if (!isActive) {
-        await client.query(
-          `UPDATE public.user_sessions
-           SET revoked_at = NOW()
-           WHERE company_id = $1 AND user_id = $2 AND revoked_at IS NULL`,
-          [companyId, targetUserId]
-        );
-      }
 
       await client.query(
         `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, record_id, new_values)
-         VALUES ($1, $2, $3, 'company_users', $4, $5::jsonb)`,
+         VALUES ($1, $2, 'STAFF_MEMBER_REMOVED', 'company_users', $3, $4::jsonb)`,
         [
           companyId,
           actorUserId,
-          isActive ? 'STAFF_MEMBER_ACTIVATED' : 'STAFF_MEMBER_SUSPENDED',
           targetUserId,
           JSON.stringify({
             targetEmail: memberRes.rows[0].email,
-            isActive,
-            reason: reason || null,
+            targetFullName: memberRes.rows[0].full_name,
           }),
         ]
       );
 
       await client.query('COMMIT');
-
       res.json({
         success: true,
-        message: isActive ? 'Compte employé réactivé.' : 'Compte employé suspendu et déconnecté.',
-        data: {
-          userId: targetUserId,
-          isActive,
-        },
+        message: 'Employé retiré de l’établissement et place libérée dans votre quota.',
+        data: { userId: targetUserId, removed: true },
       });
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});

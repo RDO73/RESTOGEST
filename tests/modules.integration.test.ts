@@ -53,6 +53,7 @@ beforeAll(async () => {
       email: `test_integration_${Date.now()}@resto.sn`,
       password: 'StrongPassword2026!',
       fullName: 'Mamadou Kane',
+      acceptTerms: true,
     }),
   });
   const regData = await regRes.json();
@@ -447,6 +448,7 @@ describe('Modules Métiers Backend RESTOGEST V1', () => {
         email: emailB,
         password: 'TenantBPassword2026!',
         fullName: 'Fatou Diop',
+        acceptTerms: true,
       }),
     });
     const regB = await regBRes.json();
@@ -485,6 +487,7 @@ describe('Modules Métiers Backend RESTOGEST V1', () => {
         email,
         password,
         fullName: 'Amadou Ba',
+        acceptTerms: true,
       }),
     });
     expect(regRes.status).toBe(201);
@@ -624,6 +627,7 @@ describe('Modules Métiers Backend RESTOGEST V1', () => {
         email: `v11_${Date.now()}@myrestogest.com`,
         password: 'PasswordV11!',
         fullName: 'Ibrahima Diallo',
+        acceptTerms: true,
       }),
     });
     const regJson = await regRes.json();
@@ -659,7 +663,7 @@ describe('Modules Métiers Backend RESTOGEST V1', () => {
     });
     expect(xofRes.status).toBe(200);
 
-    // C. Checkout Wave -> activation licence
+    // C. Checkout Wave -> enregistre une demande en attente de validation Super-Admin (jamais d'auto-activation directe)
     const checkoutRes = await fetch(`${baseUrl}/api/subscriptions/checkout`, {
       method: 'POST',
       headers: v11Headers,
@@ -672,7 +676,8 @@ describe('Modules Métiers Backend RESTOGEST V1', () => {
     });
     const checkoutJson = await checkoutRes.json();
     expect(checkoutRes.status).toBe(201);
-    expect(checkoutJson.data.subscription.status).toBe('active');
+    expect(checkoutJson.data.subscription.status).toBe('pending_payment');
+    expect(checkoutJson.data.transaction.status).toBe('pending');
     expect(checkoutJson.data.licenseReference).toMatch(/^LIC-RG-/);
 
     // D. Rapport Z détaillé (Wave + Orange Money)
@@ -755,6 +760,7 @@ describe('Modules Métiers Backend RESTOGEST V1', () => {
         email,
         password: 'CookiePassword2026!',
         fullName: 'Gérant Cookie',
+        acceptTerms: true,
       }),
     });
     expect(regRes.status).toBe(201);

@@ -187,9 +187,8 @@ export function renderTablesAndQrModule(state, { cur, parseSaleMeta }) {
       </button>
     </div>
 
-    ${
-      subtab === 'floor'
-        ? `
+    ${subtab === 'floor'
+      ? `
           <div class="kpi-grid">
             <div class="card kpi-card">
               <div class="kpi-label">Tables Actives Libres</div>
@@ -222,44 +221,44 @@ export function renderTablesAndQrModule(state, { cur, parseSaleMeta }) {
               <h3>Tables &amp; QR Codes Individuels</h3>
               <div class="category-strip" style="margin:0;padding:0;">
                 ${zones
-                  .map(
-                    (z) =>
-                      `<button type="button" class="cat-chip ${zoneFilter === z ? 'active' : ''}" data-qr-zone="${esc(z)}">${z === 'all' ? 'Toutes les zones' : esc(z)}</button>`
-                  )
-                  .join('')}
+        .map(
+          (z) =>
+            `<button type="button" class="cat-chip ${zoneFilter === z ? 'active' : ''}" data-qr-zone="${esc(z)}">${z === 'all' ? 'Toutes les zones' : esc(z)}</button>`
+        )
+        .join('')}
               </div>
             </div>
 
             <div class="floor-grid">
               ${visibleTables
-                .map((t) => {
-                  const activeOrders = Number(t.active_orders_count || 0);
-                  const pendingReq = Number(t.pending_requests_count || 0);
-                  const sessionAmt = Number(t.session_amount || 0);
-                  const isOccupied = t.current_status !== 'free' || activeOrders > 0 || sessionAmt > 0;
-                  const isBill = t.current_status === 'bill_requested';
-                  const cardCls = !t.is_active
-                    ? 'is-closed'
-                    : isBill
-                      ? 'is-bill'
-                      : isOccupied
-                        ? 'is-occupied'
-                        : 'is-free';
+        .map((t) => {
+          const activeOrders = Number(t.active_orders_count || 0);
+          const pendingReq = Number(t.pending_requests_count || 0);
+          const sessionAmt = Number(t.session_amount || 0);
+          const isOccupied = t.current_status !== 'free' || activeOrders > 0 || sessionAmt > 0;
+          const isBill = t.current_status === 'bill_requested';
+          const cardCls = !t.is_active
+            ? 'is-closed'
+            : isBill
+              ? 'is-bill'
+              : isOccupied
+                ? 'is-occupied'
+                : 'is-free';
 
-                  const statusMap = {
-                    free: 'Libre',
-                    occupied: 'Occupée',
-                    order_pending: 'Commande QR reçue',
-                    preparing: 'En préparation',
-                    ready: 'Prête à servir',
-                    served: 'Servie',
-                    bill_requested: 'Addition demandée',
-                    closed: 'Clôturée',
-                  };
-                  const statusLabel = !t.is_active ? 'Désactivée' : statusMap[t.current_status] || t.current_status;
-                  const menuUrl = `${window.location.origin}/menu/${t.qr_token}`;
+          const statusMap = {
+            free: 'Libre',
+            occupied: 'Occupée',
+            order_pending: 'Commande QR reçue',
+            preparing: 'En préparation',
+            ready: 'Prête à servir',
+            served: 'Servie',
+            bill_requested: 'Addition demandée',
+            closed: 'Clôturée',
+          };
+          const statusLabel = !t.is_active ? 'Désactivée' : statusMap[t.current_status] || t.current_status;
+          const menuUrl = `${window.location.origin}/menu/${t.qr_token}`;
 
-                  return `
+          return `
                     <div class="table-card ${cardCls}">
                       <div>
                         <div class="table-card-head">
@@ -270,13 +269,12 @@ export function renderTablesAndQrModule(state, { cur, parseSaleMeta }) {
                           <span class="status-pill ${!t.is_active ? 'status-closed' : isOccupied ? 'status-pending' : 'status-open'}">${esc(statusLabel)}</span>
                         </div>
 
-                        ${
-                          pendingReq > 0
-                            ? `<div style="margin-top:8px;padding:6px 8px;border-radius:8px;background:rgba(239,68,68,0.18);border:1px solid rgba(239,68,68,0.45);font-size:12px;color:#fca5a5;font-weight:700;">
+                        ${pendingReq > 0
+              ? `<div style="margin-top:8px;padding:6px 8px;border-radius:8px;background:rgba(239,68,68,0.18);border:1px solid rgba(239,68,68,0.45);font-size:12px;color:#fca5a5;font-weight:700;">
                                  🔔 ${pendingReq} appel(s) serveur / addition en attente
                                </div>`
-                            : ''
-                        }
+              : ''
+            }
 
                         <div style="margin-top:10px;">
                           <div class="table-card-amount">${esc(fmtMoney(sessionAmt, cur))}</div>
@@ -296,25 +294,23 @@ export function renderTablesAndQrModule(state, { cur, parseSaleMeta }) {
                         <button type="button" class="btn btn-outline btn-sm" data-table-history="${esc(t.id)}">
                           📜 Historique
                         </button>
-                        ${
-                          isOccupied
-                            ? `<button type="button" class="btn btn-amber btn-sm" data-close-table-session="${esc(t.id)}"> Libérer</button>`
-                            : `<button type="button" class="btn btn-success btn-sm" data-open-pos-table="${esc(t.code)}" data-table-name="${esc(t.name)}">+ POS</button>`
-                        }
+                        ${isOccupied
+              ? `<button type="button" class="btn btn-amber btn-sm" data-close-table-session="${esc(t.id)}"> Libérer</button>`
+              : `<button type="button" class="btn btn-success btn-sm" data-open-pos-table="${esc(t.code)}" data-table-name="${esc(t.name)}">+ POS</button>`
+            }
                       </div>
                     </div>
                   `;
-                })
-                .join('')}
+        })
+        .join('')}
             </div>
           </div>
         `
-        : ''
+      : ''
     }
 
-    ${
-      subtab === 'manage'
-        ? `
+    ${subtab === 'manage'
+      ? `
           <div class="two-col">
             <div class="card">
               <div class="section-head"><h3>Créer une nouvelle Table ou Comptoir QR</h3></div>
@@ -365,8 +361,8 @@ export function renderTablesAndQrModule(state, { cur, parseSaleMeta }) {
                   </thead>
                   <tbody>
                     ${qrTables
-                      .map(
-                        (t) => `
+        .map(
+          (t) => `
                           <tr>
                             <td data-label="Table">
                               <strong>${esc(t.code)}</strong> — ${esc(t.name)}
@@ -393,20 +389,19 @@ export function renderTablesAndQrModule(state, { cur, parseSaleMeta }) {
                             </td>
                           </tr>
                         `
-                      )
-                      .join('')}
+        )
+        .join('')}
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
         `
-        : ''
+      : ''
     }
 
-    ${
-      subtab === 'menu-config'
-        ? `
+    ${subtab === 'menu-config'
+      ? `
           <div class="two-col">
             <div class="card">
               <div class="section-head"><h3>Personnalisation du Menu Digital Public</h3></div>
@@ -472,9 +467,9 @@ export function renderTablesAndQrModule(state, { cur, parseSaleMeta }) {
                     <select id="og-product">
                       <option value="">✨ Global (Tous les produits finis)</option>
                       ${state.products
-                        .filter((p) => ['finished_good', 'service'].includes(p.product_type))
-                        .map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`)
-                        .join('')}
+        .filter((p) => ['finished_good', 'service'].includes(p.product_type))
+        .map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`)
+        .join('')}
                     </select>
                   </div>
                   <div class="field">
@@ -510,12 +505,11 @@ export function renderTablesAndQrModule(state, { cur, parseSaleMeta }) {
 
               <div style="margin-top:16px;">
                 <h4 style="margin-bottom:8px;font-size:13px;">Groupes d'options actifs (${qrOptions.length})</h4>
-                ${
-                  qrOptions.length === 0
-                    ? '<p class="muted-text">Aucun groupe d’options configuré.</p>'
-                    : qrOptions
-                        .map(
-                          (g) => `
+                ${qrOptions.length === 0
+        ? '<p class="muted-text">Aucun groupe d’options configuré.</p>'
+        : qrOptions
+          .map(
+            (g) => `
                             <div style="padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;">
                               <div style="display:flex;justify-content:space-between;align-items:center;">
                                 <strong>${esc(g.name)} ${g.is_required ? '(Obligatoire)' : '(Optionnel)'}</strong>
@@ -523,19 +517,19 @@ export function renderTablesAndQrModule(state, { cur, parseSaleMeta }) {
                               </div>
                               <div class="muted-text" style="font-size:12px;margin-top:4px;">
                                 ${(g.values || [])
-                                  .map((v) => `${esc(v.label)} (${Number(v.price_delta) > 0 ? '+' + fmtMoney(v.price_delta, cur) : 'Inclus'})`)
-                                  .join(' • ')}
+                .map((v) => `${esc(v.label)} (${Number(v.price_delta) > 0 ? '+' + fmtMoney(v.price_delta, cur) : 'Inclus'})`)
+                .join(' • ')}
                               </div>
                             </div>
                           `
-                        )
-                        .join('')
-                }
+          )
+          .join('')
+      }
               </div>
             </div>
           </div>
         `
-        : ''
+      : ''
     }
   `;
 }
@@ -635,16 +629,16 @@ export function bindTablesAndQrModule(state, { cur, openModal, closeModal, refre
                   <thead><tr><th>N° Commande</th><th>Date</th><th>Montant</th><th>Statut</th><th>Paiement</th></tr></thead>
                   <tbody>
                     ${orders
-                      .map(
-                        (o) => `<tr>
+              .map(
+                (o) => `<tr>
                           <td class="mono"><strong>${esc(o.order_number)}</strong></td>
                           <td>${esc(fmtDate(o.created_at))}</td>
                           <td class="mono">${esc(fmtMoney(o.total_amount, cur))}</td>
                           <td>${qrStatusBadge(o.status)}</td>
                           <td>${o.payment_status === 'paid' ? '<span class="status-pill status-open">Payée</span>' : '<span class="status-pill status-pending">Non payée</span>'}</td>
                         </tr>`
-                      )
-                      .join('')}
+              )
+              .join('')}
                   </tbody>
                 </table>
               </div>`
@@ -877,17 +871,16 @@ export function renderQrOrdersAndKdsModule(state, { cur }) {
       </button>
     </div>
 
-    ${
-      serviceRequests.length > 0
-        ? `
+    ${serviceRequests.length > 0
+      ? `
           <div class="card" style="border-color:rgba(249,115,22,0.55);background:rgba(249,115,22,0.08);margin-bottom:16px;">
             <div class="section-head" style="margin-bottom:8px;">
               <h3 style="color:#fdba74;">🔔 Appels Serveur &amp; Demandes d'Addition (${serviceRequests.length})</h3>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:10px;">
               ${serviceRequests
-                .map(
-                  (sr) => `
+        .map(
+          (sr) => `
                     <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:10px;background:var(--bg-elevated);border:1px solid var(--border);">
                       <div>
                         <strong>Table ${esc(sr.table_code_snapshot)}</strong> —
@@ -899,47 +892,45 @@ export function renderQrOrdersAndKdsModule(state, { cur }) {
                       <button type="button" class="btn btn-success btn-sm" data-resolve-sr="${esc(sr.id)}">✓ Traité</button>
                     </div>
                   `
-                )
-                .join('')}
+        )
+        .join('')}
             </div>
           </div>
         `
-        : ''
+      : ''
     }
 
-    ${
-      subtab === 'live'
-        ? `
+    ${subtab === 'live'
+      ? `
           <div class="card">
             <div class="section-head">
               <h3>Flux des Commandes Digitales</h3>
               <div class="category-strip" style="margin:0;padding:0;">
                 ${[
-                  { id: 'active', label: 'En cours' },
-                  { id: 'received', label: `Nouvelles (${receivedOrders.length})` },
-                  { id: 'preparing', label: 'En cuisine' },
-                  { id: 'ready', label: 'Prêtes' },
-                  { id: 'served', label: 'Servies' },
-                  { id: 'all', label: 'Toutes' },
-                ]
-                  .map(
-                    (f) =>
-                      `<button type="button" class="cat-chip ${filterStatus === f.id ? 'active' : ''}" data-qro-filter="${f.id}">${esc(f.label)}</button>`
-                  )
-                  .join('')}
+        { id: 'active', label: 'En cours' },
+        { id: 'received', label: `Nouvelles (${receivedOrders.length})` },
+        { id: 'preparing', label: 'En cuisine' },
+        { id: 'ready', label: 'Prêtes' },
+        { id: 'served', label: 'Servies' },
+        { id: 'all', label: 'Toutes' },
+      ]
+        .map(
+          (f) =>
+            `<button type="button" class="cat-chip ${filterStatus === f.id ? 'active' : ''}" data-qro-filter="${f.id}">${esc(f.label)}</button>`
+        )
+        .join('')}
               </div>
             </div>
 
-            ${
-              filteredOrders.length === 0
-                ? `<p class="muted-text" style="padding:24px 0;text-align:center;">Aucune commande dans cette vue.</p>`
-                : `<div class="floor-grid">
+            ${filteredOrders.length === 0
+        ? `<p class="muted-text" style="padding:24px 0;text-align:center;">Aucune commande dans cette vue.</p>`
+        : `<div class="floor-grid">
                     ${filteredOrders
-                      .map((o) => {
-                        const itemsHtml = (o.items || [])
-                          .map((it) => {
-                            const opts = (it.options || []).map((op) => `${op.groupName}: ${op.label}`).join(' | ');
-                            return `
+          .map((o) => {
+            const itemsHtml = (o.items || [])
+              .map((it) => {
+                const opts = (it.options || []).map((op) => `${op.groupName}: ${op.label}`).join(' | ');
+                return `
                               <div style="padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px;">
                                 <div style="display:flex;justify-content:space-between;">
                                   <strong>${it.quantity}x ${esc(it.product_name_snapshot)}</strong>
@@ -950,13 +941,12 @@ export function renderQrOrdersAndKdsModule(state, { cur }) {
                                 ${it.item_note ? `<div style="font-size:11px;color:var(--text-secondary);">Note: ${esc(it.item_note)}</div>` : ''}
                               </div>
                             `;
-                          })
-                          .join('');
+              })
+              .join('');
 
-                        return `
-                          <div class="card" style="margin:0;display:flex;flex-direction:column;justify-content:space-between;border-left:4px solid ${
-                            o.status === 'received' ? '#ef4444' : o.status === 'ready' ? '#10b981' : '#f97316'
-                          };">
+            return `
+                          <div class="card" style="margin:0;display:flex;flex-direction:column;justify-content:space-between;border-left:4px solid ${o.status === 'received' ? '#ef4444' : o.status === 'ready' ? '#10b981' : '#f97316'
+              };">
                             <div>
                               <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
                                 <div>
@@ -970,16 +960,14 @@ export function renderQrOrdersAndKdsModule(state, { cur }) {
                                 ${qrStatusBadge(o.status)}
                               </div>
 
-                              ${
-                                o.customer_name || o.customer_phone
-                                  ? `<div style="font-size:12px;margin-top:6px;color:#cbd5e1;">👤 ${esc(o.customer_name || '')} ${esc(o.customer_phone || '')}</div>`
-                                  : ''
-                              }
-                              ${
-                                o.customer_note
-                                  ? `<div style="margin-top:6px;padding:6px;border-radius:6px;background:rgba(245,158,11,0.14);font-size:12px;color:#fcd34d;">⚠️ ${esc(o.customer_note)}</div>`
-                                  : ''
-                              }
+                              ${o.customer_name || o.customer_phone
+                ? `<div style="font-size:12px;margin-top:6px;color:#cbd5e1;">👤 ${esc(o.customer_name || '')} ${esc(o.customer_phone || '')}</div>`
+                : ''
+              }
+                              ${o.customer_note
+                ? `<div style="margin-top:6px;padding:6px;border-radius:6px;background:rgba(245,158,11,0.14);font-size:12px;color:#fcd34d;">⚠️ ${esc(o.customer_note)}</div>`
+                : ''
+              }
 
                               <div style="margin:10px 0;">${itemsHtml}</div>
 
@@ -992,60 +980,53 @@ export function renderQrOrdersAndKdsModule(state, { cur }) {
                             </div>
 
                             <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;">
-                              ${
-                                o.status === 'received'
-                                  ? `
+                              ${o.status === 'received'
+                ? `
                                     <button type="button" class="btn btn-success btn-sm" data-qro-status="${esc(o.id)}" data-next-status="accepted">✓ Accepter</button>
                                     <button type="button" class="btn btn-danger btn-sm" data-qro-reject="${esc(o.id)}">✕ Refuser</button>
                                   `
-                                  : ''
-                              }
-                              ${
-                                o.status === 'accepted'
-                                  ? `<button type="button" class="btn btn-primary btn-sm" data-qro-status="${esc(o.id)}" data-next-status="preparing">🔥 Lancer préparation</button>`
-                                  : ''
-                              }
-                              ${
-                                o.status === 'preparing'
-                                  ? `<button type="button" class="btn btn-success btn-sm" data-qro-status="${esc(o.id)}" data-next-status="ready">🔔 Prête à servir</button>`
-                                  : ''
-                              }
-                              ${
-                                o.status === 'ready'
-                                  ? `<button type="button" class="btn btn-primary btn-sm" data-qro-status="${esc(o.id)}" data-next-status="served">🍽️ Marquer servie</button>`
-                                  : ''
-                              }
-                              ${
-                                o.payment_status !== 'paid' && !['rejected', 'cancelled'].includes(o.status)
-                                  ? `<button type="button" class="btn btn-amber btn-sm" data-qro-pay="${esc(o.id)}" data-order-num="${esc(o.order_number)}" data-order-total="${o.total_amount}">💳 Encaisser</button>`
-                                  : ''
-                              }
+                : ''
+              }
+                              ${o.status === 'accepted'
+                ? `<button type="button" class="btn btn-primary btn-sm" data-qro-status="${esc(o.id)}" data-next-status="preparing">🔥 Lancer préparation</button>`
+                : ''
+              }
+                              ${o.status === 'preparing'
+                ? `<button type="button" class="btn btn-success btn-sm" data-qro-status="${esc(o.id)}" data-next-status="ready">🔔 Prête à servir</button>`
+                : ''
+              }
+                              ${o.status === 'ready'
+                ? `<button type="button" class="btn btn-primary btn-sm" data-qro-status="${esc(o.id)}" data-next-status="served">🍽️ Marquer servie</button>`
+                : ''
+              }
+                              ${o.payment_status !== 'paid' && !['rejected', 'cancelled'].includes(o.status)
+                ? `<button type="button" class="btn btn-amber btn-sm" data-qro-pay="${esc(o.id)}" data-order-num="${esc(o.order_number)}" data-order-total="${o.total_amount}">💳 Encaisser</button>`
+                : ''
+              }
                               <button type="button" class="btn btn-outline btn-sm" data-qro-print-kitchen="${esc(o.id)}" title="Bon de cuisine">🖨️ Cuisine</button>
                               <button type="button" class="btn btn-outline btn-sm" data-qro-print-receipt="${esc(o.id)}" title="Ticket client">🧾 Ticket</button>
                             </div>
                           </div>
                         `;
-                      })
-                      .join('')}
+          })
+          .join('')}
                   </div>`
-            }
+      }
           </div>
         `
-        : ''
+      : ''
     }
 
-    ${
-      subtab === 'kds'
-        ? `
+    ${subtab === 'kds'
+      ? `
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;">
             <div class="card" style="border-top:4px solid #ef4444;">
               <div class="section-head"><h3>🔴 1. À Accepter (${receivedOrders.length})</h3></div>
-              ${
-                receivedOrders.length === 0
-                  ? '<p class="muted-text">Aucune nouvelle commande en attente.</p>'
-                  : receivedOrders
-                      .map(
-                        (o) => `
+              ${receivedOrders.length === 0
+        ? '<p class="muted-text">Aucune nouvelle commande en attente.</p>'
+        : receivedOrders
+          .map(
+            (o) => `
                           <div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--bg-elevated);">
                             <div style="display:flex;justify-content:space-between;font-weight:700;">
                               <span>${esc(o.table_name_snapshot)} (${esc(o.table_code_snapshot)})</span>
@@ -1059,19 +1040,18 @@ export function renderQrOrdersAndKdsModule(state, { cur }) {
                             </div>
                           </div>
                         `
-                      )
-                      .join('')
-              }
+          )
+          .join('')
+      }
             </div>
 
             <div class="card" style="border-top:4px solid #f97316;">
               <div class="section-head"><h3>🟠 2. En Préparation (${preparingOrders.length})</h3></div>
-              ${
-                preparingOrders.length === 0
-                  ? '<p class="muted-text">Aucune commande en préparation.</p>'
-                  : preparingOrders
-                      .map(
-                        (o) => `
+              ${preparingOrders.length === 0
+        ? '<p class="muted-text">Aucune commande en préparation.</p>'
+        : preparingOrders
+          .map(
+            (o) => `
                           <div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--bg-elevated);">
                             <div style="display:flex;justify-content:space-between;font-weight:700;">
                               <span>${esc(o.table_name_snapshot)} (${esc(o.table_code_snapshot)})</span>
@@ -1079,11 +1059,11 @@ export function renderQrOrdersAndKdsModule(state, { cur }) {
                             </div>
                             <ul style="margin:8px 0;padding-left:18px;font-size:14px;">
                               ${(o.items || [])
-                                .map((it) => {
-                                  const opts = (it.options || []).map((op) => op.label).join(', ');
-                                  return `<li><strong>${it.quantity}x ${esc(it.product_name_snapshot)}</strong> ${opts ? `<span style="color:#fdba74;">[${esc(opts)}]</span>` : ''} ${it.item_note ? `<em>(${esc(it.item_note)})</em>` : ''}</li>`;
-                                })
-                                .join('')}
+                .map((it) => {
+                  const opts = (it.options || []).map((op) => op.label).join(', ');
+                  return `<li><strong>${it.quantity}x ${esc(it.product_name_snapshot)}</strong> ${opts ? `<span style="color:#fdba74;">[${esc(opts)}]</span>` : ''} ${it.item_note ? `<em>(${esc(it.item_note)})</em>` : ''}</li>`;
+                })
+                .join('')}
                             </ul>
                             <div style="display:flex;gap:6px;">
                               <button type="button" class="btn btn-success btn-sm btn-full" data-qro-status="${esc(o.id)}" data-next-status="ready">🔔 Marquer Prête</button>
@@ -1091,19 +1071,18 @@ export function renderQrOrdersAndKdsModule(state, { cur }) {
                             </div>
                           </div>
                         `
-                      )
-                      .join('')
-              }
+          )
+          .join('')
+      }
             </div>
 
             <div class="card" style="border-top:4px solid #10b981;">
               <div class="section-head"><h3>🟢 3. Prêtes à Servir (${readyOrders.length})</h3></div>
-              ${
-                readyOrders.length === 0
-                  ? '<p class="muted-text">Aucune commande en attente de service.</p>'
-                  : readyOrders
-                      .map(
-                        (o) => `
+              ${readyOrders.length === 0
+        ? '<p class="muted-text">Aucune commande en attente de service.</p>'
+        : readyOrders
+          .map(
+            (o) => `
                           <div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--bg-elevated);">
                             <div style="display:flex;justify-content:space-between;font-weight:700;">
                               <span>${esc(o.table_name_snapshot)} (${esc(o.table_code_snapshot)})</span>
@@ -1113,33 +1092,32 @@ export function renderQrOrdersAndKdsModule(state, { cur }) {
                             <button type="button" class="btn btn-primary btn-sm btn-full" data-qro-status="${esc(o.id)}" data-next-status="served">🍽️ Servie à table</button>
                           </div>
                         `
-                      )
-                      .join('')
-              }
+          )
+          .join('')
+      }
             </div>
           </div>
         `
-        : ''
+      : ''
     }
 
-    ${
-      subtab === 'analytics'
-        ? `
+    ${subtab === 'analytics'
+      ? `
           <div class="card">
             <div class="section-head">
               <h3>Statistiques &amp; Performance des Commandes QR</h3>
               <div class="category-strip" style="margin:0;padding:0;">
                 ${[
-                  { id: 'today', label: "Aujourd'hui" },
-                  { id: 'yesterday', label: 'Hier' },
-                  { id: 'week', label: '7 derniers jours' },
-                  { id: 'month', label: 'Ce mois' },
-                ]
-                  .map(
-                    (p) =>
-                      `<button type="button" class="cat-chip ${(state.qrAnalyticsPeriod || 'month') === p.id ? 'active' : ''}" data-qra-period="${p.id}">${esc(p.label)}</button>`
-                  )
-                  .join('')}
+        { id: 'today', label: "Aujourd'hui" },
+        { id: 'yesterday', label: 'Hier' },
+        { id: 'week', label: '7 derniers jours' },
+        { id: 'month', label: 'Ce mois' },
+      ]
+        .map(
+          (p) =>
+            `<button type="button" class="cat-chip ${(state.qrAnalyticsPeriod || 'month') === p.id ? 'active' : ''}" data-qra-period="${p.id}">${esc(p.label)}</button>`
+        )
+        .join('')}
               </div>
             </div>
 
@@ -1173,19 +1151,18 @@ export function renderQrOrdersAndKdsModule(state, { cur }) {
                   <table class="responsive-table">
                     <thead><tr><th>Produit</th><th>Qté commandée</th><th>Chiffre d'affaires</th></tr></thead>
                     <tbody>
-                      ${
-                        !analytics?.topProducts || analytics.topProducts.length === 0
-                          ? '<tr><td colspan="3" class="muted-text">Aucune donnée sur cette période.</td></tr>'
-                          : analytics.topProducts
-                              .map(
-                                (tp) => `<tr>
+                      ${!analytics?.topProducts || analytics.topProducts.length === 0
+        ? '<tr><td colspan="3" class="muted-text">Aucune donnée sur cette période.</td></tr>'
+        : analytics.topProducts
+          .map(
+            (tp) => `<tr>
                                   <td><strong>${esc(tp.product_name_snapshot)}</strong></td>
                                   <td class="mono">${esc(tp.total_qty)}</td>
                                   <td class="mono">${esc(fmtMoney(tp.total_revenue, cur))}</td>
                                 </tr>`
-                              )
-                              .join('')
-                      }
+          )
+          .join('')
+      }
                     </tbody>
                   </table>
                 </div>
@@ -1197,19 +1174,18 @@ export function renderQrOrdersAndKdsModule(state, { cur }) {
                   <table class="responsive-table">
                     <thead><tr><th>Table</th><th>Commandes</th><th>Volume commandé</th></tr></thead>
                     <tbody>
-                      ${
-                        !analytics?.topTables || analytics.topTables.length === 0
-                          ? '<tr><td colspan="3" class="muted-text">Aucune donnée sur cette période.</td></tr>'
-                          : analytics.topTables
-                              .map(
-                                (tt) => `<tr>
+                      ${!analytics?.topTables || analytics.topTables.length === 0
+        ? '<tr><td colspan="3" class="muted-text">Aucune donnée sur cette période.</td></tr>'
+        : analytics.topTables
+          .map(
+            (tt) => `<tr>
                                   <td><strong>${esc(tt.table_name_snapshot)} (${esc(tt.table_code_snapshot)})</strong></td>
                                   <td class="mono">${esc(tt.orders_count)}</td>
                                   <td class="mono">${esc(fmtMoney(tt.revenue, cur))}</td>
                                 </tr>`
-                              )
-                              .join('')
-                      }
+          )
+          .join('')
+      }
                     </tbody>
                   </table>
                 </div>
@@ -1217,7 +1193,7 @@ export function renderQrOrdersAndKdsModule(state, { cur }) {
             </div>
           </div>
         `
-        : ''
+      : ''
     }
   `;
 }
@@ -1407,9 +1383,10 @@ export function printSaasInvoiceModal(invoice, merchant) {
         <div>
           <h1 style="color:#f97316;margin:0;">${esc(merchant?.brand_name && !['RESTOGEST', 'RESTOGEST SaaS', 'RestoGest', 'RestoGest Cloud'].includes(merchant.brand_name) ? merchant.brand_name : 'MyRestoGest')}</h1>
           <div style="font-size:13px;color:#475569;margin-top:4px;">
-            ${esc(merchant?.legal_name && !['RESTOGEST CLOUD SAS', 'RESTOGEST — Hadiry Dramé'].includes(merchant.legal_name) ? merchant.legal_name : 'MyRestoGest — Fondé par Hadiry Dramé')}<br/>
+            Exploitant &amp; Fondateur : <strong>Hadiry Dramé</strong><br/>
+            <span style="font-size:11.5px;color:#64748b;">Activité en phase de lancement commercial (non constituée en société immatriculée)</span><br/>
             ${esc(merchant?.address || 'Sénégal & Guinée')}<br/>
-            Email : ${esc(merchant?.support_email && !['facturation@myrestogest.com', 'contact@myrestogest.com'].includes(merchant.support_email) ? merchant.support_email : 'hadirydrame@gmail.com')}
+            Email : ${esc(merchant?.support_email && !['facturation@myrestogest.com', 'contact@myrestogest.com'].includes(merchant.support_email) ? merchant.support_email : 'hadirydrame@gmail.com')} • WhatsApp : +221 78 897 93 42
           </div>
         </div>
         <div style="text-align:right;">
@@ -1448,22 +1425,20 @@ export function printSaasInvoiceModal(invoice, merchant) {
               ${esc(fmtMoney(invoice.subtotal_amount, invoice.currency))}
             </td>
           </tr>
-          ${
-            Number(invoice.setup_fee_amount) > 0
-              ? `<tr>
+          ${Number(invoice.setup_fee_amount) > 0
+      ? `<tr>
                   <td colspan="2" style="padding:10px;border:1px solid #cbd5e1;">Frais de mise en service / installation</td>
                   <td style="padding:10px;border:1px solid #cbd5e1;text-align:right;">${esc(fmtMoney(invoice.setup_fee_amount, invoice.currency))}</td>
                 </tr>`
-              : ''
-          }
-          ${
-            Number(invoice.discount_amount) > 0
-              ? `<tr>
+      : ''
+    }
+          ${Number(invoice.discount_amount) > 0
+      ? `<tr>
                   <td colspan="2" style="padding:10px;border:1px solid #cbd5e1;">Remise commerciale appliquée</td>
                   <td style="padding:10px;border:1px solid #cbd5e1;text-align:right;">-${esc(fmtMoney(invoice.discount_amount, invoice.currency))}</td>
                 </tr>`
-              : ''
-          }
+      : ''
+    }
         </tbody>
       </table>
 
@@ -1515,45 +1490,44 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         ${['monthly', 'quarterly', 'semiannual', 'yearly']
-          .map(
-            (c) =>
-              `<button type="button" class="btn ${cycle === c ? 'btn-primary' : 'btn-outline'} btn-sm" data-bill-cycle="${c}">
+      .map(
+        (c) =>
+          `<button type="button" class="btn ${cycle === c ? 'btn-primary' : 'btn-outline'} btn-sm" data-bill-cycle="${c}">
                 ${c === 'monthly' ? 'Mensuel' : c === 'quarterly' ? 'Trimestriel' : c === 'semiannual' ? 'Semestriel' : 'Annuel (-17%)'}
               </button>`
-          )
-          .join('')}
+      )
+      .join('')}
       </div>
     </div>
 
     <div class="pricing-grid" style="margin-bottom:20px;">
       ${plans
-        .map((plan) => {
-          const pInfo = plan.pricingByPeriod?.[cycle] || null;
-          const hasOfficial = Boolean(pInfo?.hasOfficialLocalPrice);
-          const isEstimate = Boolean(pInfo?.isEstimate);
-          const displayCurrency = hasOfficial ? pInfo.currencyCode : isEstimate ? pInfo.currencyCode : 'XOF';
-          const displayPrice = hasOfficial
-            ? pInfo.officialLocalPrice
-            : isEstimate
-              ? pInfo.estimatedLocalPrice
-              : pInfo?.referencePriceXof ?? computeClientPlanPrice(plan, cycle, 'XOF').basePrice;
-          const setupFee = pInfo ? pInfo.setupFee : 0;
+      .map((plan) => {
+        const pInfo = plan.pricingByPeriod?.[cycle] || null;
+        const hasOfficial = Boolean(pInfo?.hasOfficialLocalPrice);
+        const isEstimate = Boolean(pInfo?.isEstimate);
+        const displayCurrency = hasOfficial ? pInfo.currencyCode : isEstimate ? pInfo.currencyCode : 'XOF';
+        const displayPrice = hasOfficial
+          ? pInfo.officialLocalPrice
+          : isEstimate
+            ? pInfo.estimatedLocalPrice
+            : pInfo?.referencePriceXof ?? computeClientPlanPrice(plan, cycle, 'XOF').basePrice;
+        const setupFee = pInfo ? pInfo.setupFee : 0;
 
-          const features = Array.isArray(plan.features) ? plan.features : [];
-          const isPro = plan.code === 'PRO';
-          const isCurrent = sub?.plan_code === plan.code && sub?.status === 'active';
+        const features = Array.isArray(plan.features) ? plan.features : [];
+        const isPro = plan.code === 'PRO';
+        const isCurrent = sub?.plan_code === plan.code && sub?.status === 'active';
 
-          return `
+        return `
             <div class="pricing-card ${isPro ? 'is-recommended' : ''}">
               <div class="section-head" style="margin-bottom:4px;">
                 <h3>${esc(plan.name)}</h3>
-                ${
-                  isCurrent
-                    ? '<span class="status-pill status-open">Plan Actif</span>'
-                    : isPro
-                      ? '<span class="status-pill status-info">Populaire</span>'
-                      : ''
-                }
+                ${isCurrent
+            ? '<span class="status-pill status-open">Plan Actif</span>'
+            : isPro
+              ? '<span class="status-pill status-info">Populaire</span>'
+              : ''
+          }
               </div>
               <div class="muted-text" style="font-size:12px;margin-bottom:10px;">
                 Jusqu'à <strong>${plan.max_users || 10}</strong> utilisateurs • <strong>${plan.max_tables || 50}</strong> tables QR • <strong>${plan.max_locations || 1}</strong> site(s)
@@ -1561,13 +1535,12 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
               <div>
                 <div class="pricing-price">${esc(fmtMoney(displayPrice, displayCurrency))}</div>
                 <span class="muted-text">${esc(cycleLabels[cycle] || cycle)}</span>
-                ${
-                  hasOfficial
-                    ? `<div style="font-size:11px;color:#10b981;margin-top:2px;">✓ Tarif officiel local (${esc(selectedCountry.name)})</div>`
-                    : isEstimate
-                      ? `<div style="font-size:11px;color:#f59e0b;margin-top:2px;">ℹ️ Estimation indicative (1 XOF ≈ ${esc(pInfo.exchangeRate)} ${esc(displayCurrency)}) — Tarif officiel local à confirmer (Réf. ${esc(fmtMoney(pInfo.referencePriceXof, 'XOF'))})</div>`
-                      : `<div style="font-size:11px;color:#94a3b8;margin-top:2px;">Tarif de référence XOF (tarif local non encore configuré)</div>`
-                }
+                ${hasOfficial
+            ? `<div style="font-size:11px;color:#10b981;margin-top:2px;">✓ Tarif officiel local (${esc(selectedCountry.name)})</div>`
+            : isEstimate
+              ? `<div style="font-size:11px;color:#f59e0b;margin-top:2px;">ℹ️ Estimation indicative (1 XOF ≈ ${esc(pInfo.exchangeRate)} ${esc(displayCurrency)}) — Tarif officiel local à confirmer (Réf. ${esc(fmtMoney(pInfo.referencePriceXof, 'XOF'))})</div>`
+              : `<div style="font-size:11px;color:#94a3b8;margin-top:2px;">Tarif de référence XOF (tarif local non encore configuré)</div>`
+          }
                 ${setupFee > 0 ? `<div style="font-size:11px;color:#fdba74;margin-top:2px;">+ Frais d'installation initiale : ${esc(fmtMoney(setupFee, displayCurrency))}</div>` : '<div style="font-size:11px;color:#10b981;margin-top:2px;">✓ Installation & mise en service offertes</div>'}
               </div>
               <ul class="pricing-features" style="margin:12px 0;">
@@ -1582,8 +1555,8 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
               </button>
             </div>
           `;
-        })
-        .join('')}
+      })
+      .join('')}
     </div>
 
     <div class="two-col">
@@ -1593,22 +1566,39 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
           <table class="responsive-table">
             <thead><tr><th>Réf.</th><th>Formule</th><th>Montant</th><th>Statut</th><th>Action</th></tr></thead>
             <tbody>
-              ${
-                transactions.length === 0
-                  ? '<tr><td colspan="5" class="muted-text">Aucune transaction d’abonnement pour le moment.</td></tr>'
-                  : transactions
-                      .map((tx) => {
-                        const inv = invoices.find((i) => i.payment_reference === tx.transaction_ref);
-                        return `<tr>
+              ${transactions.length === 0
+      ? '<tr><td colspan="5" class="muted-text">Aucune transaction d’abonnement pour le moment.</td></tr>'
+      : transactions
+        .map((tx) => {
+          const inv = invoices.find((i) => i.payment_reference === tx.transaction_ref);
+          const txStatusLabel =
+            tx.status === 'confirmed'
+              ? 'Paiement validé'
+              : tx.status === 'pending'
+                ? tx.manual_reference
+                  ? 'Paiement en attente de vérification'
+                  : 'Paiement initié (en attente)'
+                : tx.status === 'failed' || tx.status === 'rejected'
+                  ? 'Paiement refusé'
+                  : tx.status === 'refunded'
+                    ? 'Remboursé'
+                    : tx.status;
+          const txPillClass =
+            tx.status === 'confirmed'
+              ? 'status-open'
+              : tx.status === 'pending'
+                ? 'status-pending'
+                : 'status-closed';
+          return `<tr>
                           <td class="mono"><strong>${esc(tx.transaction_ref)}</strong><div class="muted-text" style="font-size:10px;">${esc(fmtDate(tx.created_at))}</div></td>
                           <td>${esc(tx.plan_code)} (${esc(tx.billing_period)})</td>
                           <td class="mono">${esc(fmtMoney(tx.gross_amount, tx.currency))}</td>
-                          <td><span class="status-pill ${tx.status === 'confirmed' ? 'status-open' : tx.status === 'pending' ? 'status-pending' : 'status-closed'}">${tx.status === 'pending' ? 'En attente de validation' : esc(tx.status)}</span></td>
+                          <td><span class="status-pill ${txPillClass}">${esc(txStatusLabel)}</span></td>
                           <td>${inv ? `<button type="button" class="btn btn-outline btn-sm" data-print-saas-inv="${esc(inv.id)}">🖨️ Facture</button>` : '<span class="muted-text">—</span>'}</td>
                         </tr>`;
-                      })
-                      .join('')
-              }
+        })
+        .join('')
+    }
             </tbody>
           </table>
         </div>
@@ -1622,11 +1612,11 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
               <label>Pays de facturation (Afrique)</label>
               <select id="scs-country">
                 ${countries
-                  .map(
-                    (c) =>
-                      `<option value="${esc(c.code)}" data-currency="${esc(c.currency_code)}" ${activeCountryCode === c.code ? 'selected' : ''}>${esc(c.name)} (${esc(c.currency_code)} • ${esc(c.dial_code)})</option>`
-                  )
-                  .join('')}
+      .map(
+        (c) =>
+          `<option value="${esc(c.code)}" data-currency="${esc(c.currency_code)}" ${activeCountryCode === c.code ? 'selected' : ''}>${esc(c.name)} (${esc(c.currency_code)} • ${esc(c.dial_code)})</option>`
+      )
+      .join('')}
               </select>
             </div>
             <div class="field">
@@ -1643,21 +1633,19 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
 
         <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--text-secondary);">
           <strong>Moyens de réception disponibles pour ${esc(selectedCountry.name)} (${esc(activeCountryCode)}) :</strong><br/>
-          ${
-            receptionAccounts.length === 0
-              ? '<span class="muted-text">Aucun compte de réception manuel configuré pour ce pays. Utilisez un agrégateur activé ou contactez le support.</span>'
-              : receptionAccounts
-                  .map(
-                    (ra) =>
-                      `<div style="margin-top:6px;">• <strong>${esc(ra.account_label)}</strong> : <span class="mono">${esc(ra.merchant_number_or_iban)}</span> (${esc(ra.currency_code)})</div>`
-                  )
-                  .join('')
-          }
-          ${
-            countryMethods.length > 0
-              ? `<div style="margin-top:8px;">Méthodes actives : ${countryMethods.map((m) => `<span class="status-pill status-neutral" style="margin-right:4px;">${esc(m.method_label)}</span>`).join('')}</div>`
-              : ''
-          }
+          ${receptionAccounts.length === 0
+      ? '<span class="muted-text">Aucun compte de réception manuel configuré pour ce pays. Utilisez un agrégateur activé ou contactez le support.</span>'
+      : receptionAccounts
+        .map(
+          (ra) =>
+            `<div style="margin-top:6px;">• <strong>${esc(ra.account_label)}</strong> : <span class="mono">${esc(ra.merchant_number_or_iban)}</span> (${esc(ra.currency_code)})</div>`
+        )
+        .join('')
+    }
+          ${countryMethods.length > 0
+      ? `<div style="margin-top:8px;">Méthodes actives : ${countryMethods.map((m) => `<span class="status-pill status-neutral" style="margin-right:4px;">${esc(m.method_label)}</span>`).join('')}</div>`
+      : ''
+    }
         </div>
       </div>
     </div>
@@ -1736,11 +1724,11 @@ export function bindSubscriptionModuleV12(state, { cur, openModal, closeModal, r
       const methodOptionsHtml =
         countryMethods.length > 0
           ? countryMethods
-              .map(
-                (m) =>
-                  `<option value="${esc(m.method_code)}" data-provider="${esc(m.provider_code)}" data-manual="${m.requires_manual_verification ? '1' : '0'}">${esc(m.method_label)}</option>`
-              )
-              .join('')
+            .map(
+              (m) =>
+                `<option value="${esc(m.method_code)}" data-provider="${esc(m.provider_code)}" data-manual="${m.requires_manual_verification ? '1' : '0'}">${esc(m.method_label)}</option>`
+            )
+            .join('')
           : `<option value="bank_transfer" data-provider="bank_transfer" data-manual="1">🏦 Virement Bancaire / Preuve Manuelle</option>`;
 
       openModal(
@@ -1761,16 +1749,15 @@ export function bindSubscriptionModuleV12(state, { cur, openModal, closeModal, r
           </div>
 
           <div id="wiz-reception-box" style="padding:10px;border-radius:8px;background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.35);font-size:12px;">
-            ${
-              receptionAccounts.length > 0
-                ? receptionAccounts
-                    .map(
-                      (ra) =>
-                        `<div><strong>${esc(ra.account_label)}</strong> : <span class="mono">${esc(ra.merchant_number_or_iban)}</span><div class="muted-text" style="margin-top:2px;">${esc(ra.instructions || '')}</div></div>`
-                    )
-                    .join('<hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin:6px 0;"/>')
-                : '<span>Votre paiement sera vérifié par le serveur ou le Super-Administrateur avant activation.</span>'
-            }
+            ${receptionAccounts.length > 0
+          ? receptionAccounts
+            .map(
+              (ra) =>
+                `<div><strong>${esc(ra.account_label)}</strong> : <span class="mono">${esc(ra.merchant_number_or_iban)}</span><div class="muted-text" style="margin-top:2px;">${esc(ra.instructions || '')}</div></div>`
+            )
+            .join('<hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin:6px 0;"/>')
+          : '<span>Votre paiement sera vérifié par le serveur ou le Super-Administrateur avant activation.</span>'
+        }
           </div>
 
           <div class="field">
@@ -1914,16 +1901,15 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
       <div class="card kpi-card">
         <div class="kpi-label">Revenus par Devise (Séparés)</div>
         <div style="font-size:12px;margin-top:6px;">
-          ${
-            totalsByCurrency.length === 0
-              ? '<span class="muted-text">Aucune transaction</span>'
-              : totalsByCurrency
-                  .map(
-                    (t) =>
-                      `<div><strong>${esc(t.currency)}</strong> : ${esc(fmtMoney(t.grossConfirmed, t.currency))} <span class="muted-text">(Net ${esc(fmtMoney(t.netExpected, t.currency))})</span></div>`
-                  )
-                  .join('')
-          }
+          ${totalsByCurrency.length === 0
+      ? '<span class="muted-text">Aucune transaction</span>'
+      : totalsByCurrency
+        .map(
+          (t) =>
+            `<div><strong>${esc(t.currency)}</strong> : ${esc(fmtMoney(t.grossConfirmed, t.currency))} <span class="muted-text">(Net ${esc(fmtMoney(t.netExpected, t.currency))})</span></div>`
+        )
+        .join('')
+    }
         </div>
       </div>
     </div>
@@ -1946,30 +1932,28 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
       </button>
     </div>
 
-    ${
-      subtab === 'transactions'
-        ? `
+    ${subtab === 'transactions'
+      ? `
           <div class="card" style="margin-bottom:16px;">
             <div class="section-head"><h3>Revenus par Pays &amp; Devise</h3></div>
             <div class="table-wrap">
               <table class="responsive-table">
                 <thead><tr><th>Pays</th><th>Devise</th><th>Confirmés</th><th>Brut</th><th>Net attendu</th></tr></thead>
                 <tbody>
-                  ${
-                    revenueByCountry.length === 0
-                      ? '<tr><td colspan="5" class="muted-text">Aucune donnée sur cette période.</td></tr>'
-                      : revenueByCountry
-                          .map(
-                            (rc) => `<tr>
+                  ${revenueByCountry.length === 0
+        ? '<tr><td colspan="5" class="muted-text">Aucune donnée sur cette période.</td></tr>'
+        : revenueByCountry
+          .map(
+            (rc) => `<tr>
                               <td><strong>${esc(rc.country_name)} (${esc(rc.country_code)})</strong></td>
                               <td>${esc(rc.currency)}</td>
                               <td class="mono">${rc.confirmed_count}</td>
                               <td class="mono">${esc(fmtMoney(rc.gross_confirmed, rc.currency))}</td>
                               <td class="mono">${esc(fmtMoney(rc.net_expected, rc.currency))}</td>
                             </tr>`
-                          )
-                          .join('')
-                  }
+          )
+          .join('')
+      }
                 </tbody>
               </table>
             </div>
@@ -1993,12 +1977,11 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                   </tr>
                 </thead>
                 <tbody>
-                  ${
-                    transactions.length === 0
-                      ? '<tr><td colspan="7" class="muted-text">Aucune transaction enregistrée.</td></tr>'
-                      : transactions
-                          .map(
-                            (tx) => `<tr>
+                  ${transactions.length === 0
+        ? '<tr><td colspan="7" class="muted-text">Aucune transaction enregistrée.</td></tr>'
+        : transactions
+          .map(
+            (tx) => `<tr>
                               <td class="mono"><strong>${esc(tx.transaction_ref)}</strong><div class="muted-text" style="font-size:10px;">${esc(fmtDate(tx.created_at))}</div></td>
                               <td><strong>${esc(tx.company_name)}</strong><div class="muted-text" style="font-size:11px;">${esc(tx.country_code || 'SN')} • ${esc(tx.payer_phone || '')}</div></td>
                               <td>${esc(tx.plan_code)} (${esc(tx.billing_period)})</td>
@@ -2009,32 +1992,30 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                               <td>${esc(tx.payment_method)} (${esc(tx.payment_provider)}) ${tx.manual_reference ? `<div class="mono" style="font-size:10px;color:#fdba74;">Réf: ${esc(tx.manual_reference)}</div>` : ''}</td>
                               <td><span class="status-pill ${tx.status === 'confirmed' ? 'status-open' : tx.status === 'pending' ? 'status-pending' : 'status-closed'}">${esc(tx.status)}</span></td>
                               <td>
-                                ${
-                                  tx.status === 'pending'
-                                    ? `<div style="display:flex;gap:6px;">
+                                ${tx.status === 'pending'
+                ? `<div style="display:flex;gap:6px;">
                                         <button type="button" class="btn btn-success btn-sm" data-sa-confirm-tx="${esc(tx.id)}">✓ Valider</button>
                                         <button type="button" class="btn btn-danger btn-sm" data-sa-reject-tx="${esc(tx.id)}">✕ Rejeter</button>
                                       </div>`
-                                    : tx.status === 'confirmed'
-                                      ? `<button type="button" class="btn btn-outline btn-sm" data-sa-refund-tx="${esc(tx.id)}">↩️ Rembourser</button>`
-                                      : '<span class="muted-text">—</span>'
-                                }
+                : tx.status === 'confirmed'
+                  ? `<button type="button" class="btn btn-outline btn-sm" data-sa-refund-tx="${esc(tx.id)}">↩️ Rembourser</button>`
+                  : '<span class="muted-text">—</span>'
+              }
                               </td>
                             </tr>`
-                          )
-                          .join('')
-                  }
+          )
+          .join('')
+      }
                 </tbody>
               </table>
             </div>
           </div>
         `
-        : ''
+      : ''
     }
 
-    ${
-      subtab === 'subscriptions'
-        ? `
+    ${subtab === 'subscriptions'
+      ? `
           <div class="card">
             <div class="section-head"><h3>Parc des Établissements Abonnés</h3></div>
             <div class="table-wrap">
@@ -2051,8 +2032,8 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                 </thead>
                 <tbody>
                   ${subscriptions
-                    .map(
-                      (s) => `<tr>
+        .map(
+          (s) => `<tr>
                         <td><strong>${esc(s.company_name)}</strong></td>
                         <td>${esc(s.country_code || 'SN')} (${esc(s.company_currency || 'XOF')})</td>
                         <td>${esc(s.plan_name || s.plan_code)} (${esc(s.billing_period)})</td>
@@ -2064,19 +2045,18 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                           </button>
                         </td>
                       </tr>`
-                    )
-                    .join('')}
+        )
+        .join('')}
                 </tbody>
               </table>
             </div>
           </div>
         `
-        : ''
+      : ''
     }
 
-    ${
-      subtab === 'countries'
-        ? `
+    ${subtab === 'countries'
+      ? `
           <div class="two-col">
             <div class="card">
               <div class="section-head"><h3>Définir un Tarif Officiel Local par Pays</h3></div>
@@ -2132,15 +2112,15 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                     <thead><tr><th>Pays</th><th>Plan</th><th>Période</th><th>Prix Local</th></tr></thead>
                     <tbody>
                       ${countryPlanPrices
-                        .map(
-                          (cp) => `<tr>
+        .map(
+          (cp) => `<tr>
                             <td>${esc(cp.country_code)}</td>
                             <td>${esc(cp.plan_code)}</td>
                             <td>${esc(cp.billing_period)}</td>
                             <td class="mono">${esc(fmtMoney(cp.local_price, cp.currency_code))}</td>
                           </tr>`
-                        )
-                        .join('')}
+        )
+        .join('')}
                     </tbody>
                   </table>
                 </div>
@@ -2174,15 +2154,15 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                     <thead><tr><th>Paire</th><th>Taux</th><th>Source</th><th>Mise à jour</th></tr></thead>
                     <tbody>
                       ${exchangeRates
-                        .map(
-                          (er) => `<tr>
+        .map(
+          (er) => `<tr>
                             <td class="mono"><strong>${esc(er.base_currency)} → ${esc(er.target_currency)}</strong></td>
                             <td class="mono">${esc(er.rate)}</td>
                             <td>${esc(er.source)}</td>
                             <td>${esc(fmtDate(er.updated_at))}</td>
                           </tr>`
-                        )
-                        .join('')}
+        )
+        .join('')}
                     </tbody>
                   </table>
                 </div>
@@ -2190,12 +2170,11 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
             </div>
           </div>
         `
-        : ''
+      : ''
     }
 
-    ${
-      subtab === 'reception'
-        ? `
+    ${subtab === 'reception'
+      ? `
           <div class="two-col">
             <div class="card">
               <div class="section-head"><h3>📱 Moyens de réception MyRestoGest</h3></div>
@@ -2204,15 +2183,15 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                   <thead><tr><th>Pays</th><th>Compte</th><th>Numéro / IBAN</th><th>Statut</th></tr></thead>
                   <tbody>
                     ${receptionAccounts
-                      .map(
-                        (ra) => `<tr>
+        .map(
+          (ra) => `<tr>
                           <td><strong>${esc(ra.country_code)}</strong> (${esc(ra.currency_code)})</td>
                           <td>${esc(ra.account_label)}</td>
                           <td class="mono"><strong>${esc(ra.merchant_number_or_iban)}</strong></td>
                           <td><span class="status-pill status-pending">${esc(ra.verification_status)}</span></td>
                         </tr>`
-                      )
-                      .join('')}
+        )
+        .join('')}
                   </tbody>
                 </table>
               </div>
@@ -2255,8 +2234,8 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                   <thead><tr><th>Prestataire</th><th>Mode / Clés Env</th><th>Statut</th><th>Action</th></tr></thead>
                   <tbody>
                     ${providers
-                      .map(
-                        (p) => `<tr>
+        .map(
+          (p) => `<tr>
                           <td><strong>${esc(p.name)}</strong><div class="muted-text" style="font-size:11px;">${esc(p.settlement_delay_label)}</div></td>
                           <td>${esc(p.mode)} • ${p.isEnvConfigured ? '<span style="color:#10b981;">Clés OK</span>' : '<span style="color:#f59e0b;">Clés manquantes</span>'}</td>
                           <td><span class="status-pill ${p.is_active ? 'status-open' : 'status-closed'}">${p.is_active ? 'Actif' : 'Inactif'}</span></td>
@@ -2266,20 +2245,19 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                             </button>
                           </td>
                         </tr>`
-                      )
-                      .join('')}
+        )
+        .join('')}
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
         `
-        : ''
+      : ''
     }
 
-    ${
-      subtab === 'payouts'
-        ? `
+    ${subtab === 'payouts'
+      ? `
           <div class="card">
             <div class="section-head"><h3>Enregistrer un Reversement Reçu (Payout)</h3></div>
             <form id="form-sa-create-payout" class="form-stack">
@@ -2320,27 +2298,26 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                 <table class="responsive-table">
                   <thead><tr><th>Réf.</th><th>Source → Compte</th><th>Net Reçu</th><th>Statut</th></tr></thead>
                   <tbody>
-                    ${
-                      payouts.length === 0
-                        ? '<tr><td colspan="4" class="muted-text">Aucun reversement enregistré.</td></tr>'
-                        : payouts
-                            .map(
-                              (p) => `<tr>
+                    ${payouts.length === 0
+        ? '<tr><td colspan="4" class="muted-text">Aucun reversement enregistré.</td></tr>'
+        : payouts
+          .map(
+            (p) => `<tr>
                                 <td class="mono">${esc(p.payout_ref)}</td>
                                 <td>${esc(p.payment_provider)} → ${esc(p.destination_account)}</td>
                                 <td class="mono"><strong>${esc(fmtMoney(p.net_settled_amount, p.currency))}</strong></td>
                                 <td><span class="status-pill status-open">${esc(p.status)}</span></td>
                               </tr>`
-                            )
-                            .join('')
-                    }
+          )
+          .join('')
+      }
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
         `
-        : ''
+      : ''
     }
   `;
 }
@@ -2453,8 +2430,8 @@ export function bindSaasFinancesAdminModule(state, { openModal, closeModal, refr
             <label>Statut de l'abonnement</label>
             <select id="sao-status">
               ${['trial', 'active', 'pending_payment', 'past_due', 'suspended', 'cancelled', 'expired']
-                .map((st) => `<option value="${st}" ${currStatus === st ? 'selected' : ''}>${st}</option>`)
-                .join('')}
+          .map((st) => `<option value="${st}" ${currStatus === st ? 'selected' : ''}>${st}</option>`)
+          .join('')}
             </select>
           </div>
           <div class="field">

@@ -70,7 +70,7 @@
         <li><strong>Ouverture automatique à l’inscription :</strong> toute création d’un nouvel établissement sur MyRestoGest ouvre automatiquement une période d’essai gratuit de <strong>14 jours calendaires</strong> à compter de la date d’inscription et d’initialisation de l’espace établissement (positionnée par défaut sur les fonctionnalités de la formule <em>Pro Cloud Restaurant</em>).</li>
         <li><strong>Aucun engagement ni prélèvement automatique :</strong> l’essai gratuit ne nécessite l’enregistrement préalable d’aucun moyen de paiement. Aucune facturation payante ni aucun prélèvement automatique ne sont déclenchés à l’issue des 14 jours sans démarche volontaire de souscription de la part de l’établissement.</li>
         <li><strong>Éligibilité et prévention des abus :</strong> l’essai gratuit de 14 jours est accordé une seule fois par établissement réel. La création répétée ou abusive de comptes multiples par un même établissement dans le seul but de prolonger artificiellement la gratuité est interdite et peut entraîner la suspension des comptes concernés.</li>
-        <li><strong>Fin de la période d’essai et conservation des données :</strong> à l’expiration des 14 jours, si aucun abonnement payant n’a été souscrit et validé, l’abonnement passe à l’état arrivé à échéance et l’accès opérationnel à l’espace établissement peut être suspendu par l’éditeur jusqu’à souscription d’une formule payante. Les données saisies pendant l’essai sont conservées en base de données (sans suppression automatique immédiate) afin de permettre à l’établissement de reprendre son activité après activation d’un abonnement ou de demander l’export ou la suppression de ses données.</li>
+        <li><strong>Fin de la période d’essai, bascule automatique en Mode Lecture Seule et conservation des données :</strong> à l’expiration des 14 jours, si aucun abonnement payant n’a été souscrit et validé, le serveur bascule automatiquement l’établissement au statut <strong>Expiré — Mode Lecture Seule (<code>SUBSCRIPTION_EXPIRED_READ_ONLY</code>)</strong>. En Mode Lecture Seule, l’établissement conserve l’accès complet en consultation et en export à son tableau de bord, à son historique de ventes, à ses rapports Z, à ses produits, à ses stocks et à son module de souscription, mais toute création ou modification opérationnelle (nouvelles ventes, nouveaux produits, nouveaux employés, mouvements de stock, commandes QR) est bloquée côté serveur jusqu’à la validation effective d’un abonnement payant. Aucune donnée n’est supprimée automatiquement à la fin de l’essai.</li>
       </ul>
 
       <h2>3. Formules, tarifs officiels, devises et périodicités</h2>
@@ -183,13 +183,13 @@
         <li><strong>Fichier Clients &amp; Gestion de l’Équipe (RBAC) :</strong> répertoire clients avec historique et points de fidélité ; création de comptes employés individuels avec rôles prédéfinis (Propriétaire, Responsable de salle, Caissier, Serveur, Responsable de cuisine, Gestionnaire de stock, Comptable) ou permissions personnalisées, journal d’activité par employé et suspension immédiate de session.</li>
       </ul>
       <div class="legal-note">
-        <strong>Plafonds contractuels par formule :</strong>
+        <strong>Quotas contractuels appliqués côté serveur par formule :</strong>
         <ul style="margin:6px 0 0;">
-          <li><strong>Essentiel POS :</strong> 1 établissement, jusqu’à 3 utilisateurs, 15 tables QR et 100 produits au catalogue.</li>
-          <li><strong>Pro Cloud Restaurant :</strong> 1 établissement, jusqu’à 10 utilisateurs, 50 tables QR et 500 produits au catalogue.</li>
-          <li><strong>Entreprise Multi-Sites :</strong> jusqu’à 10 établissements, utilisateurs et tables QR illimités (plafond système 999 utilisateurs / 999 tables / 9 999 produits), support prioritaire et accompagnement au déploiement.</li>
+          <li><strong>Essentiel POS :</strong> 1 établissement, jusqu’à 3 utilisateurs actifs, 15 tables QR actives et 100 produits actifs au catalogue.</li>
+          <li><strong>Pro Cloud Restaurant :</strong> 1 établissement, jusqu’à 10 utilisateurs actifs, 50 tables QR actives et 500 produits actifs au catalogue.</li>
+          <li><strong>Entreprise Multi-Sites :</strong> jusqu’à 10 établissements, 999 utilisateurs actifs, 999 tables QR actives et 9 999 produits actifs au catalogue, support prioritaire et accompagnement au déploiement.</li>
         </ul>
-        Ces limites définissent le périmètre contractuel de chaque offre (étant précisé que, dans la version actuelle du logiciel, ces seuils sont affichés à titre déclaratif dans l’espace abonnement et peuvent faire l’objet d’un contrôle administratif par l’éditeur).
+        Ces plafonds sont contrôlés et appliqués automatiquement côté serveur lors de toute création ou réactivation de ressource (avec verrou transactionnel empêchant tout dépassement par requêtes simultanées). En cas de changement de formule vers un forfait inférieur, aucune donnée existante n’est supprimée automatiquement : l’établissement conserve ses enregistrements existants mais ne peut créer de nouvelles ressources au-delà du plafond de sa formule qu’après suppression/archivage d’éléments inutilisés ou passage à une formule supérieure.
       </div>
 
       <h2>5. Moyens de paiement et procédure réelle d’activation</h2>
@@ -234,10 +234,22 @@
         <li><strong>Outil d’aide à la gestion :</strong> MyRestoGest est un logiciel d’aide à l’exploitation commerciale et au suivi interne. Chaque établissement client demeure seul responsable de l’exactitude de ses saisies (prix, taux de TVA, encaissements, stocks) ainsi que du respect de ses obligations comptables, fiscales, sociales et réglementaires au Sénégal, en Guinée ou dans son pays d’exercice.</li>
       </ul>
 
-      <h2>8. Règlement amiable des différends et évolution juridique</h2>
+      <h2>8. Règlement amiable des différends, réserves réglementaires et évolution juridique</h2>
       <p>
-        En cas de difficulté ou de réclamation relative à une souscription ou à l’exécution des présentes CGV, le client et l’éditeur s’engagent à rechercher en priorité une solution amiable en contactant directement <strong>Hadiry Dramé</strong> à l’adresse <a href="mailto:hadirydrame@gmail.com">hadirydrame@gmail.com</a> ou via WhatsApp au <a href="https://wa.me/221788979342" target="_blank" rel="noopener">+221 78 897 93 42</a>. Les mentions relatives à la forme sociale, aux numéros d’immatriculation et à la juridiction commerciale du siège social seront complétées lors de l’immatriculation juridique officielle de la société.
+        En cas de difficulté ou de réclamation relative à une souscription ou à l’exécution des présentes CGV, le client et l’éditeur s’engagent à rechercher en priorité une solution amiable en contactant directement <strong>Hadiry Dramé</strong> à l’adresse <a href="mailto:hadirydrame@gmail.com">hadirydrame@gmail.com</a> ou via WhatsApp au <a href="https://wa.me/221788979342" target="_blank" rel="noopener">+221 78 897 93 42</a>.
       </p>
+      <div class="legal-note">
+        <strong>Réserves relatives à la validation juridique et fiscale externe :</strong><br />
+        Dans le cadre du lancement commercial de MyRestoGest avant constitution en société immatriculée, les points suivants relèvent d’une validation par un conseil juridique ou un expert-comptable lors de la formalisation officielle :
+        <ul style="margin:6px 0 0;">
+          <li>Formalités déclaratives éventuelles auprès de la Commission de Protection des Données Personnelles (CDP) au Sénégal (Loi n° 2008-12) ;</li>
+          <li>Obligations réglementaires locales applicables en République de Guinée ;</li>
+          <li>Régime fiscal et règles d’assujettissement à la TVA applicables aux abonnements numériques ;</li>
+          <li>Mentions légales et fiscales définitives devant figurer sur les factures après immatriculation (RCCM, NINEA / NIF, forme sociale) ;</li>
+          <li>Clause définitive de droit applicable et de juridiction commerciale compétente ;</li>
+          <li>Qualification contractuelle détaillée des responsabilités respectives (responsable de traitement / sous-traitant) concernant les données des clients finaux saisies par les établissements.</li>
+        </ul>
+      </div>
 
       <div style="margin-top:32px;display:flex;gap:12px;flex-wrap:wrap;">
         <a href="/mentions-legales" class="lp-btn lp-btn-outline">Mentions légales</a>

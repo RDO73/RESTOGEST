@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
+import { requireActiveSubscriptionWriteAccess } from '../subscriptions/subscription-guard.service.js';
 
 export const inventoryRouter = Router();
 
 inventoryRouter.use(requireAuth);
+inventoryRouter.use(requireActiveSubscriptionWriteAccess);
 inventoryRouter.use((req, res, next) => {
   if (req.method.toUpperCase() === 'GET') {
     requirePermission('inventory:read', 'reports:read')(req, res, next);

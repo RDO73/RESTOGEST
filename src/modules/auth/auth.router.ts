@@ -29,6 +29,15 @@ import {
   recordLoginFailure,
   resetLoginFailures,
 } from '../../middlewares/rate-limit.js';
+import {
+  enforceSubscriptionQuota,
+  getRequiredLegalVersions,
+  getUserTermsAcceptanceStatus,
+  initializeCompanyTrialSubscription,
+  recordUserTermsAcceptance,
+  resolveCompanySubscriptionState,
+  withCompanyQuotaLock,
+} from '../subscriptions/subscription-guard.service.js';
 
 export const authRouter = Router();
 
@@ -40,6 +49,12 @@ const RegisterSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   fullName: z.string().min(2),
+  acceptTerms: z.boolean().optional(),
+  acceptCgu: z.boolean().optional(),
+  acceptCgv: z.boolean().optional(),
+  cguVersion: z.string().min(1).max(40).optional(),
+  cgvVersion: z.string().min(1).max(40).optional(),
+  privacyPolicyVersion: z.string().min(1).max(40).optional(),
 });
 
 const LoginSchema = z.object({
@@ -99,6 +114,36 @@ authRouter.post('/register', async (req, res, next) => {
     }
 
     const data = RegisterSchema.parse(req.body);
+    const hasAcceptedTerms =
+      data.acceptTerms === true || (data.acceptCgu === true && data.acceptCgv === true);
+    if (!hasAcceptedTerms) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'TERMS_ACCEPTANCE_REQUIRED',
+          message:
+            "Vous devez accepter explicitement les Conditions Générales d'Utilisation (CGU) et les Conditions Générales de Vente (CGV) pour créer votre établissement sur MyRestoGest.",
+        },
+      });
+      return;
+    }
+
+    // Vérification préliminaire de la version des CGU/CGV avant création en base
+    const requiredVersions = getRequiredLegalVersions();
+    if (
+      (data.cguVersion && data.cguVersion.trim() !== requiredVersions.cguVersion) ||
+      (data.cgvVersion && data.cgvVersion.trim() !== requiredVersions.cgvVersion)
+    ) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'TERMS_VERSION_MISMATCH',
+          message: `Version des conditions contractuelles obsolète (attendu CGU=${requiredVersions.cguVersion}, CGV=${requiredVersions.cgvVersion}). Veuillez actualiser la page.`,
+        },
+      });
+      return;
+    }
+
     const passwordHash = await hashPassword(data.password);
     const normalizedEmail = data.email.toLowerCase();
     const countryCode = data.countryCode.trim().toUpperCase();
@@ -140,6 +185,24 @@ authRouter.post('/register', async (req, res, next) => {
       [company_id, resolvedCurrency, resolvedCountryCode]
     );
 
+    // Enregistrement immuable de la preuve d'acceptation des CGU & CGV (horodatage serveur NOW())
+    const termsAcceptance = await recordUserTermsAcceptance(adminPool, {
+      companyId: company_id,
+      userId: user_id,
+      cguVersion: data.cguVersion,
+      cgvVersion: data.cgvVersion,
+      privacyPolicyVersion: data.privacyPolicyVersion,
+      source: 'register',
+      userAgent: String(req.headers['user-agent'] || '') || null,
+    });
+
+    // Déclenchement immédiat de la période d'essai gratuit de 14 jours dès l'inscription
+    const trialSubscription = await initializeCompanyTrialSubscription(adminPool, company_id, {
+      planCode: 'PRO',
+      status: 'trial',
+      durationDays: 14,
+    });
+
     // Génération de la session auto-porteuse signée HMAC-SHA256
     const session = generateSessionToken(user_id, company_id, {
       tenantId: company_id,
@@ -173,6 +236,8 @@ authRouter.post('/register', async (req, res, next) => {
         countryCode: resolvedCountryCode,
         currency: resolvedCurrency,
         isDemo: false,
+        termsAcceptance,
+        subscription: trialSubscription,
       },
     });
   } catch (error) {
@@ -364,7 +429,164 @@ authRouter.get('/me', requireAuth, async (req, res, next) => {
       };
     });
 
-    res.json({ success: true, data: profile });
+    const [termsStatus, subState] = await Promise.all([
+      getUserTermsAcceptanceStatus(adminPool, auth.companyId, auth.userId),
+      resolveCompanySubscriptionState(adminPool, auth.companyId),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        ...profile,
+        termsStatus,
+        subscriptionStatus: {
+          status: subState.status,
+          planCode: subState.planCode,
+          planName: subState.planName,
+          isExpired: subState.isExpired,
+          isReadOnly: subState.isReadOnly,
+          daysRemaining: subState.daysRemaining,
+          quotas: subState.quotas,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Ré-acceptation des CGU & CGV lors d'une mise à jour majeure de version (conserve l'historique précédent)
+authRouter.post('/accept-terms', requireAuth, async (req, res, next) => {
+  try {
+    await ensureDatabaseReady();
+    const schema = z.object({
+      acceptTerms: z.boolean().optional(),
+      acceptCgu: z.boolean().optional(),
+      acceptCgv: z.boolean().optional(),
+      cguVersion: z.string().min(1).max(40).optional(),
+      cgvVersion: z.string().min(1).max(40).optional(),
+      privacyPolicyVersion: z.string().min(1).max(40).optional(),
+    });
+    const parsed = schema.parse(req.body);
+    const hasAccepted =
+      parsed.acceptTerms === true || (parsed.acceptCgu === true && parsed.acceptCgv === true);
+    if (!hasAccepted) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'TERMS_ACCEPTANCE_REQUIRED',
+          message:
+            "Vous devez cocher la case d'acceptation des Conditions Générales d'Utilisation (CGU) et des Conditions Générales de Vente (CGV).",
+        },
+      });
+      return;
+    }
+
+    const recorded = await recordUserTermsAcceptance(adminPool, {
+      companyId: req.auth!.companyId,
+      userId: req.auth!.userId,
+      cguVersion: parsed.cguVersion,
+      cgvVersion: parsed.cgvVersion,
+      privacyPolicyVersion: parsed.privacyPolicyVersion,
+      source: 'reacceptance',
+      userAgent: String(req.headers['user-agent'] || '') || null,
+    });
+
+    const termsStatus = await getUserTermsAcceptanceStatus(
+      adminPool,
+      req.auth!.companyId,
+      req.auth!.userId
+    );
+
+    res.status(201).json({
+      success: true,
+      data: {
+        acceptance: recorded,
+        termsStatus,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Création d'un établissement / site supplémentaire par un propriétaire (soumis au quota maxLocations de la formule)
+authRouter.post('/establishments', requireAuth, async (req, res, next) => {
+  try {
+    await ensureDatabaseReady();
+    const schema = z.object({
+      companyName: z.string().min(2).max(255),
+      businessType: z.enum(['restaurant', 'pastry_shop', 'both']).default('restaurant'),
+      countryCode: z.string().min(2).max(10).default('SN'),
+      currency: z.string().min(2).max(10).optional(),
+    });
+    const data = schema.parse(req.body);
+    const auth = req.auth!;
+
+    const created = await withCompanyQuotaLock(`locations:${auth.userId}`, async () => {
+      const client = await adminPool.connect();
+      try {
+        await client.query('BEGIN');
+        await enforceSubscriptionQuota(client, auth.companyId, 'locations', {
+          ownerUserId: auth.userId,
+        });
+
+        const countryCode = data.countryCode.trim().toUpperCase();
+        const countryRes = await client.query(
+          `SELECT code, currency_code FROM public.saas_countries WHERE code = $1 AND is_active = TRUE`,
+          [countryCode]
+        );
+        const resolvedCurrency =
+          data.currency?.trim().toUpperCase() || countryRes.rows[0]?.currency_code || 'XOF';
+        const resolvedCountryCode = countryRes.rows[0]?.code || countryCode;
+
+        const compIns = await client.query(
+          `INSERT INTO public.companies (name, business_type, country_code, currency, is_active)
+           VALUES ($1, $2, $3, $4, TRUE)
+           RETURNING *`,
+          [data.companyName.trim(), data.businessType, resolvedCountryCode, resolvedCurrency]
+        );
+        const newCompany = compIns.rows[0];
+
+        const roleIns = await client.query(
+          `INSERT INTO public.roles (company_id, name, permissions)
+           VALUES ($1, 'Propriétaire', '{"all": true}'::jsonb)
+           RETURNING id`,
+          [newCompany.id]
+        );
+        await client.query(
+          `INSERT INTO public.company_users (company_id, user_id, role_id, is_active)
+           VALUES ($1, $2, $3, TRUE)`,
+          [newCompany.id, auth.userId, roleIns.rows[0].id]
+        );
+
+        await client.query(
+          `INSERT INTO public.company_settings (company_id, currency, country, updated_at)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (company_id) DO NOTHING`,
+          [newCompany.id, resolvedCurrency, resolvedCountryCode]
+        );
+
+        await initializeCompanyTrialSubscription(client, newCompany.id, {
+          planCode: 'PRO',
+          status: 'trial',
+          durationDays: 14,
+        });
+
+        await client.query('COMMIT');
+        return newCompany;
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw err;
+      } finally {
+        client.release();
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      data: created,
+    });
   } catch (error) {
     next(error);
   }

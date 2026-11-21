@@ -321,6 +321,20 @@ export async function ensureDemoEnvironment(tokenHash?: string): Promise<void> {
         [DEMO_CASH_SESSION_ID, DEMO_TENANT_ID, DEMO_USER_ID]
       );
 
+      // 7. Abonnement d'essai 14 jours pour l'environnement de démo
+      await client.query(
+        `INSERT INTO public.company_subscriptions (
+           company_id, plan_code, status, billing_period,
+           starts_at, ends_at, trial_ends_at, current_period_start, current_period_end, updated_at
+         )
+         VALUES (
+           $1, 'PRO', 'trial', 'monthly',
+           NOW(), NOW() + INTERVAL '14 days', NOW() + INTERVAL '14 days', NOW(), NOW() + INTERVAL '14 days', NOW()
+         )
+         ON CONFLICT (company_id) DO NOTHING`,
+        [DEMO_TENANT_ID]
+      );
+
       await client.query('COMMIT');
       demoEnvironmentSeeded = true;
       if (tokenHash) {
@@ -447,6 +461,19 @@ export async function ensureSessionHydrated(context: StatelessHydrationContext):
          VALUES ($1, $2, $3, NOW() + INTERVAL '24 hours')
          ON CONFLICT DO NOTHING`,
         [context.userId, targetCompanyId, context.tokenHash]
+      );
+
+      await client.query(
+        `INSERT INTO public.company_subscriptions (
+           company_id, plan_code, status, billing_period,
+           starts_at, ends_at, trial_ends_at, current_period_start, current_period_end, updated_at
+         )
+         VALUES (
+           $1, 'PRO', 'trial', 'monthly',
+           NOW(), NOW() + INTERVAL '14 days', NOW() + INTERVAL '14 days', NOW(), NOW() + INTERVAL '14 days', NOW()
+         )
+         ON CONFLICT (company_id) DO NOTHING`,
+        [targetCompanyId]
       );
 
       await client.query('COMMIT');

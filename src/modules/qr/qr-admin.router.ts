@@ -3,12 +3,19 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
-import type { IDbClient } from '../../db/pool.js';
+import { adminPool, type IDbClient } from '../../db/pool.js';
 import { generateTableQrPosterSvg } from '../../utils/qrcode-svg.js';
+import {
+  enforceSubscriptionQuota,
+  requireActiveSubscriptionWriteAccess,
+  resolveCompanySubscriptionState,
+  withCompanyQuotaLock,
+} from '../subscriptions/subscription-guard.service.js';
 
 export const qrAdminRouter = Router();
 
 qrAdminRouter.use(requireAuth);
+qrAdminRouter.use(requireActiveSubscriptionWriteAccess);
 qrAdminRouter.use((req, res, next) => {
   const method = req.method.toUpperCase();
   const pathStr = req.path || '';
@@ -86,7 +93,14 @@ export async function ensureDefaultCompanyTablesAndSettings(
     [companyId]
   );
   if (Number(countRes.rows[0]?.cnt || 0) === 0) {
-    for (const t of DEFAULT_TABLES_SEED) {
+    let maxTablesToSeed = DEFAULT_TABLES_SEED.length;
+    try {
+      const subState = await resolveCompanySubscriptionState(client, companyId);
+      maxTablesToSeed = Math.min(DEFAULT_TABLES_SEED.length, subState.quotas.maxTables);
+    } catch {
+      // fallback to default seed length
+    }
+    for (const t of DEFAULT_TABLES_SEED.slice(0, maxTablesToSeed)) {
       await client.query(
         `INSERT INTO public.dining_tables (company_id, code, name, zone, seats, table_type, qr_token, is_active, current_status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, 'free')
@@ -254,26 +268,29 @@ qrAdminRouter.post('/tables', async (req, res, next) => {
     });
     const data = schema.parse(req.body);
 
-    const created = await withTenantContext(req.auth!, async (client) => {
-      const qrToken = generateSecureToken(24);
-      const result = await client.query(
-        `INSERT INTO public.dining_tables (company_id, code, name, zone, seats, table_type, qr_token, is_active, current_status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, 'free')
-         RETURNING *`,
-        [
-          req.auth!.companyId,
-          data.code.trim().toUpperCase(),
-          data.name.trim(),
-          data.zone.trim(),
-          data.seats,
-          data.tableType,
-          qrToken,
-        ]
-      );
-      return {
-        ...result.rows[0],
-        public_menu_path: `/menu/${result.rows[0].qr_token}`,
-      };
+    const created = await withCompanyQuotaLock(`tables:${req.auth!.companyId}`, async () => {
+      await enforceSubscriptionQuota(adminPool, req.auth!.companyId, 'tables');
+      return withTenantContext(req.auth!, async (client) => {
+        const qrToken = generateSecureToken(24);
+        const result = await client.query(
+          `INSERT INTO public.dining_tables (company_id, code, name, zone, seats, table_type, qr_token, is_active, current_status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, 'free')
+           RETURNING *`,
+          [
+            req.auth!.companyId,
+            data.code.trim().toUpperCase(),
+            data.name.trim(),
+            data.zone.trim(),
+            data.seats,
+            data.tableType,
+            qrToken,
+          ]
+        );
+        return {
+          ...result.rows[0],
+          public_menu_path: `/menu/${result.rows[0].qr_token}`,
+        };
+      });
     });
 
     res.status(201).json({ success: true, data: created });
@@ -298,32 +315,43 @@ qrAdminRouter.put('/tables/:id', async (req, res, next) => {
     });
     const data = schema.parse(req.body);
 
-    const updated = await withTenantContext(req.auth!, async (client) => {
-      const result = await client.query(
-        `UPDATE public.dining_tables
-         SET code = COALESCE($1, code),
-             name = COALESCE($2, name),
-             zone = COALESCE($3, zone),
-             seats = COALESCE($4, seats),
-             table_type = COALESCE($5, table_type),
-             is_active = COALESCE($6, is_active),
-             current_status = COALESCE($7, current_status),
-             updated_at = NOW()
-         WHERE id = $8 AND company_id = $9
-         RETURNING *`,
-        [
-          data.code ? data.code.trim().toUpperCase() : null,
-          data.name ? data.name.trim() : null,
-          data.zone ? data.zone.trim() : null,
-          data.seats ?? null,
-          data.tableType ?? null,
-          typeof data.isActive === 'boolean' ? data.isActive : null,
-          data.currentStatus ?? null,
-          tableId,
-          req.auth!.companyId,
-        ]
-      );
-      return result.rows[0] || null;
+    const updated = await withCompanyQuotaLock(`tables:${req.auth!.companyId}`, async () => {
+      if (data.isActive === true) {
+        const curRes = await adminPool.query(
+          `SELECT is_active FROM public.dining_tables WHERE id = $1 AND company_id = $2`,
+          [tableId, req.auth!.companyId]
+        );
+        if (curRes.rows.length > 0 && curRes.rows[0].is_active === false) {
+          await enforceSubscriptionQuota(adminPool, req.auth!.companyId, 'tables');
+        }
+      }
+      return withTenantContext(req.auth!, async (client) => {
+        const result = await client.query(
+          `UPDATE public.dining_tables
+           SET code = COALESCE($1, code),
+               name = COALESCE($2, name),
+               zone = COALESCE($3, zone),
+               seats = COALESCE($4, seats),
+               table_type = COALESCE($5, table_type),
+               is_active = COALESCE($6, is_active),
+               current_status = COALESCE($7, current_status),
+               updated_at = NOW()
+           WHERE id = $8 AND company_id = $9
+           RETURNING *`,
+          [
+            data.code ? data.code.trim().toUpperCase() : null,
+            data.name ? data.name.trim() : null,
+            data.zone ? data.zone.trim() : null,
+            data.seats ?? null,
+            data.tableType ?? null,
+            typeof data.isActive === 'boolean' ? data.isActive : null,
+            data.currentStatus ?? null,
+            tableId,
+            req.auth!.companyId,
+          ]
+        );
+        return result.rows[0] || null;
+      });
     });
 
     if (!updated) {

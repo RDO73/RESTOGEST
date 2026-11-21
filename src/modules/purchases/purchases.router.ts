@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
+import { requireActiveSubscriptionWriteAccess } from '../subscriptions/subscription-guard.service.js';
 
 export const purchasesRouter = Router();
 
 purchasesRouter.use(requireAuth);
+purchasesRouter.use(requireActiveSubscriptionWriteAccess);
 purchasesRouter.use((req, res, next) => {
   if (req.method.toUpperCase() === 'GET') {
     requirePermission('purchases:read', 'reports:read')(req, res, next);

@@ -70,7 +70,7 @@
         <li><strong>Données relatives à l’établissement :</strong> nom commercial de l’établissement, type d’activité (restaurant, pâtisserie/boulangerie ou mixte), pays (Sénégal ou Guinée), devise officielle (XOF ou GNF), taux de TVA par défaut, paramètre d’autorisation de stock négatif et paramètres d’affichage du menu digital QR (nom affiché, slogan, téléphone, WhatsApp, adresse, message d’accueil).</li>
         <li><strong>Données relatives aux comptes employés :</strong> nom complet de l’employé, adresse e-mail individuelle de connexion, intitulé du rôle métier, grille de permissions attribuées par le propriétaire, statut actif ou suspendu et date de rattachement à l’établissement.</li>
         <li><strong>Données d’authentification et de session :</strong> mot de passe stocké exclusivement sous forme d’empreinte cryptographique hachée via l’algorithme <strong>Argon2id</strong> (jamais en clair), identifiant technique de session (condensat SHA-256 du jeton JTI), date d’expiration et horodatage éventuel de révocation.</li>
-        <li><strong>Données d’abonnement et de facturation SaaS :</strong> formule choisie, périodicité, devise, montants, numéro de téléphone payeur, nom du payeur (optionnel), référence de transaction transmise pour vérification (Wave, Orange Money, virement ou carte UBA) et factures d’abonnement émises.</li>
+        <li><strong>Données d’abonnement, de facturation SaaS et preuves d’acceptation contractuelle :</strong> formule choisie, périodicité, devise, montants, numéro de téléphone payeur, nom du payeur (optionnel), référence de transaction transmise pour vérification (Wave, Orange Money, virement ou carte UBA), factures d’abonnement émises, ainsi que l’historique immuable d’acceptation des CGU et CGV (identifiant utilisateur, horodatage serveur, versions acceptées des CGU/CGV et prise de connaissance de la Politique de confidentialité dans la table <code>user_terms_acceptances</code>).</li>
         <li><strong>Journaux d’activité et de sécurité (audit) :</strong> historique horodaté des actions sensibles réalisées dans l’établissement (connexions, créations/modifications de ventes, paiements, remboursements, achats, dépenses, modifications de rôles ou suspensions d’employés) avec l’identifiant de l’utilisateur auteur. Les mots de passe et jetons secrets sont systématiquement exclus de ces journaux.</li>
         <li><strong>Données techniques de sécurité (adresse IP et User-Agent) :</strong>
           <ul>
@@ -154,13 +154,35 @@
         <li><code>restogest_session</code> : cookie technique <code>HttpOnly</code> et <code>SameSite=Strict</code> maintenant la session authentifiée de l’utilisateur d’un établissement (durée : 24 heures) ;</li>
         <li><code>restogest_admin_session</code> : cookie technique <code>HttpOnly</code> et <code>SameSite=Strict</code> réservé à la session d’administration du propriétaire sur <code>/admin</code> (durée : 24 heures) ;</li>
         <li><code>restogest_csrf</code> : cookie technique <code>SameSite=Strict</code> servant exclusivement à la protection contre les requêtes falsifiées inter-sites (CSRF) ;</li>
-        <li>Stockage local fonctionnel (<code>localStorage</code>) : maintien technique de la session dans l’interface (<code>restogest_token</code>, supprimé à la déconnexion), mémorisation du masquage de l’aide au démarrage (<code>restogest_onboarding_dismissed_*</code>) et mémorisation du jeton de suivi d’une commande QR en cours sur le téléphone du client à table (<code>rg_track_*</code>).</li>
+        <li><strong>Stockage local fonctionnel du navigateur (<code>localStorage</code>) :</strong>
+          <ul>
+            <li><code>restogest_onboarding_dismissed_&lt;companyId&gt;</code> : mémorise uniquement le choix de l’utilisateur de masquer l’encart d’aide au démarrage sur son tableau de bord ;</li>
+            <li><code>rg_track_&lt;qrToken&gt;</code> (sur l’interface publique de menu QR <code>/menu/:qrToken</code>) : mémorise sur le téléphone du client à table le jeton de suivi de sa commande en cours afin qu’il puisse suivre l’avancement cuisine en direct ;</li>
+            <li>Nettoyage automatique des anciennes clés de jeton (<code>restogest_jwt_token</code>, <code>restogest_token</code>, <code>restogest_super_admin_token</code>) au profit des cookies sécurisés <code>HttpOnly</code>.</li>
+          </ul>
+        </li>
       </ul>
       <p>
         <strong>MyRestoGest n’utilise aucun cookie publicitaire, aucun pixel de ciblage marketing ni aucun traceur analytique tiers.</strong>
       </p>
 
-      <h2>8. Droits des utilisateurs et contact</h2>
+      <h2>8. Distinction entre acceptation contractuelle et information sur les données &amp; points soumis à validation juridique externe</h2>
+      <p>
+        Lors de l’inscription sur MyRestoGest, la case à cocher obligatoire porte exclusivement sur l’acceptation contractuelle des <a href="/cgu">CGU</a> et des <a href="/cgv">CGV</a>. La présente Politique de confidentialité constitue un document d’information transparent sur les traitements nécessaires à la fourniture du service et à la sécurité de la plateforme, sans imposer de consentement artificiel global.
+      </p>
+      <div class="legal-note">
+        <strong>Points juridiques, réglementaires et fiscaux relevant d’une validation professionnelle externe :</strong>
+        <ul style="margin:6px 0 0;">
+          <li>Obligations déclaratives éventuelles auprès de la Commission de Protection des Données Personnelles (CDP) au Sénégal (Loi n° 2008-12) ;</li>
+          <li>Obligations réglementaires applicables en République de Guinée en matière de données personnelles et de commerce électronique ;</li>
+          <li>Régime fiscal et règles de TVA applicables à la facturation des abonnements SaaS ;</li>
+          <li>Mentions obligatoires définitives sur les factures commerciales après immatriculation officielle ;</li>
+          <li>Détermination formelle du droit applicable et de la juridiction compétente ;</li>
+          <li>Encadrement contractuel détaillé des responsabilités respectives entre MyRestoGest (prestataire technique) et chaque établissement client concernant les données des clients finaux des restaurants.</li>
+        </ul>
+      </div>
+
+      <h2>9. Droits des utilisateurs et contact</h2>
       <p>
         Tout propriétaire d’établissement ou utilisateur peut à tout moment demander l’accès aux données le concernant, leur rectification, leur export, la suspension de son compte ou leur suppression en contactant directement <strong>Hadiry Dramé</strong> :
       </p>

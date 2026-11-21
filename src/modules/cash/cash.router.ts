@@ -3,10 +3,12 @@ import { z } from 'zod';
 import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
 import type { IDbClient } from '../../db/pool.js';
+import { requireActiveSubscriptionWriteAccess } from '../subscriptions/subscription-guard.service.js';
 
 export const cashRouter = Router();
 
 cashRouter.use(requireAuth);
+cashRouter.use(requireActiveSubscriptionWriteAccess);
 cashRouter.use((req, res, next) => {
   if (req.method.toUpperCase() === 'GET') {
     requirePermission('cash:read', 'reports:read')(req, res, next);
