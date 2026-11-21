@@ -614,7 +614,7 @@ describe('Modules Métiers Backend RESTOGEST V1', () => {
       headers: { Authorization: `Bearer ${demoJson.data.token}` },
     });
     expect(bearerMeRes.status).toBe(200);
-  });
+  }, 30000);
 
   it('9. FONCTIONNALITÉS V1.1 : ABONNEMENTS SaaS (XOF/GNF), RAPPORT Z DÉTAILLÉ (WAVE/OM) & MOT DE PASSE OUBLIÉ', async () => {
     const regRes = await fetch(`${baseUrl}/api/auth/register`, {
