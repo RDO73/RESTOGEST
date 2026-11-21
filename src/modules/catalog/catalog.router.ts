@@ -2,10 +2,17 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
+import { adminPool } from '../../db/pool.js';
+import {
+  enforceSubscriptionQuota,
+  requireActiveSubscriptionWriteAccess,
+  withCompanyQuotaLock,
+} from '../subscriptions/subscription-guard.service.js';
 
 export const catalogRouter = Router();
 
 catalogRouter.use(requireAuth);
+catalogRouter.use(requireActiveSubscriptionWriteAccess);
 catalogRouter.use((req, res, next) => {
   const perm = req.method.toUpperCase() === 'GET' ? 'catalog:read' : 'catalog:write';
   requirePermission(perm)(req, res, next);
@@ -59,6 +66,7 @@ catalogRouter.post('/categories', async (req, res, next) => {
 // -------------------------------------------------------------
 catalogRouter.get('/products', async (req, res, next) => {
   try {
+    const includeInactive = req.query.includeInactive === 'true';
     const products = await withTenantContext(req.auth!, async (client) => {
       const result = await client.query(
         `SELECT p.id, p.category_id, c.name as category_name, p.name, p.sku,
@@ -68,6 +76,7 @@ catalogRouter.get('/products', async (req, res, next) => {
          FROM public.products p
          LEFT JOIN public.categories c ON c.id = p.category_id
          LEFT JOIN public.stock_levels sl ON sl.product_id = p.id
+         ${includeInactive ? '' : 'WHERE p.is_active = TRUE'}
          ORDER BY p.name ASC`
       );
       return result.rows;
@@ -93,27 +102,30 @@ catalogRouter.post('/products', async (req, res, next) => {
     });
     const data = schema.parse(req.body);
 
-    const product = await withTenantContext(req.auth!, async (client) => {
-      const result = await client.query(
-        `INSERT INTO public.products (
-          company_id, category_id, name, sku, product_type, unit,
-          selling_price, cost_price, inventory_tracking, min_stock_alert
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        RETURNING *`,
-        [
-          req.auth!.companyId,
-          data.categoryId || null,
-          data.name,
-          data.sku || null,
-          data.productType,
-          data.unit,
-          data.sellingPrice,
-          data.costPrice,
-          data.inventoryTracking,
-          data.minStockAlert,
-        ]
-      );
-      return result.rows[0];
+    const product = await withCompanyQuotaLock(`products:${req.auth!.companyId}`, async () => {
+      await enforceSubscriptionQuota(adminPool, req.auth!.companyId, 'products');
+      return withTenantContext(req.auth!, async (client) => {
+        const result = await client.query(
+          `INSERT INTO public.products (
+            company_id, category_id, name, sku, product_type, unit,
+            selling_price, cost_price, inventory_tracking, min_stock_alert
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          RETURNING *`,
+          [
+            req.auth!.companyId,
+            data.categoryId || null,
+            data.name,
+            data.sku || null,
+            data.productType,
+            data.unit,
+            data.sellingPrice,
+            data.costPrice,
+            data.inventoryTracking,
+            data.minStockAlert,
+          ]
+        );
+        return result.rows[0];
+      });
     });
 
     res.status(201).json({ success: true, data: product });
@@ -139,40 +151,51 @@ catalogRouter.put('/products/:id', async (req, res, next) => {
     });
     const data = schema.parse(req.body);
 
-    const updated = await withTenantContext(req.auth!, async (client) => {
-      const existing = await client.query(`SELECT * FROM public.products WHERE id = $1`, [productId]);
-      if (existing.rows.length === 0) return null;
-      const cur = existing.rows[0];
-      const result = await client.query(
-        `UPDATE public.products
-         SET category_id = $2,
-             name = $3,
-             sku = $4,
-             product_type = $5,
-             unit = $6,
-             selling_price = $7,
-             cost_price = $8,
-             inventory_tracking = $9,
-             min_stock_alert = $10,
-             is_active = $11,
-             updated_at = NOW()
-         WHERE id = $1
-         RETURNING *`,
-        [
-          productId,
-          data.categoryId !== undefined ? data.categoryId : cur.category_id,
-          data.name !== undefined ? data.name.trim() : cur.name,
-          data.sku !== undefined ? data.sku : cur.sku,
-          data.productType ?? cur.product_type,
-          data.unit ?? cur.unit,
-          data.sellingPrice !== undefined ? data.sellingPrice : cur.selling_price,
-          data.costPrice !== undefined ? data.costPrice : cur.cost_price,
-          data.inventoryTracking ?? cur.inventory_tracking,
-          data.minStockAlert !== undefined ? data.minStockAlert : cur.min_stock_alert,
-          data.isActive !== undefined ? data.isActive : cur.is_active,
-        ]
-      );
-      return result.rows[0];
+    const updated = await withCompanyQuotaLock(`products:${req.auth!.companyId}`, async () => {
+      if (data.isActive === true) {
+        const curCheck = await adminPool.query(
+          `SELECT is_active FROM public.products WHERE id = $1 AND company_id = $2`,
+          [productId, req.auth!.companyId]
+        );
+        if (curCheck.rows.length > 0 && curCheck.rows[0].is_active === false) {
+          await enforceSubscriptionQuota(adminPool, req.auth!.companyId, 'products');
+        }
+      }
+      return withTenantContext(req.auth!, async (client) => {
+        const existing = await client.query(`SELECT * FROM public.products WHERE id = $1`, [productId]);
+        if (existing.rows.length === 0) return null;
+        const cur = existing.rows[0];
+        const result = await client.query(
+          `UPDATE public.products
+           SET category_id = $2,
+               name = $3,
+               sku = $4,
+               product_type = $5,
+               unit = $6,
+               selling_price = $7,
+               cost_price = $8,
+               inventory_tracking = $9,
+               min_stock_alert = $10,
+               is_active = $11,
+               updated_at = NOW()
+           WHERE id = $1
+           RETURNING *`,
+          [
+            productId,
+            data.categoryId !== undefined ? data.categoryId : cur.category_id,
+            data.name !== undefined ? data.name.trim() : cur.name,
+            data.sku !== undefined ? data.sku : cur.sku,
+            data.productType ?? cur.product_type,
+            data.unit ?? cur.unit,
+            data.sellingPrice !== undefined ? data.sellingPrice : cur.selling_price,
+            data.costPrice !== undefined ? data.costPrice : cur.cost_price,
+            data.inventoryTracking ?? cur.inventory_tracking,
+            data.minStockAlert !== undefined ? data.minStockAlert : cur.min_stock_alert,
+            data.isActive !== undefined ? data.isActive : cur.is_active,
+          ]
+        );
+        return result.rows[0];
+      });
     });
 
     if (!updated) {
@@ -181,6 +204,79 @@ catalogRouter.put('/products/:id', async (req, res, next) => {
     }
 
     res.json({ success: true, message: 'Produit mis à jour avec succès', data: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+catalogRouter.delete('/products/:id', async (req, res, next) => {
+  try {
+    const productId = z.string().uuid().parse(req.params.id);
+
+    const outcome = await withTenantContext(req.auth!, async (client) => {
+      const existing = await client.query(
+        `SELECT id, name, is_active FROM public.products WHERE id = $1`,
+        [productId]
+      );
+      if (existing.rows.length === 0) {
+        return { found: false };
+      }
+
+      const usageRes = await client.query(
+        `SELECT
+           (SELECT COUNT(*)::INT FROM public.sale_items WHERE product_id = $1) AS sale_items_cnt,
+           (SELECT COUNT(*)::INT FROM public.purchase_items WHERE product_id = $1) AS purchase_items_cnt,
+           (SELECT COUNT(*)::INT FROM public.qr_order_items WHERE product_id = $1) AS qr_items_cnt,
+           (SELECT COUNT(*)::INT FROM public.stock_movements WHERE product_id = $1) AS stock_mov_cnt,
+           (SELECT COUNT(*)::INT FROM public.stock_levels WHERE product_id = $1) AS stock_lvl_cnt,
+           (SELECT COUNT(*)::INT FROM public.recipes WHERE finished_product_id = $1) AS recipes_cnt,
+           (SELECT COUNT(*)::INT FROM public.recipe_ingredients WHERE ingredient_id = $1) AS recipe_ing_cnt`,
+        [productId]
+      );
+      const u = usageRes.rows[0] || {};
+      const dependencies = {
+        saleItems: Number(u.sale_items_cnt || 0),
+        purchaseItems: Number(u.purchase_items_cnt || 0),
+        qrOrderItems: Number(u.qr_items_cnt || 0),
+        stockMovements: Number(u.stock_mov_cnt || 0),
+        stockLevels: Number(u.stock_lvl_cnt || 0),
+        recipes: Number(u.recipes_cnt || 0),
+        recipeIngredients: Number(u.recipe_ing_cnt || 0),
+      };
+      const hasHistory =
+        dependencies.saleItems > 0 ||
+        dependencies.purchaseItems > 0 ||
+        dependencies.qrOrderItems > 0 ||
+        dependencies.stockMovements > 0 ||
+        dependencies.stockLevels > 0 ||
+        dependencies.recipes > 0 ||
+        dependencies.recipeIngredients > 0;
+
+      if (hasHistory) {
+        await client.query(
+          `UPDATE public.products SET is_active = FALSE, updated_at = NOW() WHERE id = $1`,
+          [productId]
+        );
+        return { found: true, mode: 'deactivated' as const, dependencies };
+      }
+
+      await client.query(`DELETE FROM public.products WHERE id = $1`, [productId]);
+      return { found: true, mode: 'deleted' as const, dependencies };
+    });
+
+    if (!outcome.found) {
+      res.status(404).json({ success: false, error: 'Produit introuvable' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message:
+        outcome.mode === 'deleted'
+          ? 'Produit supprimé et place libérée dans votre quota.'
+          : 'Produit archivé (historique conservé) et place libérée dans votre quota.',
+      data: { id: productId, mode: outcome.mode, dependencies: outcome.dependencies },
+    });
   } catch (error) {
     next(error);
   }

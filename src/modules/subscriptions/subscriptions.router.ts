@@ -11,6 +11,11 @@ import {
   computeConsolidatedMultiCurrencyFinances,
 } from './african-market.service.js';
 import { getPaymentProviderAdapter } from './providers/payment-adapters.js';
+import {
+  getUserTermsAcceptanceStatus,
+  resolveCompanySubscriptionState,
+} from './subscription-guard.service.js';
+import { DEMO_TENANT_ID } from '../../db/demo-seed.js';
 
 export const subscriptionsRouter = Router();
 
@@ -145,11 +150,11 @@ async function ensureDefaultPlansAndMerchant(client: IDbClient): Promise<void> {
          bank_name, bank_account_name, bank_iban
        )
        VALUES (
-         'RESTOGEST CLOUD SAS', 'RESTOGEST SaaS', 'facturation@myrestogest.com',
-         '+221 77 000 00 00', '+221 78 897 93 42',
-         'Dakar (Sénégal) & Conakry (Guinée)', 'XOF', 'manual_wave_sn',
+         'Hadiry Dramé (Fondateur & Exploitant — activité en lancement commercial)', 'MyRestoGest', 'hadirydrame@gmail.com',
+         '+221 78 897 93 42', '+221 78 897 93 42',
+         'Sénégal & Guinée', 'XOF', 'manual_wave_sn',
          '+221788979342', NULL, NULL,
-         'UBA / Orabank Afrique de l’Ouest', 'RESTOGEST CLOUD SAS', 'SN08 0010 2030 4050 6070 8090'
+         'UBA / Orabank Afrique de l’Ouest', 'Hadiry Dramé — MyRestoGest', 'SN08 0010 2030 4050 6070 8090'
        )`
     );
   }
@@ -290,6 +295,29 @@ async function confirmSaasTransactionAndActivateSubscription(
   );
   const subscription = subRes.rows[0];
 
+  // Propager l'activation / renouvellement aux éventuels sites secondaires rattachés en multi-sites
+  await client.query(
+    `UPDATE public.company_subscriptions
+     SET plan_id = COALESCE($2, plan_id),
+         plan_code = $3,
+         status = 'active',
+         billing_period = $4,
+         starts_at = $5,
+         ends_at = $6,
+         current_period_start = $5,
+         current_period_end = $6,
+         updated_at = NOW()
+     WHERE last_payment_ref = $1`,
+    [
+      `MULTI-SITE:${txRow.company_id}`,
+      planId,
+      txRow.plan_code,
+      txRow.billing_period,
+      periodStart.toISOString(),
+      periodEnd.toISOString(),
+    ]
+  );
+
   const txUpdateRes = await client.query(
     `UPDATE public.saas_subscription_transactions
      SET status = 'confirmed',
@@ -321,7 +349,7 @@ async function confirmSaasTransactionAndActivateSubscription(
     `SELECT name FROM public.companies WHERE id = $1`,
     [txRow.company_id]
   );
-  const company = compRes.rows[0] || { name: 'Client RestoGest' };
+  const company = compRes.rows[0] || { name: 'Client MyRestoGest' };
 
   const invoiceNumber = `FA-RG-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}-${crypto
     .randomBytes(2)
@@ -588,34 +616,7 @@ subscriptionsRouter.get('/current', async (req, res, next) => {
          ORDER BY monthly_price ASC`
       );
 
-      let subRes = await client.query(
-        `SELECT cs.*, sp.code AS resolved_plan_code, sp.name AS plan_name, sp.monthly_price, sp.quarterly_price,
-                sp.semiannual_price, sp.yearly_price, sp.setup_fee, sp.features,
-                sp.max_users, sp.max_locations, sp.max_tables, sp.max_products
-         FROM public.company_subscriptions cs
-         LEFT JOIN public.subscription_plans sp ON sp.code = cs.plan_code OR sp.id = cs.plan_id
-         WHERE cs.company_id = $1`,
-        [req.auth!.companyId]
-      );
-
-      if (subRes.rows.length === 0) {
-        const proPlan = plansRes.rows.find((p: any) => p.code === 'PRO') || plansRes.rows[0];
-        await client.query(
-          `INSERT INTO public.company_subscriptions (company_id, plan_id, plan_code, status, billing_period)
-           VALUES ($1, $2, 'PRO', 'trial', 'monthly')
-           ON CONFLICT (company_id) DO NOTHING`,
-          [req.auth!.companyId, proPlan?.id || null]
-        );
-        subRes = await client.query(
-          `SELECT cs.*, sp.code AS resolved_plan_code, sp.name AS plan_name, sp.monthly_price, sp.quarterly_price,
-                  sp.semiannual_price, sp.yearly_price, sp.setup_fee, sp.features,
-                  sp.max_users, sp.max_locations, sp.max_tables, sp.max_products
-           FROM public.company_subscriptions cs
-           LEFT JOIN public.subscription_plans sp ON sp.code = cs.plan_code OR sp.id = cs.plan_id
-           WHERE cs.company_id = $1`,
-          [req.auth!.companyId]
-        );
-      }
+      const resolvedSub = await resolveCompanySubscriptionState(client, req.auth!.companyId);
 
       const settingsRes = await client.query(
         `SELECT currency, country, whatsapp_phone, updated_at
@@ -667,17 +668,8 @@ subscriptionsRouter.get('/current', async (req, res, next) => {
          ORDER BY created_at ASC LIMIT 1`
       );
 
-      const sub = subRes.rows[0];
-      const now = new Date();
-      const endDate = new Date(sub.current_period_end || sub.trial_ends_at);
-      const daysRemaining = Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 3600 * 24)));
-
       return {
-        subscription: {
-          ...sub,
-          daysRemaining,
-          isExpired: endDate.getTime() < now.getTime() && !['active'].includes(sub.status),
-        },
+        subscription: resolvedSub.subscription,
         countries: countriesRes.rows,
         selectedCountry: paymentCtx.country,
         plans: plansRes.rows.map((p: any) => ({
@@ -706,7 +698,7 @@ const updateSettingsSchema = z.object({
   whatsappPhone: z.string().max(40).optional().nullable(),
 });
 
-subscriptionsRouter.put('/settings', async (req, res, next) => {
+subscriptionsRouter.put('/settings', requirePermission('settings:manage'), async (req, res, next) => {
   try {
     const parsed = updateSettingsSchema.parse(req.body);
     const countryCode = parsed.country.trim().toUpperCase();
@@ -747,42 +739,103 @@ subscriptionsRouter.put('/settings', async (req, res, next) => {
   }
 });
 
-const updateCompanySettingsLegacySchema = z.object({
-  name: z.string().min(2).max(200).optional(),
-  currency: z.string().min(2).max(10),
-  defaultTaxRate: z.number().min(0).max(100).optional(),
-  allowNegativeStock: z.boolean().optional(),
-});
+const updateCompanySettingsLegacySchema = z
+  .object({
+    // Paramètres de facturation nécessaires au renouvellement (autorisés en lecture seule)
+    currency: z.string().trim().toUpperCase().pipe(z.enum(['XOF', 'GNF', 'EUR', 'USD'])),
+    country: z.string().trim().min(2).max(10).optional(),
+    whatsappPhone: z.string().max(40).optional().nullable(),
+    // Paramètres opérationnels de l'établissement (bloqués en lecture seule et si réacceptation CGU/CGV exigée)
+    name: z.string().trim().min(2).max(200).optional(),
+    defaultTaxRate: z.number().min(0).max(100).optional(),
+    allowNegativeStock: z.boolean().optional(),
+  })
+  .strict();
 
 subscriptionsRouter.put('/company-settings', requirePermission('settings:manage'), async (req, res, next) => {
   try {
     const parsed = updateCompanySettingsLegacySchema.parse(req.body);
-    const updated = await withAdminTransaction(async (client) => {
-      const compRes = await client.query(
-        `UPDATE public.companies
-         SET name = COALESCE($2, name),
-             currency = $3,
-             default_tax_rate = COALESCE($4, default_tax_rate),
-             allow_negative_stock = COALESCE($5, allow_negative_stock),
-             updated_at = NOW()
-         WHERE id = $1
-         RETURNING *`,
-        [
-          req.auth!.companyId,
-          parsed.name || null,
-          parsed.currency,
-          parsed.defaultTaxRate !== undefined ? parsed.defaultTaxRate : null,
-          parsed.allowNegativeStock !== undefined ? parsed.allowNegativeStock : null,
-        ]
-      );
+    const companyId = req.auth!.companyId;
+    const hasOperationalFields =
+      parsed.name !== undefined ||
+      parsed.defaultTaxRate !== undefined ||
+      parsed.allowNegativeStock !== undefined;
 
-      const country = parsed.currency === 'GNF' ? 'GN' : 'SN';
+    if (hasOperationalFields && companyId !== DEMO_TENANT_ID) {
+      const termsStatus = await getUserTermsAcceptanceStatus(adminPool, companyId, req.auth?.userId);
+      if (termsStatus.requiresReacceptance) {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'TERMS_REACCEPTANCE_REQUIRED',
+            message:
+              "La modification des paramètres opérationnels de l'établissement (nom, TVA, politique de stock négatif) est bloquée tant que la nouvelle version obligatoire des CGU et CGV n'a pas été acceptée.",
+            requiresReacceptance: true,
+            currentRequiredCguVersion: termsStatus.currentRequiredCguVersion,
+            currentRequiredCgvVersion: termsStatus.currentRequiredCgvVersion,
+          },
+        });
+        return;
+      }
+
+      const subState = await resolveCompanySubscriptionState(adminPool, companyId);
+      if (subState.isReadOnly) {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'SUBSCRIPTION_EXPIRED_READ_ONLY',
+            message:
+              "Votre établissement est en mode lecture seule : seuls les paramètres de facturation (devise, pays) nécessaires à la régularisation de votre abonnement peuvent être modifiés.",
+            subscriptionStatus: subState.status,
+            isReadOnly: true,
+          },
+        });
+        return;
+      }
+    }
+
+    const updated = await withAdminTransaction(async (client) => {
+      const resolvedCountry = (parsed.country || (parsed.currency === 'GNF' ? 'GN' : 'SN')).toUpperCase();
+
+      const compRes = hasOperationalFields
+        ? await client.query(
+            `UPDATE public.companies
+             SET name = COALESCE($2, name),
+                 currency = $3,
+                 country_code = $6,
+                 default_tax_rate = COALESCE($4, default_tax_rate),
+                 allow_negative_stock = COALESCE($5, allow_negative_stock),
+                 updated_at = NOW()
+             WHERE id = $1
+             RETURNING *`,
+            [
+              companyId,
+              parsed.name || null,
+              parsed.currency,
+              parsed.defaultTaxRate !== undefined ? parsed.defaultTaxRate : null,
+              parsed.allowNegativeStock !== undefined ? parsed.allowNegativeStock : null,
+              resolvedCountry,
+            ]
+          )
+        : await client.query(
+            `UPDATE public.companies
+             SET currency = $2,
+                 country_code = $3,
+                 updated_at = NOW()
+             WHERE id = $1
+             RETURNING *`,
+            [companyId, parsed.currency, resolvedCountry]
+          );
+
       await client.query(
-        `INSERT INTO public.company_settings (company_id, currency, country, updated_at)
-         VALUES ($1, $2, $3, NOW())
+        `INSERT INTO public.company_settings (company_id, currency, country, whatsapp_phone, updated_at)
+         VALUES ($1, $2, $3, $4, NOW())
          ON CONFLICT (company_id) DO UPDATE
-         SET currency = EXCLUDED.currency, updated_at = NOW()`,
-        [req.auth!.companyId, parsed.currency, country]
+         SET currency = EXCLUDED.currency,
+             country = EXCLUDED.country,
+             whatsapp_phone = COALESCE(EXCLUDED.whatsapp_phone, public.company_settings.whatsapp_phone),
+             updated_at = NOW()`,
+        [companyId, parsed.currency, resolvedCountry, parsed.whatsappPhone ?? null]
       );
 
       return compRes.rows[0];
@@ -939,14 +992,16 @@ subscriptionsRouter.post('/transactions', async (req, res, next) => {
       const requiresManual =
         providerCode === 'manual_wave_sn' ||
         ['bank_transfer', 'manual'].includes(parsed.paymentMethod) ||
-        Boolean(matchedCountryMethod?.requires_manual_verification);
+        Boolean(matchedCountryMethod?.requires_manual_verification) ||
+        !adapter.isConfigured();
 
-      // Sécurité (Section 7 & 12) : un paiement manuel ou Wave SN sans API ne peut JAMAIS s'auto-activer !
+      // Sécurité stricte (Exigence 4 & 6) : aucun paiement ne peut s'auto-activer via instant_gateway
+      // sans validation effective par le Super-Admin ou un webhook signé vérifié.
       const effectiveMode = requiresManual
         ? parsed.paymentMode === 'pending_webhook'
           ? 'pending_webhook'
           : 'manual_proof'
-        : parsed.paymentMode || 'pending_webhook';
+        : 'pending_webhook';
 
       if (effectiveMode === 'manual_proof' && (!parsed.manualReference || !parsed.manualReference.trim())) {
         return {
@@ -1008,21 +1063,6 @@ subscriptionsRouter.post('/transactions', async (req, res, next) => {
         ]
       );
       const txRow = insTxRes.rows[0];
-
-      if (effectiveMode === 'instant_gateway' && !requiresManual) {
-        const confirmed = await confirmSaasTransactionAndActivateSubscription(client, txRow, {
-          providerTransactionId: `${providerCode.toUpperCase()}-${Date.now()}`,
-          confirmedByUserId: req.auth!.userId,
-          isWebhook: false,
-        });
-        return {
-          mode: 'confirmed',
-          instructions: initiation.instructions,
-          transaction: confirmed.transaction,
-          subscription: confirmed.subscription,
-          invoice: confirmed.invoice,
-        };
-      }
 
       if (!currentSub || currentSub.status !== 'active') {
         await client.query(
@@ -1109,18 +1149,25 @@ subscriptionsRouter.post('/checkout', requirePermission('settings:manage'), asyn
 
       const paymentRef = `LIC-RG-${Date.now().toString().slice(-6)}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
 
+      const subRes = await client.query(
+        `SELECT * FROM public.company_subscriptions WHERE company_id = $1`,
+        [req.auth!.companyId]
+      );
+      const currentSub = subRes.rows[0] || null;
+
       const insTxRes = await client.query(
         `INSERT INTO public.saas_subscription_transactions (
-           transaction_ref, company_id, plan_code, billing_period,
+           transaction_ref, company_id, subscription_id, plan_code, billing_period,
            currency, subscription_price_snapshot, setup_fee_snapshot,
            discount_amount, tax_amount, gross_amount, provider_fee_amount, net_expected_amount,
-           payment_provider, payment_method, payer_phone, status, created_by_user_id
+           payment_provider, payment_method, payer_phone, manual_reference, status, created_by_user_id
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 0, $8, $9, $10, $11, $12, $13, 'pending', $14)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, $9, $10, $11, $12, $13, $14, $15, 'pending', $16)
          RETURNING *`,
         [
           paymentRef,
           req.auth!.companyId,
+          currentSub?.id || null,
           effectivePlanCode,
           parsed.billingPeriod,
           currency,
@@ -1132,24 +1179,54 @@ subscriptionsRouter.post('/checkout', requirePermission('settings:manage'), asyn
           parsed.paymentMethod,
           parsed.paymentMethod,
           parsed.paymentPhone || parsed.payerReference || null,
+          parsed.payerReference || parsed.paymentPhone || null,
           req.auth!.userId,
         ]
       );
+      const txRow = insTxRes.rows[0];
 
-      const confirmed = await confirmSaasTransactionAndActivateSubscription(client, insTxRes.rows[0], {
-        providerTransactionId: `DIRECT-${paymentRef}`,
-        confirmedByUserId: req.auth!.userId,
-        isWebhook: false,
+      // Sécurité (Exigence 4) : POST /api/subscriptions/checkout NE DOIT JAMAIS activer directement l'abonnement.
+      // La transaction reste au statut 'pending' et l'abonnement passe en 'pending_payment' (sauf s'il est déjà 'active')
+      // en attente de validation explicite par le Super-Admin ou un webhook signé vérifié.
+      const pendingSubRes = await client.query(
+        `INSERT INTO public.company_subscriptions (company_id, plan_id, plan_code, status, billing_period)
+         VALUES ($1, $2, $3, 'pending_payment', $4)
+         ON CONFLICT (company_id) DO UPDATE
+         SET status = CASE WHEN public.company_subscriptions.status = 'active' THEN 'active' ELSE 'pending_payment' END,
+             updated_at = NOW()
+         RETURNING *`,
+        [req.auth!.companyId, plan.id, effectivePlanCode, parsed.billingPeriod]
+      );
+      const pendingSub = pendingSubRes.rows[0];
+
+
+      await safeAuditLog(client, {
+        companyId: req.auth!.companyId,
+        userId: req.auth!.userId,
+        action: 'SAAS_CHECKOUT_PENDING_VALIDATION',
+        tableName: 'saas_subscription_transactions',
+        recordId: txRow.id,
+        newValues: {
+          transactionRef: paymentRef,
+          planCode: effectivePlanCode,
+          billingPeriod: parsed.billingPeriod,
+          paymentMethod: parsed.paymentMethod,
+          grossAmount,
+          currency,
+          status: 'pending',
+        },
       });
 
       return {
-        ...confirmed.subscription,
-        subscription: confirmed.subscription,
+        ...pendingSub,
+        status: 'pending_payment',
+        subscription: pendingSub,
+        transaction: txRow,
         licenseReference: paymentRef,
         plan_name: plan.name,
         currency,
-        invoice_number: confirmed.invoice?.invoice_number || null,
-        transaction_id: confirmed.transaction?.id || null,
+        invoice_number: null,
+        transaction_id: txRow.id,
       };
     });
 
@@ -1302,6 +1379,7 @@ subscriptionsRouter.get('/admin/overview', async (req, res, next) => {
            )::INT AS expired_or_suspended_count,
            COALESCE(SUM(
              CASE
+               WHEN COALESCE(cs.last_payment_ref, '') LIKE 'MULTI-SITE:%' THEN 0
                WHEN cs.status = 'active' AND cs.billing_period = 'monthly' THEN sp.monthly_price
                WHEN cs.status = 'active' AND cs.billing_period = 'quarterly' THEN ROUND(sp.quarterly_price / 3.0, 2)
                WHEN cs.status = 'active' AND cs.billing_period = 'semiannual' THEN ROUND(sp.semiannual_price / 6.0, 2)
@@ -1568,6 +1646,7 @@ subscriptionsRouter.post('/admin/transactions/:id/confirm', async (req, res, nex
         isWebhook: false,
       });
 
+
       await safeAuditLog(client, {
         companyId: txRes.rows[0].company_id,
         userId: resolveActorUserId(req.auth),
@@ -1624,6 +1703,7 @@ subscriptionsRouter.post('/admin/transactions/:id/reject', async (req, res, next
         [txId, reason]
       );
 
+
       await safeAuditLog(client, {
         companyId: txRes.rows[0].company_id,
         userId: resolveActorUserId(req.auth),
@@ -1646,12 +1726,17 @@ subscriptionsRouter.post('/admin/transactions/:id/reject', async (req, res, next
   }
 });
 
-// Gestion du cycle de vie & prolongation exceptionnelle avec motif obligatoire (Section 9)
+// Gestion du cycle de vie, prolongation exceptionnelle & dérogation de quotas avec motif obligatoire (Section 2, 3 & 9)
 const adminSubscriptionStatusSchema = z.object({
   status: z
     .enum(['trial', 'active', 'pending_payment', 'past_due', 'suspended', 'cancelled', 'expired'])
     .optional(),
+  planCode: z.enum(['ESSENTIEL', 'PRO', 'ENTREPRISE']).optional(),
   extendDays: z.number().int().min(1).max(365).optional(),
+  customMaxUsers: z.number().int().min(1).max(9999).nullable().optional(),
+  customMaxLocations: z.number().int().min(1).max(999).nullable().optional(),
+  customMaxTables: z.number().int().min(1).max(9999).nullable().optional(),
+  customMaxProducts: z.number().int().min(1).max(99999).nullable().optional(),
   reason: z.string().min(4, 'Un motif explicite est obligatoire pour toute action administrative.'),
 });
 
@@ -1675,21 +1760,92 @@ subscriptionsRouter.post('/admin/subscriptions/:id/status', async (req, res, nex
       }
       const sub = subRes.rows[0];
       const nextStatus = parsed.status || sub.status;
+      const nextPlanCode = parsed.planCode || sub.plan_code || 'PRO';
+      const nextPlanRes = await client.query(
+        `SELECT id FROM public.subscription_plans WHERE code = $1 LIMIT 1`,
+        [nextPlanCode]
+      );
+      const nextPlanId = nextPlanRes.rows[0]?.id || sub.plan_id || null;
 
       let nextPeriodEnd = new Date(sub.current_period_end || Date.now());
+      let nextTrialEndsAt = new Date(sub.trial_ends_at || sub.current_period_end || Date.now());
       if (parsed.extendDays && parsed.extendDays > 0) {
         const baseTime = Math.max(Date.now(), nextPeriodEnd.getTime());
         nextPeriodEnd = new Date(baseTime + parsed.extendDays * 24 * 3600 * 1000);
+        if (nextStatus === 'trial') {
+          const baseTrialTime = Math.max(Date.now(), nextTrialEndsAt.getTime());
+          nextTrialEndsAt = new Date(baseTrialTime + parsed.extendDays * 24 * 3600 * 1000);
+        }
       }
+
+      const nextCustomUsers =
+        parsed.customMaxUsers !== undefined ? parsed.customMaxUsers : sub.custom_max_users;
+      const nextCustomLocations =
+        parsed.customMaxLocations !== undefined ? parsed.customMaxLocations : sub.custom_max_locations;
+      const nextCustomTables =
+        parsed.customMaxTables !== undefined ? parsed.customMaxTables : sub.custom_max_tables;
+      const nextCustomProducts =
+        parsed.customMaxProducts !== undefined ? parsed.customMaxProducts : sub.custom_max_products;
 
       const updRes = await client.query(
         `UPDATE public.company_subscriptions
          SET status = $2,
-             current_period_end = $3,
+             plan_code = $3,
+             plan_id = $11,
+             current_period_end = $4,
+             ends_at = $4,
+             trial_ends_at = $5,
+             custom_max_users = $6,
+             custom_max_locations = $7,
+             custom_max_tables = $8,
+             custom_max_products = $9,
+             quota_override_reason = $10,
              updated_at = NOW()
          WHERE id = $1
          RETURNING *`,
-        [subId, nextStatus, nextPeriodEnd.toISOString()]
+        [
+          subId,
+          nextStatus,
+          nextPlanCode,
+          nextPeriodEnd.toISOString(),
+          nextTrialEndsAt.toISOString(),
+          nextCustomUsers,
+          nextCustomLocations,
+          nextCustomTables,
+          nextCustomProducts,
+          parsed.reason,
+          nextPlanId,
+        ]
+      );
+
+
+      // Propager immédiatement la mise à jour à tous les établissements secondaires rattachés en multi-sites (MULTI-SITE:<companyId>)
+      await client.query(
+        `UPDATE public.company_subscriptions
+         SET status = $2,
+             plan_code = $3,
+             plan_id = $10,
+             current_period_end = $4,
+             ends_at = $4,
+             trial_ends_at = $5,
+             custom_max_users = $6,
+             custom_max_locations = $7,
+             custom_max_tables = $8,
+             custom_max_products = $9,
+             updated_at = NOW()
+         WHERE last_payment_ref = $1`,
+        [
+          `MULTI-SITE:${sub.company_id}`,
+          nextStatus,
+          nextPlanCode,
+          nextPeriodEnd.toISOString(),
+          nextTrialEndsAt.toISOString(),
+          nextCustomUsers,
+          nextCustomLocations,
+          nextCustomTables,
+          nextCustomProducts,
+          nextPlanId,
+        ]
       );
 
       await safeAuditLog(client, {
@@ -1701,7 +1857,13 @@ subscriptionsRouter.post('/admin/subscriptions/:id/status', async (req, res, nex
         newValues: {
           previousStatus: sub.status,
           newStatus: nextStatus,
+          previousPlanCode: sub.plan_code,
+          newPlanCode: nextPlanCode,
           extendDays: parsed.extendDays || 0,
+          customMaxUsers: nextCustomUsers,
+          customMaxLocations: nextCustomLocations,
+          customMaxTables: nextCustomTables,
+          customMaxProducts: nextCustomProducts,
           reason: parsed.reason,
         },
       });
@@ -1882,6 +2044,7 @@ subscriptionsRouter.post('/admin/transactions/:id/refund', async (req, res, next
         [txId, reason]
       );
 
+
       await safeAuditLog(client, {
         companyId: tx.company_id,
         userId: resolveActorUserId(req.auth),
@@ -1959,6 +2122,7 @@ subscriptionsRouter.post('/admin/countries', async (req, res, next) => {
         ]
       );
 
+
       await safeAuditLog(client, {
         companyId: req.auth!.companyId,
         userId: resolveActorUserId(req.auth),
@@ -2023,6 +2187,7 @@ subscriptionsRouter.put('/admin/country-prices', async (req, res, next) => {
         ]
       );
 
+
       await safeAuditLog(client, {
         companyId: req.auth!.companyId,
         userId: resolveActorUserId(req.auth),
@@ -2073,6 +2238,7 @@ subscriptionsRouter.put('/admin/exchange-rates', async (req, res, next) => {
         [base, target, parsed.rate, parsed.source.trim(), resolveActorUserId(req.auth)]
       );
 
+
       await safeAuditLog(client, {
         companyId: req.auth!.companyId,
         userId: resolveActorUserId(req.auth),
@@ -2102,7 +2268,7 @@ const receptionAccountSchema = z.object({
   accountLabel: z.string().min(2).max(150),
   merchantNumberOrIban: z.string().min(3).max(150),
   currencyCode: z.string().min(2).max(10),
-  usageScope: z.string().max(200).default('abonnements et frais commerciaux RestoGest'),
+  usageScope: z.string().max(200).default('abonnements et frais commerciaux MyRestoGest'),
   verificationStatus: z.enum(['manual_verification_required', 'verified_api', 'inactive']).default('manual_verification_required'),
   instructions: z.string().max(1000).optional().nullable(),
   isActive: z.boolean().default(true),
@@ -2142,6 +2308,7 @@ subscriptionsRouter.post('/admin/reception-accounts', async (req, res, next) => 
           parsed.isActive,
         ]
       );
+
 
       await safeAuditLog(client, {
         companyId: req.auth!.companyId,
@@ -2201,6 +2368,7 @@ subscriptionsRouter.put('/admin/country-payment-methods', async (req, res, next)
         ]
       );
 
+
       await safeAuditLog(client, {
         companyId: req.auth!.companyId,
         userId: resolveActorUserId(req.auth),
@@ -2250,6 +2418,7 @@ subscriptionsRouter.put('/admin/providers/:code', async (req, res, next) => {
           parsed.notes !== undefined ? parsed.notes : curr.notes,
         ]
       );
+
 
       await safeAuditLog(client, {
         companyId: req.auth!.companyId,

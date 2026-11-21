@@ -67,8 +67,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   let authenticatedViaCookie = false;
 
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.substring(7).trim();
-  } else {
+    const candidate = authHeader.substring(7).trim();
+    if (candidate.length > 0) {
+      token = candidate;
+    }
+  }
+  if (!token) {
     const cookieName = isAdminEndpoint(req) ? ADMIN_SESSION_COOKIE_NAME : SESSION_COOKIE_NAME;
     token = extractTokenFromCookieHeader(req.headers.cookie, cookieName);
     if (token) authenticatedViaCookie = true;
@@ -218,7 +222,7 @@ export function requireSuperAdmin(req: Request, res: Response, next: NextFunctio
       success: false,
       error: {
         code: 'SUPER_ADMIN_REQUIRED',
-        message: 'Accès réservé exclusivement au propriétaire de RESTOGEST.',
+        message: 'Accès réservé exclusivement au propriétaire de MyRestoGest.',
       },
     });
     return;

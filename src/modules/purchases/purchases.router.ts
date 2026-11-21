@@ -2,10 +2,28 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
+import { requireActiveSubscriptionWriteAccess } from '../subscriptions/subscription-guard.service.js';
 
 export const purchasesRouter = Router();
 
+function createHttpError(statusCode: number, message: string, code: string): Error & { statusCode: number; code: string } {
+  const err = new Error(message) as Error & { statusCode: number; code: string };
+  err.statusCode = statusCode;
+  err.code = code;
+  return err;
+}
+
+function parsePagination(rawLimit: unknown, rawOffset: unknown, defaultLimit = 50): { limit: number; offset: number } {
+  const parsedLimit = Number.parseInt(String(rawLimit ?? ''), 10);
+  const parsedOffset = Number.parseInt(String(rawOffset ?? ''), 10);
+  return {
+    limit: Math.min(200, Math.max(1, Number.isFinite(parsedLimit) ? parsedLimit : defaultLimit)),
+    offset: Math.max(0, Number.isFinite(parsedOffset) ? parsedOffset : 0),
+  };
+}
+
 purchasesRouter.use(requireAuth);
+purchasesRouter.use(requireActiveSubscriptionWriteAccess);
 purchasesRouter.use((req, res, next) => {
   if (req.method.toUpperCase() === 'GET') {
     requirePermission('purchases:read', 'reports:read')(req, res, next);
@@ -39,10 +57,11 @@ purchasesRouter.get('/suppliers', async (req, res, next) => {
 
       query += ` GROUP BY s.id ORDER BY s.name ASC`;
 
-      params.push(parseInt(limit as string, 10));
+      const page = parsePagination(limit, offset, 50);
+      params.push(page.limit);
       query += ` LIMIT $${params.length}`;
 
-      params.push(parseInt(offset as string, 10));
+      params.push(page.offset);
       query += ` OFFSET $${params.length}`;
 
       const result = await client.query(query, params);
@@ -207,10 +226,11 @@ purchasesRouter.get('/', async (req, res, next) => {
 
       query += ` GROUP BY p.id, s.name, s.phone ORDER BY p.purchased_at DESC`;
 
-      params.push(parseInt(limit as string, 10));
+      const page = parsePagination(limit, offset, 50);
+      params.push(page.limit);
       query += ` LIMIT $${params.length}`;
 
-      params.push(parseInt(offset as string, 10));
+      params.push(page.offset);
       query += ` OFFSET $${params.length}`;
 
       const result = await client.query(query, params);
@@ -304,7 +324,7 @@ purchasesRouter.put('/:id', async (req, res, next) => {
       const check = await client.query(`SELECT status FROM public.purchases WHERE id = $1`, [purchaseId]);
       if (check.rows.length === 0) return null;
       if (check.rows[0].status === 'received') {
-        throw new Error('Une commande déjà réceptionnée ne peut plus être modifiée');
+        throw createHttpError(409, 'Une commande déjà réceptionnée ne peut plus être modifiée', 'PURCHASE_ALREADY_RECEIVED');
       }
 
       const result = await client.query(

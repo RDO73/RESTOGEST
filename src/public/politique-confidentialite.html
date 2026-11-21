@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Politique de confidentialité — RESTOGEST</title>
-  <meta name="description" content="Politique de confidentialité de RESTOGEST : données collectées, finalités, durées de conservation, sécurité PostgreSQL RLS et droits des utilisateurs." />
+  <title>Politique de confidentialité — MyRestoGest</title>
+  <meta name="description" content="Politique de confidentialité de MyRestoGest : responsable du traitement Hadiry Dramé, catégories exactes de données, sécurité Argon2id et PostgreSQL RLS, cookies techniques et droits des utilisateurs." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="canonical" href="https://myrestogest.com/politique-confidentialite" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -13,14 +13,19 @@
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/landing.css" />
   <style>
-    .legal-page { max-width: 860px; margin: 0 auto; padding: 112px 20px 72px; }
+    .legal-page { max-width: 900px; margin: 0 auto; padding: 112px 20px 72px; }
     .legal-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 20px; padding: 36px 32px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05); }
     .legal-card h1 { font-family: var(--font-display); font-size: clamp(26px, 4vw, 36px); margin: 0 0 8px; color: #0f172a; }
-    .legal-card h2 { font-family: var(--font-display); font-size: 19px; margin: 28px 0 10px; color: #0f172a; }
+    .legal-card h2 { font-family: var(--font-display); font-size: 19px; margin: 30px 0 10px; color: #0f172a; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px; }
+    .legal-card h3 { font-family: var(--font-display); font-size: 16px; margin: 18px 0 8px; color: #1e293b; }
     .legal-card p, .legal-card li { font-size: 15px; line-height: 1.7; color: #475569; }
-    .legal-card ul { padding-left: 20px; }
+    .legal-card ul { padding-left: 20px; margin: 8px 0 14px; }
     .legal-meta { font-size: 13px; color: #64748b; margin-bottom: 24px; }
-    .legal-tag { display: inline-block; background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; border-radius: 6px; padding: 1px 7px; font-size: 12px; font-weight: 700; }
+    .legal-note { background: #f8fafc; border-left: 4px solid #ea580c; padding: 14px 16px; border-radius: 8px; margin: 14px 0; font-size: 14px; color: #334155; line-height: 1.65; }
+    @media (max-width: 640px) {
+      .legal-page { padding: 96px 14px 56px; }
+      .legal-card { padding: 24px 18px; }
+    }
   </style>
 </head>
 <body class="lp-shell">
@@ -28,7 +33,7 @@
     <header class="lp-navbar">
       <a href="/" class="lp-brand">
         <span class="lp-brand-mark">RG</span>
-        <span>RESTOGEST</span>
+        <span>MyRestoGest</span>
       </a>
       <div class="lp-nav-actions" style="display:flex;">
         <a href="/" class="lp-btn lp-btn-outline">← Retour à l’accueil</a>
@@ -39,59 +44,161 @@
   <main class="legal-page">
     <article class="legal-card">
       <h1>Politique de confidentialité</h1>
-      <p class="legal-meta">RESTOGEST (<code>https://myrestogest.com</code>) · Document de transparence — certaines mentions juridiques sont marquées <span class="legal-tag">À valider</span> avant publication définitive.</p>
+      <p class="legal-meta">Dernière mise à jour : 21 novembre 2026 · Plateforme officielle <strong>MyRestoGest</strong> (<code>https://myrestogest.com</code>) · Responsable : <strong>Hadiry Dramé</strong></p>
 
-      <h2>1. Données du compte utilisateur</h2>
-      <p>Lors de la création et de l’utilisation d’un compte RESTOGEST, nous enregistrons les informations strictement nécessaires à l’accès sécurisé :</p>
-      <ul>
-        <li>Nom complet du gérant et adresse e-mail professionnelle ;</li>
-        <li>Mot de passe stocké exclusivement sous forme hachée (Argon2), jamais en clair ;</li>
-        <li>Informations techniques de session (jeton de session chiffré et dates de connexion).</li>
-      </ul>
-
-      <h2>2. Données de l’établissement</h2>
-      <p>Pour faire fonctionner le logiciel au quotidien, l’établissement enregistre :</p>
-      <ul>
-        <li>Nom de l’établissement, type d’activité, pays (Sénégal ou Guinée), devise (FCFA ou GNF) et numéro WhatsApp du gérant si renseigné ;</li>
-        <li>Catalogue produits, catégories, fiches recettes, tables, QR codes, fournisseurs et niveaux de stock.</li>
-      </ul>
-
-      <h2>3. Commandes et opérations enregistrées</h2>
-      <p>L’application conserve l’historique opérationnel de votre établissement : tickets de caisse, commandes QR sur table, commandes à emporter ou en livraison (incluant nom/téléphone client si saisis pour la livraison), mouvements de stock, sessions de caisse, rapports Z, dépenses, achats fournisseurs et factures d’abonnement RESTOGEST.</p>
-
-      <h2>4. Finalités de la collecte</h2>
-      <ul>
-        <li>Fournir les fonctionnalités de caisse, menu digital, gestion de stock et clôture Z ;</li>
-        <li>Assurer la sécurité des accès, l’isolation stricte entre établissements (PostgreSQL Row Level Security) et la traçabilité anti-fraude ;</li>
-        <li>Gérer la facturation, la validation des abonnements (Wave, Orange Money, virement, carte UBA) et le support client.</li>
-      </ul>
-
-      <h2>5. Durées de conservation</h2>
-      <ul>
-        <li><strong>Données actives du compte et de l’établissement :</strong> conservées pendant toute la durée d’utilisation du service ;</li>
-        <li><strong>Données après résiliation / fermeture de compte :</strong> suppression ou anonymisation dans un délai à définir <span class="legal-tag">À valider</span> (ex. 30 à 90 jours après clôture, hors obligations comptables légales) ;</li>
-        <li><strong>Pièces comptables et factures d’abonnement :</strong> conservées selon les délais légaux applicables au Sénégal et en Guinée <span class="legal-tag">À valider</span>.</li>
-      </ul>
-
-      <h2>6. Sous-traitants techniques et sécurité</h2>
-      <p>Les données sont hébergées sur une infrastructure Cloud (Vercel pour l’application web/API et Neon pour PostgreSQL). Chaque établissement est isolé en base de données par des politiques de sécurité au niveau des lignes (RLS). Aucune donnée commerciale n’est revendue à des tiers.</p>
-
-      <h2>7. Vos droits (accès, rectification, suppression)</h2>
-      <p>Conformément aux principes de protection des données personnelles <span class="legal-tag">À valider : références légales locales CDP Sénégal / Guinée</span>, tout utilisateur peut demander l’accès, la rectification, l’export ou la suppression de ses données personnelles.</p>
-
-      <h2>8. Coordonnées de contact</h2>
+      <h2>1. Responsable du traitement des données</h2>
+      <div class="legal-note">
+        « Dans le cadre de la phase actuelle de lancement commercial de MyRestoGest, le responsable du traitement des données est Hadiry Dramé, fondateur et propriétaire de la plateforme, sous réserve des obligations juridiques applicables. »
+      </div>
       <p>
-        Pour toute question relative à vos données personnelles ou pour exercer vos droits :
+        <strong>MyRestoGest</strong> est une marque commerciale et une solution numérique en phase de lancement commercial développée et exploitée par <strong>Hadiry Dramé</strong> (aucune société immatriculée n’étant constituée à ce jour au Sénégal ou en Guinée ; la structuration juridique officielle interviendra ultérieurement avec le développement de l’activité).
       </p>
       <ul>
-        <li><strong>WhatsApp support RESTOGEST :</strong> <a href="https://wa.me/221788979342" target="_blank" rel="noopener">+221 78 897 93 42</a></li>
-        <li><strong>Identité juridique complète, siège social et e-mail dédié vie privée :</strong> <span class="legal-tag">À valider</span> par l’éditeur.</li>
+        <li><strong>Responsable :</strong> Hadiry Dramé</li>
+        <li><strong>Adresse e-mail de contact :</strong> <a href="mailto:hadirydrame@gmail.com">hadirydrame@gmail.com</a></li>
+        <li><strong>WhatsApp :</strong> <a href="https://wa.me/221788979342" target="_blank" rel="noopener">+221 78 897 93 42</a></li>
       </ul>
+
+      <h2>2. Données réellement collectées et distinction des rôles</h2>
+      <p>
+        Le fonctionnement technique de MyRestoGest distingue deux ensembles de données :
+      </p>
+
+      <h3>2.1. Données collectées directement pour la création du compte établissement, la sécurité et l’abonnement</h3>
+      <ul>
+        <li><strong>Données des propriétaires d’établissements :</strong> nom complet du gérant, adresse e-mail professionnelle de connexion, numéro WhatsApp du gérant (lorsqu’il est renseigné dans les paramètres) et date de création du compte.</li>
+        <li><strong>Données relatives à l’établissement :</strong> nom commercial de l’établissement, type d’activité (restaurant, pâtisserie/boulangerie ou mixte), pays (Sénégal ou Guinée), devise officielle (XOF ou GNF), taux de TVA par défaut, paramètre d’autorisation de stock négatif et paramètres d’affichage du menu digital QR (nom affiché, slogan, téléphone, WhatsApp, adresse, message d’accueil).</li>
+        <li><strong>Données relatives aux comptes employés :</strong> nom complet de l’employé, adresse e-mail individuelle de connexion, intitulé du rôle métier, grille de permissions attribuées par le propriétaire, statut actif ou suspendu et date de rattachement à l’établissement.</li>
+        <li><strong>Données d’authentification et de session :</strong> mot de passe stocké exclusivement sous forme d’empreinte cryptographique hachée via l’algorithme <strong>Argon2id</strong> (jamais en clair), identifiant technique de session (condensat SHA-256 du jeton JTI), date d’expiration et horodatage éventuel de révocation.</li>
+        <li><strong>Données d’abonnement, de facturation SaaS et preuves d’acceptation contractuelle :</strong> formule choisie, périodicité, devise, montants, numéro de téléphone payeur, nom du payeur (optionnel), référence de transaction transmise pour vérification (Wave, Orange Money, virement ou carte UBA), factures d’abonnement émises, ainsi que l’historique immuable d’acceptation des CGU et CGV (identifiant utilisateur, horodatage serveur, versions acceptées des CGU/CGV et prise de connaissance de la Politique de confidentialité dans la table <code>user_terms_acceptances</code>).</li>
+        <li><strong>Journaux d’activité et de sécurité (audit) :</strong> historique horodaté des actions sensibles réalisées dans l’établissement (connexions, créations/modifications de ventes, paiements, remboursements, achats, dépenses, modifications de rôles ou suspensions d’employés) avec l’identifiant de l’utilisateur auteur. Les mots de passe et jetons secrets sont systématiquement exclus de ces journaux.</li>
+        <li><strong>Données techniques de sécurité (adresse IP et User-Agent) :</strong>
+          <ul>
+            <li>Lors des tentatives d’authentification (espace établissement et espace propriétaire), l’adresse IP et l’e-mail saisi sont utilisés <strong>temporairement en mémoire vive (pendant 15 minutes)</strong> par le mécanisme anti-force brute afin de bloquer les attaques automatisées après 5 échecs.</li>
+            <li>Lorsqu’un client final passe une commande depuis un menu public par QR code (<code>/menu/:qrToken</code>), l’adresse IP (<code>source_ip</code>) et l’en-tête technique du navigateur (<code>user_agent</code>, limité à 250 caractères) sont enregistrés sur la commande QR afin de prévenir les abus et d’assurer la traçabilité des commandes reçues en salle.</li>
+          </ul>
+        </li>
+      </ul>
+
+      <h3>2.2. Données opérationnelles et données des clients finaux saisies par le restaurant</h3>
+      <p>
+        Chaque établissement utilise MyRestoGest pour saisir et gérer ses propres données d’exploitation, dont il demeure propriétaire et responsable vis-à-vis de sa clientèle :
+      </p>
+      <ul>
+        <li><strong>Données de catalogue, produits, recettes et stocks :</strong> catégories, produits finis, matières premières, prix de vente, coûts d’achat / PMP, fiches recettes, niveaux de stock et mouvements d’inventaire.</li>
+        <li><strong>Données de ventes, caisse, dépenses et achats :</strong> tickets de caisse, lignes de vente, modes et montants de règlement, sessions de caisse, rapports Z de clôture, dépenses enregistrées, coordonnées fournisseurs et commandes d’achat.</li>
+        <li><strong>Données des clients finaux des restaurants :</strong>
+          <ul>
+            <li>Dans le module <em>Fichier Clients</em> ou lors d’une livraison : nom complet du client, numéro de téléphone, adresse e-mail (optionnelle), quartier/zone de livraison et points de fidélité enregistrés par le restaurateur ;</li>
+            <li>Lors d’une commande par QR code à table : nom ou prénom du client, numéro de téléphone/WhatsApp (optionnels ou requis selon le paramétrage choisi par le restaurant), note de commande ou texte personnalisé (ex. message sur gâteau).</li>
+          </ul>
+        </li>
+      </ul>
+
+      <h2>3. Finalités des traitements et bases juridiques</h2>
+      <ul>
+        <li><strong>Fourniture et exécution du service MyRestoGest</strong> (base : exécution des Conditions Générales d’Utilisation et des Conditions Générales de Vente) : création et gestion de l’espace établissement, fonctionnement de la caisse POS, des commandes QR, de l’écran cuisine, du suivi des stocks, des dépenses, des rapports Z et des comptes employés.</li>
+        <li><strong>Gestion commerciale des abonnements et du support</strong> (base : exécution contractuelle) : suivi de la période d’essai de 14 jours, vérification manuelle des références de paiement transmises, émission des factures d’abonnement et assistance aux utilisateurs via e-mail ou WhatsApp.</li>
+        <li><strong>Sécurité, isolation multi-établissements et prévention de la fraude</strong> (base : intérêt légitime de sécurité de la plateforme et de l’établissement) : authentification des utilisateurs, contrôle des permissions par rôle (RBAC), protection anti-CSRF et anti-force brute, cloisonnement des données entre établissements et traçabilité interne dans le journal d’audit.</li>
+      </ul>
+      <p style="font-size:13.5px;color:#64748b;">
+        <em>Note : la qualification juridique formelle des bases légales et des déclarations éventuelles auprès des autorités de protection des données compétentes (notamment au Sénégal et en Guinée) fera l’objet d’une validation juridique spécifique lors de l’immatriculation officielle de la structure.</em>
+      </p>
+
+      <h2>4. Sécurité et mécanismes techniques réellement implémentés</h2>
+      <p>
+        MyRestoGest met en œuvre les mesures techniques suivantes, vérifiées dans le code de l’application :
+      </p>
+      <ul>
+        <li><strong>Hachage fort des mots de passe :</strong> tous les mots de passe sont hachés avec l’algorithme <strong>Argon2id</strong> (paramètres mémoire 64 Mio, 3 itérations, parallélisme 4, avec repli cryptographique <code>scrypt</code> natif Node.js). Aucun mot de passe n’est stocké ni journalisé en clair.</li>
+        <li><strong>Cookies de session protégés et protection CSRF :</strong> les sessions web reposent sur un jeton JWT signé HMAC-SHA256 transmis dans un cookie <code>HttpOnly</code>, <code>SameSite=Strict</code> (et <code>Secure</code> en HTTPS), accompagné d’un jeton anti-CSRF (<code>restogest_csrf</code> / en-tête <code>X-CSRF-Token</code>) vérifié en temps constant sur toutes les requêtes modificatrices authentifiées par cookie.</li>
+        <li><strong>Cloisonnement PostgreSQL Row Level Security (RLS) :</strong> toutes les tables métier multi-établissements sont protégées au niveau du moteur PostgreSQL par des politiques <code>ENABLE</code> et <code>FORCE ROW LEVEL SECURITY</code>, liées à un contexte transactionnel signé par condensat SHA-256. Un établissement ne peut ni lire ni modifier les données d’un autre établissement.</li>
+        <li><strong>Contrôle d’accès par rôle (RBAC) côté serveur :</strong> chaque route API vérifie en temps réel en base de données que l’employé est actif et que son rôle dispose de la permission requise ; toute action non autorisée est rejetée par le serveur (HTTP 403).</li>
+        <li><strong>Limitation des tentatives de connexion :</strong> les routes de connexion bloquent temporairement (HTTP 429 pendant 15 minutes) l’accès après 5 tentatives échouées consécutives.</li>
+        <li><strong>Immuabilité du journal d’audit :</strong> la table <code>public.audit_logs</code> est verrouillée par un déclencheur SQL interdisant toute instruction <code>UPDATE</code> ou <code>DELETE</code> afin de garantir l’intégrité de la piste d’audit interne de l’établissement.</li>
+      </ul>
+
+      <h2>5. Conservation et suppression des données</h2>
+      <div class="legal-note">
+        <strong>Fonctionnement technique exact de la conservation et de la suppression :</strong>
+        <ul style="margin:8px 0 0;">
+          <li><strong>Sessions d’authentification :</strong> les sessions des comptes établissements et employés expirent automatiquement au bout de <strong>24 heures</strong> (7 jours pour la session de démonstration isolée). Elles sont immédiatement révoquées en base de données dès que l’utilisateur clique sur « Déconnexion » ou dès que son compte est suspendu.</li>
+          <li><strong>Données de l’établissement :</strong> les données commerciales, opérationnelles et de configuration sont conservées dans la base PostgreSQL tant que le compte de l’établissement est maintenu, afin de lui permettre de consulter son historique de ventes, ses stocks et ses rapports Z.</li>
+          <li><strong>Absence de purge automatique programmée :</strong> le logiciel ne comporte pas à ce jour de tâche automatisée (cron) supprimant seule les comptes ou les données après une période fixe d’inactivité ou dès l’expiration des 14 jours d’essai.</li>
+          <li><strong>Modalités de suppression ou d’export :</strong> sur demande du propriétaire d’un établissement adressée au fondateur, le compte de l’établissement ou d’un utilisateur peut être immédiatement désactivé (ce qui coupe instantanément toutes ses sessions actives), et un export ou une suppression manuelle des données de l’établissement en base peut être réalisé par l’administrateur de la plateforme.</li>
+          <li><strong>Cas particulier des journaux d’audit et sauvegardes techniques :</strong> en raison du déclencheur SQL d’immuabilité protégeant la table <code>audit_logs</code> contre les modifications/suppressions directes et des sauvegardes d’infrastructure opérées par l’hébergeur PostgreSQL (Neon), la suppression complète d’enregistrements d’audit nécessite une intervention administrative dédiée du propriétaire de la plateforme sur la base de données.</li>
+        </ul>
+      </div>
+
+      <h2>6. Sous-traitants techniques, hébergement et services tiers</h2>
+      <p>
+        MyRestoGest ne vend ni ne loue aucune donnée personnelle ou commerciale à des tiers. Le fonctionnement technique de la plateforme s’appuie uniquement sur les prestataires d’infrastructure suivants :
+      </p>
+      <ul>
+        <li><strong>Vercel Inc.</strong> (infrastructure cloud web et fonctions serveur API) : hébergement et diffusion sécurisée (HTTPS) de l’application web et de l’API.</li>
+        <li><strong>Neon Inc.</strong> (infrastructure cloud PostgreSQL managée) : hébergement et stockage de la base de données PostgreSQL.</li>
+        <li><strong>Google Fonts</strong> (<code>fonts.googleapis.com</code> / <code>fonts.gstatic.com</code>) : chargement des polices typographiques d’affichage dans le navigateur.</li>
+        <li><strong>Prestataires de paiement et liens WhatsApp :</strong>
+          <ul>
+            <li>Les paiements d’abonnements vérifiés manuellement (Wave Sénégal au <code>+221 78 897 93 42</code>, virements) sont traités par transmission de la référence de transaction au fondateur ; des adaptateurs techniques pour <strong>PayDunya</strong> et <strong>CinetPay</strong> sont également présents dans le code pour le traitement des paiements lorsqu’ils sont activés.</li>
+            <li>Les fonctionnalités de partage WhatsApp (envoi d’un ticket client, d’un rapport Z ou prise de contact support via <code>https://wa.me/...</code>) n’envoient aucune donnée automatiquement en arrière-plan : elles ouvrent uniquement l’application WhatsApp à l’initiative explicite de l’utilisateur.</li>
+          </ul>
+        </li>
+      </ul>
+
+      <h2>7. Cookies et stockage local du navigateur</h2>
+      <p>
+        MyRestoGest utilise <strong>exclusivement des cookies techniques et variables de stockage local strictement nécessaires</strong> au fonctionnement et à la sécurité de la session :
+      </p>
+      <ul>
+        <li><code>restogest_session</code> : cookie technique <code>HttpOnly</code> et <code>SameSite=Strict</code> maintenant la session authentifiée de l’utilisateur d’un établissement (durée : 24 heures) ;</li>
+        <li><code>restogest_admin_session</code> : cookie technique <code>HttpOnly</code> et <code>SameSite=Strict</code> réservé à la session d’administration du propriétaire sur <code>/admin</code> (durée : 24 heures) ;</li>
+        <li><code>restogest_csrf</code> : cookie technique <code>SameSite=Strict</code> servant exclusivement à la protection contre les requêtes falsifiées inter-sites (CSRF) ;</li>
+        <li><strong>Stockage local fonctionnel du navigateur (<code>localStorage</code>) :</strong>
+          <ul>
+            <li><code>restogest_onboarding_dismissed_&lt;companyId&gt;</code> : mémorise uniquement le choix de l’utilisateur de masquer l’encart d’aide au démarrage sur son tableau de bord ;</li>
+            <li><code>rg_track_&lt;qrToken&gt;</code> (sur l’interface publique de menu QR <code>/menu/:qrToken</code>) : mémorise sur le téléphone du client à table le jeton de suivi de sa commande en cours afin qu’il puisse suivre l’avancement cuisine en direct ;</li>
+            <li>Nettoyage automatique des anciennes clés de jeton (<code>restogest_jwt_token</code>, <code>restogest_token</code>, <code>restogest_super_admin_token</code>) au profit des cookies sécurisés <code>HttpOnly</code>.</li>
+          </ul>
+        </li>
+      </ul>
+      <p>
+        <strong>MyRestoGest n’utilise aucun cookie publicitaire, aucun pixel de ciblage marketing ni aucun traceur analytique tiers.</strong>
+      </p>
+
+      <h2>8. Distinction entre acceptation contractuelle et information sur les données &amp; points soumis à validation juridique externe</h2>
+      <p>
+        Lors de l’inscription sur MyRestoGest, la case à cocher obligatoire porte exclusivement sur l’acceptation contractuelle des <a href="/cgu">CGU</a> et des <a href="/cgv">CGV</a>. La présente Politique de confidentialité constitue un document d’information transparent sur les traitements nécessaires à la fourniture du service et à la sécurité de la plateforme, sans imposer de consentement artificiel global.
+      </p>
+      <div class="legal-note">
+        <strong>Points juridiques, réglementaires et fiscaux relevant d’une validation professionnelle externe :</strong>
+        <ul style="margin:6px 0 0;">
+          <li>Obligations déclaratives éventuelles auprès de la Commission de Protection des Données Personnelles (CDP) au Sénégal (Loi n° 2008-12) ;</li>
+          <li>Obligations réglementaires applicables en République de Guinée en matière de données personnelles et de commerce électronique ;</li>
+          <li>Régime fiscal et règles de TVA applicables à la facturation des abonnements SaaS ;</li>
+          <li>Mentions obligatoires définitives sur les factures commerciales après immatriculation officielle ;</li>
+          <li>Détermination formelle du droit applicable et de la juridiction compétente ;</li>
+          <li>Encadrement contractuel détaillé des responsabilités respectives entre MyRestoGest (prestataire technique) et chaque établissement client concernant les données des clients finaux des restaurants.</li>
+        </ul>
+      </div>
+
+      <h2>9. Droits des utilisateurs et contact</h2>
+      <p>
+        Tout propriétaire d’établissement ou utilisateur peut à tout moment demander l’accès aux données le concernant, leur rectification, leur export, la suspension de son compte ou leur suppression en contactant directement <strong>Hadiry Dramé</strong> :
+      </p>
+      <ul>
+        <li><strong>Par e-mail :</strong> <a href="mailto:hadirydrame@gmail.com">hadirydrame@gmail.com</a></li>
+        <li><strong>Par WhatsApp :</strong> <a href="https://wa.me/221788979342" target="_blank" rel="noopener">+221 78 897 93 42</a></li>
+      </ul>
+      <p>
+        Pour des raisons de sécurité et de confidentialité entre établissements, une vérification de l’identité du demandeur peut être effectuée avant toute opération sur un compte. Lorsqu’une demande émane d’un employé ou d’un client final d’un restaurant utilisant MyRestoGest, elle est traitée en coordination avec le propriétaire de l’établissement concerné.
+      </p>
 
       <div style="margin-top:32px;display:flex;gap:12px;flex-wrap:wrap;">
         <a href="/mentions-legales" class="lp-btn lp-btn-outline">Mentions légales</a>
-        <a href="/cgv" class="lp-btn lp-btn-outline">CGV</a>
-        <a href="/" class="lp-btn lp-btn-primary">Retour à RESTOGEST</a>
+        <a href="/cgu" class="lp-btn lp-btn-outline">Consulter les CGU</a>
+        <a href="/cgv" class="lp-btn lp-btn-outline">Consulter les CGV</a>
+        <a href="/" class="lp-btn lp-btn-primary">Retour à MyRestoGest</a>
       </div>
     </article>
   </main>

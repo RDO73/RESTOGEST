@@ -112,6 +112,7 @@ describe('Recette complète — Persistance, Multi-utilisateurs RBAC, Isolation 
         email: ownerAEmail,
         password: 'OwnerPassword2026!',
         fullName: 'Ibrahima Fall',
+        acceptTerms: true,
       },
     });
     expect(reg.status).toBe(201);
@@ -468,6 +469,7 @@ describe('Recette complète — Persistance, Multi-utilisateurs RBAC, Isolation 
         email: `owner-b-${Date.now()}@restogest.test`,
         password: 'OwnerBPassword2026!',
         fullName: 'Mamadou Camara',
+        acceptTerms: true,
       },
     });
     expect(regB.status).toBe(201);

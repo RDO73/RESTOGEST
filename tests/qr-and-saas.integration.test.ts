@@ -110,6 +110,7 @@ describe('RESTOGEST V1.2 — Extension Menu Digital QR Code, Caisse/Stocks & Fin
         email: emailA,
         password: 'Password123!',
         fullName: 'Chef Moussa Diop',
+        acceptTerms: true,
       },
     });
     expect(regA.status).toBe(201);
@@ -125,6 +126,7 @@ describe('RESTOGEST V1.2 — Extension Menu Digital QR Code, Caisse/Stocks & Fin
         email: emailB,
         password: 'Password123!',
         fullName: 'Mamadou Bah',
+        acceptTerms: true,
       },
     });
     expect(regB.status).toBe(201);

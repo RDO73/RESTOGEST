@@ -130,6 +130,7 @@ describe('Phase 6 — Sécurité HTTP, Rate-Limiting & Contrôle Exclusif Propri
         password: 'RestoUser2026!',
         fullName: 'Maman Diallo',
         role: 'SUPER_ADMIN',
+        acceptTerms: true,
       },
     });
     expect(reg.status).toBe(201);
@@ -181,6 +182,7 @@ describe('Phase 6 — Sécurité HTTP, Rate-Limiting & Contrôle Exclusif Propri
         email: targetEmail,
         password: 'CafeCorniche2026!',
         fullName: 'Ousmane Ndiaye',
+        acceptTerms: true,
       },
     });
     expect(reg.status).toBe(201);

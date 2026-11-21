@@ -315,16 +315,17 @@ function initLegalModals() {
       if (!backdrop || !title || !body) return;
 
       if (kind === 'mentions') {
-        title.textContent = 'Mentions légales — RESTOGEST';
+        title.textContent = 'Mentions légales — MyRestoGest';
         body.innerHTML = `<p class="muted-text" style="line-height:1.6;">
-          <strong>RESTOGEST Cloud</strong> (<code>myrestogest.com</code>) est une plateforme SaaS de gestion pour restaurants et pâtisseries opérant au Sénégal (XOF) et en Guinée (GNF).<br/><br/>
-          Les mentions légales complètes (raison sociale, NINEA / RCCM, adresse du siège et coordonnées officielles) sont en cours de finalisation par l’éditeur.
+          Le site <code>https://myrestogest.com</code> et la plateforme <strong>MyRestoGest</strong> sont édités et exploités par <strong>Hadiry Dramé</strong>, fondateur et propriétaire du projet.<br/><br/>
+          Contact : <a href="mailto:hadirydrame@gmail.com">hadirydrame@gmail.com</a> · WhatsApp : <a href="https://wa.me/221788979342" target="_blank" rel="noopener">+221 78 897 93 42</a>.<br/>
+          Consultez la page complète : <a href="/mentions-legales">Mentions légales</a>.
         </p>`;
       } else {
-        title.textContent = 'Conditions Générales de Vente (CGV)';
+        title.textContent = 'Conditions Générales de Vente (CGV) — MyRestoGest';
         body.innerHTML = `<p class="muted-text" style="line-height:1.6;">
-          Chaque nouvel établissement bénéficie de <strong>14 jours d’essai gratuit</strong>. Les abonnements sont proposés au tarif officiel local en <strong>FCFA (XOF — Sénégal)</strong> ou <strong>GNF (Guinée)</strong> et réglables par Wave, Orange Money, virement ou carte UBA.<br/><br/>
-          Le document complet des CGV est en cours de finalisation par l’éditeur.
+          Chaque nouvel établissement bénéficie de <strong>14 jours d’essai gratuit</strong>. Les abonnements <strong>MyRestoGest</strong> sont proposés au tarif officiel local en <strong>FCFA (XOF — Sénégal)</strong> ou <strong>GNF (Guinée)</strong>.<br/><br/>
+          Consultez la page complète : <a href="/cgv">Conditions Générales de Vente (CGV)</a>.
         </p>`;
       }
       backdrop.classList.remove('hidden');

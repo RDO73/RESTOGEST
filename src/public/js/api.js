@@ -110,7 +110,7 @@ export async function apiFetch(url, options = {}) {
       body: options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body,
     });
   } catch {
-    const netErr = new Error('Impossible de joindre le serveur RESTOGEST. Vérifiez votre connexion internet et réessayez.');
+    const netErr = new Error('Impossible de joindre le serveur MyRestoGest. Vérifiez votre connexion internet et réessayez.');
     netErr.isNetworkError = true;
     throw netErr;
   }

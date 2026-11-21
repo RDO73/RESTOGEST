@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
+import { requireActiveSubscriptionWriteAccess } from '../subscriptions/subscription-guard.service.js';
 
 export const customersRouter = Router();
 
 customersRouter.use(requireAuth);
+customersRouter.use(requireActiveSubscriptionWriteAccess);
 
 customersRouter.get('/', requirePermission('customers:read'), async (req, res, next) => {
   try {

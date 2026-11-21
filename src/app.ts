@@ -113,19 +113,25 @@ app.get('/sitemap.xml', (_req, res) => {
       '  </url>\n' +
       '  <url>\n' +
       '    <loc>https://myrestogest.com/mentions-legales</loc>\n' +
-      '    <lastmod>2026-11-20</lastmod>\n' +
+      '    <lastmod>2026-11-21</lastmod>\n' +
+      '    <changefreq>monthly</changefreq>\n' +
+      '    <priority>0.3</priority>\n' +
+      '  </url>\n' +
+      '  <url>\n' +
+      '    <loc>https://myrestogest.com/cgu</loc>\n' +
+      '    <lastmod>2026-11-21</lastmod>\n' +
       '    <changefreq>monthly</changefreq>\n' +
       '    <priority>0.3</priority>\n' +
       '  </url>\n' +
       '  <url>\n' +
       '    <loc>https://myrestogest.com/cgv</loc>\n' +
-      '    <lastmod>2026-11-20</lastmod>\n' +
+      '    <lastmod>2026-11-21</lastmod>\n' +
       '    <changefreq>monthly</changefreq>\n' +
       '    <priority>0.3</priority>\n' +
       '  </url>\n' +
       '  <url>\n' +
       '    <loc>https://myrestogest.com/politique-confidentialite</loc>\n' +
-      '    <lastmod>2026-11-20</lastmod>\n' +
+      '    <lastmod>2026-11-21</lastmod>\n' +
       '    <changefreq>monthly</changefreq>\n' +
       '    <priority>0.3</priority>\n' +
       '  </url>\n' +
@@ -142,10 +148,18 @@ app.get('/', (_req, res) => {
   res.json(apiInfoPayload());
 });
 
-// Pages légales publiques (/mentions-legales & /cgv)
+// Pages légales publiques (/mentions-legales, /cgu, /cgv & /politique-confidentialite)
 app.get('/mentions-legales', (_req, res) => {
   if (publicDir && fs.existsSync(path.join(publicDir, 'mentions-legales.html'))) {
     res.sendFile(path.join(publicDir, 'mentions-legales.html'));
+    return;
+  }
+  res.status(404).send('Page introuvable.');
+});
+
+app.get('/cgu', (_req, res) => {
+  if (publicDir && fs.existsSync(path.join(publicDir, 'cgu.html'))) {
+    res.sendFile(path.join(publicDir, 'cgu.html'));
     return;
   }
   res.status(404).send('Page introuvable.');

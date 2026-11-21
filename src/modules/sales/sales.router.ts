@@ -1,11 +1,30 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
 import { withTenantContext } from '../../db/tenant-context.js';
+import { requireActiveSubscriptionWriteAccess } from '../subscriptions/subscription-guard.service.js';
 
 export const salesRouter = Router();
 
+function createHttpError(statusCode: number, message: string, code: string): Error & { statusCode: number; code: string } {
+  const err = new Error(message) as Error & { statusCode: number; code: string };
+  err.statusCode = statusCode;
+  err.code = code;
+  return err;
+}
+
+function parsePagination(rawLimit: unknown, rawOffset: unknown, defaultLimit = 50): { limit: number; offset: number } {
+  const parsedLimit = Number.parseInt(String(rawLimit ?? ''), 10);
+  const parsedOffset = Number.parseInt(String(rawOffset ?? ''), 10);
+  return {
+    limit: Math.min(200, Math.max(1, Number.isFinite(parsedLimit) ? parsedLimit : defaultLimit)),
+    offset: Math.max(0, Number.isFinite(parsedOffset) ? parsedOffset : 0),
+  };
+}
+
 salesRouter.use(requireAuth);
+salesRouter.use(requireActiveSubscriptionWriteAccess);
 salesRouter.use((req, res, next) => {
   const method = req.method.toUpperCase();
   if (method === 'GET') {
@@ -72,10 +91,11 @@ salesRouter.get('/', async (req, res, next) => {
 
       query += ` GROUP BY s.id, s.notes, c.id, c.full_name, c.phone, u.full_name, cs.id ORDER BY s.created_at DESC`;
 
-      params.push(parseInt(limit as string, 10));
+      const page = parsePagination(limit, offset, 50);
+      params.push(page.limit);
       query += ` LIMIT $${params.length}`;
 
-      params.push(parseInt(offset as string, 10));
+      params.push(page.offset);
       query += ` OFFSET $${params.length}`;
 
       const result = await client.query(query, params);
@@ -169,7 +189,7 @@ salesRouter.post('/', async (req, res, next) => {
         }
       }
 
-      const invoiceNumber = `FAC-${Date.now().toString().slice(-6)}`;
+      const invoiceNumber = `FAC-${Date.now().toString().slice(-6)}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
 
       const result = await client.query(
         `INSERT INTO public.sales (company_id, user_id, customer_id, cash_session_id, invoice_number, notes, discount_amount, status)
@@ -246,18 +266,23 @@ salesRouter.post('/:id/items', async (req, res, next) => {
     const data = schema.parse(req.body);
 
     const item = await withTenantContext(req.auth!, async (client) => {
-      // Récupérer le prix de vente par défaut si non spécifié
-      let price = data.unitPrice;
-      if (price === undefined) {
-        const prod = await client.query(
-          `SELECT selling_price FROM public.products WHERE id = $1`,
-          [data.productId]
-        );
-        if (prod.rows.length === 0) {
-          throw new Error('Produit introuvable');
-        }
-        price = parseFloat(prod.rows[0].selling_price);
+      const prod = await client.query(
+        `SELECT selling_price, is_active FROM public.products WHERE id = $1`,
+        [data.productId]
+      );
+      if (prod.rows.length === 0) {
+        throw createHttpError(404, 'Produit introuvable', 'PRODUCT_NOT_FOUND');
       }
+      if (prod.rows[0].is_active === false) {
+        throw createHttpError(
+          409,
+          'Ce produit est archivé et ne peut plus être ajouté à une nouvelle vente.',
+          'PRODUCT_ARCHIVED'
+        );
+      }
+
+      const price =
+        data.unitPrice !== undefined ? data.unitPrice : parseFloat(prod.rows[0].selling_price);
 
       const subtotal = Math.round(data.quantity * price * 100) / 100;
 

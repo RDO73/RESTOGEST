@@ -40,6 +40,11 @@ const FLOOR_TABLES = [
   { code: 'CPT2', name: 'Comptoir 2', zone: 'Comptoir', seats: 2 },
 ];
 
+function getActiveFloorTables() {
+  const liveTables = (state.qrTables || []).filter((t) => t.is_active !== false);
+  return liveTables.length > 0 ? liveTables : FLOOR_TABLES;
+}
+
 const PAYMENT_CHANNELS = [
   { id: 'cash', apiMethod: 'cash', label: 'Espèces', ref: 'Espèces' },
   { id: 'wave', apiMethod: 'mobile_money', label: 'Wave', ref: 'Wave' },
@@ -119,7 +124,7 @@ const ROUTE_META = {
   customers: { title: 'Fichier Clients', sub: 'Répertoire clients, historique de commandes et points de fidélité' },
   staff: { title: 'Équipe & Employés', sub: 'Comptes individuels, rôles métiers, autorisations et suivi d’activité' },
   subscription: { title: 'Abonnement & Licence', sub: 'Comparateur des plans, souscription SaaS et factures XOF / GNF' },
-  'saas-admin': { title: 'Finances RESTOGEST', sub: 'Pilotage des revenus SaaS, abonnements clients, factures et reversements' },
+  'saas-admin': { title: 'Finances MyRestoGest', sub: 'Pilotage des revenus SaaS, abonnements clients, factures et reversements' },
 };
 
 const ROUTE_PERMISSIONS = {
@@ -433,16 +438,79 @@ function renderChrome() {
 
   const licPill = document.getElementById('license-status-pill');
   if (licPill) {
-    const sub = state.subscriptionData?.subscription;
-    if (sub?.status === 'active') {
+    const sub = state.subscriptionData?.subscription || state.subscriptionStatus;
+    if (sub?.isReadOnly || sub?.status === 'expired') {
+      licPill.className = 'status-pill status-closed hide-xs';
+      licPill.textContent = 'Mode Lecture Seule (Expiré)';
+    } else if (sub?.status === 'active') {
       licPill.className = 'status-pill status-open hide-xs';
-      licPill.textContent = `Licence : ${sub.plan_name}`;
+      licPill.textContent = `Licence : ${sub.plan_name || sub.planName || sub.plan_code}`;
     } else if (sub?.status === 'trial') {
       licPill.className = 'status-pill status-pending hide-xs';
-      licPill.textContent = `Essai • ${sub.plan_name}`;
+      licPill.textContent = `Essai 14j • ${sub.plan_name || sub.planName || 'Pro'}`;
+    } else if (sub?.status === 'pending_payment') {
+      licPill.className = 'status-pill status-pending hide-xs';
+      licPill.textContent = 'Paiement en vérification';
     } else {
       licPill.className = 'status-pill status-neutral hide-xs';
-      licPill.textContent = 'RestoGest Cloud';
+      licPill.textContent = 'MyRestoGest';
+    }
+  }
+
+  const readOnlyBanner = document.getElementById('readonly-subscription-banner');
+  if (readOnlyBanner) {
+    const sub = state.subscriptionData?.subscription || state.subscriptionStatus;
+    if (!state.isDemo && sub?.isReadOnly) {
+      readOnlyBanner.classList.remove('hidden');
+      const canManageBilling = can('settings:manage');
+      readOnlyBanner.innerHTML = `
+        <div>
+          <strong>🔒 Mode Lecture Seule — Période d’essai ou abonnement arrivé à échéance</strong> :
+          vos ventes, rapports Z, stocks et produits restent intégralement consultables et exportables, mais les nouvelles saisies sont suspendues jusqu’à la régularisation de l’abonnement${canManageBilling ? '.' : ' par le propriétaire de l’établissement.'}
+        </div>
+        ${canManageBilling ? '<button id="btn-readonly-go-sub" type="button" class="btn btn-danger btn-sm">Régulariser mon abonnement</button>' : ''}
+      `;
+      document.getElementById('btn-readonly-go-sub')?.addEventListener('click', () => setRoute('subscription'));
+    } else {
+      readOnlyBanner.classList.add('hidden');
+      readOnlyBanner.innerHTML = '';
+    }
+  }
+
+  const termsBanner = document.getElementById('terms-reacceptance-banner');
+  if (termsBanner) {
+    if (!state.isDemo && state.termsStatus?.requiresReacceptance) {
+      termsBanner.classList.remove('hidden');
+      termsBanner.innerHTML = `
+        <div>
+          <strong>📋 Mise à jour des conditions contractuelles MyRestoGest</strong> :
+          veuillez consulter et valider la version en vigueur des
+          <a href="/cgu" target="_blank" rel="noopener" style="text-decoration:underline;font-weight:700;">CGU (${esc(state.termsStatus.currentRequiredCguVersion)})</a>
+          et des
+          <a href="/cgv" target="_blank" rel="noopener" style="text-decoration:underline;font-weight:700;">CGV (${esc(state.termsStatus.currentRequiredCgvVersion)})</a>.
+        </div>
+        <button id="btn-reaccept-terms-now" type="button" class="btn btn-primary btn-sm">J’accepte les CGU et CGV mises à jour</button>
+      `;
+      document.getElementById('btn-reaccept-terms-now')?.addEventListener('click', async () => {
+        try {
+          const res = await apiFetch('/api/auth/accept-terms', {
+            method: 'POST',
+            body: {
+              acceptTerms: true,
+              cguVersion: state.termsStatus.currentRequiredCguVersion,
+              cgvVersion: state.termsStatus.currentRequiredCgvVersion,
+            },
+          });
+          state.termsStatus = res.data?.termsStatus || { requiresReacceptance: false };
+          renderChrome();
+          showToast('Acceptation des CGU et CGV enregistrée avec succès.', 'success');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    } else {
+      termsBanner.classList.add('hidden');
+      termsBanner.innerHTML = '';
     }
   }
 
@@ -578,6 +646,8 @@ async function refreshAllData(opts = {}) {
       state.company = me.company;
       if (me.role) state.role = me.role;
       state.isDemo = Boolean(me.isDemo);
+      state.termsStatus = me.termsStatus || null;
+      state.subscriptionStatus = me.subscriptionStatus || null;
     }
 
     // 2. N'interroger QUE les modules autorisés par le rôle de l'utilisateur
@@ -821,7 +891,8 @@ function renderDashboard() {
   const pendingSales = state.sales.filter((s) => s.status === 'pending');
   const totalSalesAmount = completedSales.reduce((acc, s) => acc + parseFloat(s.total_amount || 0), 0);
   const cashBalance = state.cashCurrent ? state.cashCurrent.metrics?.theoreticalCashInDrawer : null;
-  const occupiedTablesCount = FLOOR_TABLES.filter((t) =>
+  const activeFloorTables = getActiveFloorTables();
+  const occupiedTablesCount = activeFloorTables.filter((t) =>
     pendingSales.some((s) => parseSaleMeta(s.notes).tableCode === t.code)
   ).length;
 
@@ -866,7 +937,7 @@ function renderDashboard() {
       <div class="section-head">
         <div>
           <h3 style="margin:0;">Configuration guidée (${doneStepsCount}/${onboardingSteps.length})</h3>
-          <p class="muted-text" style="margin-top:4px;">Suivez ces étapes pour démarrer rapidement avec RESTOGEST.</p>
+          <p class="muted-text" style="margin-top:4px;">Suivez ces étapes pour démarrer rapidement avec MyRestoGest.</p>
         </div>
         <button id="btn-dismiss-onboarding" type="button" class="btn btn-outline btn-sm">Masquer</button>
       </div>
@@ -946,7 +1017,7 @@ function renderDashboard() {
         <h3>Raccourcis opérationnels</h3>
       </div>
       <div class="toolbar">
-        <button class="btn btn-primary" data-jump="tables" type="button">Plan de Salle (${occupiedTablesCount}/${FLOOR_TABLES.length})</button>
+        <button class="btn btn-primary" data-jump="tables" type="button">Plan de Salle (${occupiedTablesCount}/${activeFloorTables.length})</button>
         <button class="btn btn-amber" data-jump="pos" type="button">Ouvrir Caisse POS</button>
         <button class="btn btn-outline" data-jump="catalog" type="button">Catalogue &amp; Recettes</button>
         <button class="btn btn-outline" data-jump="purchases" type="button">Achats &amp; Fournisseurs</button>
@@ -1232,7 +1303,7 @@ function buildWhatsAppReceiptText(payload) {
   const cur = payload.currency || CURRENCY();
   const meta = parseSaleMeta(payload.notes);
   const lines = [
-    `*${payload.companyName || 'RestoGest'}*`,
+    `*${payload.companyName || 'MyRestoGest'}*`,
     `Facture : *${payload.invoiceNumber}*`,
     `Mode : ${serviceModeSummary(meta)}`,
   ];
@@ -1491,7 +1562,7 @@ function renderPos() {
                                 <label>Table attribuée</label>
                                 <select id="pos-table-select">
                                   <option value="">Comptoir / Libre</option>
-                                  ${FLOOR_TABLES.map(
+                                  ${getActiveFloorTables().map(
             (t) =>
               `<option value="${esc(t.code)}" ${meta.tableCode === t.code ? 'selected' : ''}>${esc(t.name)} (${esc(t.zone)})</option>`
           ).join('')}
@@ -1777,7 +1848,7 @@ function bindPos() {
     try {
       const code = document.getElementById('pos-table-select')?.value || '';
       const tState = document.getElementById('pos-table-state')?.value || 'occupied';
-      const table = FLOOR_TABLES.find((t) => t.code === code);
+      const table = getActiveFloorTables().find((t) => t.code === code);
       const curMeta = parseSaleMeta(state.activeSale.notes);
       await apiFetch(`/api/sales/${state.activeSale.id}`, {
         method: 'PUT',
@@ -2120,7 +2191,7 @@ function renderCatalog() {
                                 <td data-label="Prix Vente" class="mono">${esc(fmtMoney(p.selling_price, cur))}</td>
                                 <td data-label="PMP" class="mono">${esc(fmtMoney(p.cost_price, cur))}</td>
                                 <td data-label="Stock" class="mono">${p.inventory_tracking === 'none' ? '—' : esc(fmtQty(p.current_stock) + ' ' + p.unit)}</td>
-                                ${canWrite ? `<td data-label="Action"><button type="button" class="btn btn-outline btn-sm" data-edit-product="${esc(p.id)}">Modifier</button></td>` : ''}
+                                ${canWrite ? `<td data-label="Action" style="display:flex;gap:6px;flex-wrap:wrap;"><button type="button" class="btn btn-outline btn-sm" data-edit-product="${esc(p.id)}">Modifier</button><button type="button" class="btn btn-outline btn-sm" data-delete-product="${esc(p.id)}" data-product-name="${esc(p.name)}">Supprimer</button></td>` : ''}
                               </tr>`
           )
           .join('')
@@ -2362,6 +2433,24 @@ function bindCatalog() {
           showToast('Produit mis à jour avec succès', 'success');
           await refreshAllData({ force: true });
         });
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-delete-product]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const prodId = btn.dataset.deleteProduct;
+      const prodName = btn.dataset.productName || 'ce produit';
+      confirmActionModal({
+        title: `Supprimer ${prodName}`,
+        message: `Voulez-vous supprimer « ${prodName} » du catalogue actif ? Si ce produit possède déjà un historique de ventes ou de stocks, il sera archivé sans perte d'historique et libérera une place dans votre quota.`,
+        confirmLabel: 'Supprimer du catalogue',
+        variant: 'danger',
+        onConfirm: async () => {
+          const res = await apiFetch(`/api/catalog/products/${prodId}`, { method: 'DELETE' });
+          showToast(res.message || 'Produit retiré du catalogue actif', 'success');
+          await refreshAllData({ force: true });
+        },
       });
     });
   });
@@ -2852,7 +2941,7 @@ function formatZReportText(session) {
   const z = session.zReport;
   const pb = z.paymentBreakdown;
   const lines = [
-    `RAPPORT Z DE CAISSE — ${state.company?.name || 'RestoGest'}`,
+    `RAPPORT Z DE CAISSE — ${state.company?.name || 'MyRestoGest'}`,
     `Statut : ${z.status === 'open' ? 'Session en cours' : 'Clôturée'}`,
     `Ouverture : ${fmtDate(z.openedAt)}`,
     ...(z.closedAt ? [`Clôture : ${fmtDate(z.closedAt)}`] : []),
@@ -2887,14 +2976,14 @@ function openZReportModal(session) {
   const pb = z.paymentBreakdown;
   const textReport = formatZReportText(session);
   const waHref = `https://wa.me/?text=${encodeURIComponent(textReport)}`;
-  const mailHref = `mailto:?subject=${encodeURIComponent(`Rapport Z de caisse - ${state.company?.name || 'RestoGest'}`)}&body=${encodeURIComponent(textReport)}`;
+  const mailHref = `mailto:?subject=${encodeURIComponent(`Rapport Z de caisse - ${state.company?.name || 'MyRestoGest'}`)}&body=${encodeURIComponent(textReport)}`;
 
   openModal(
     `Rapport Z de Caisse (${z.status === 'open' ? 'Temps réel' : 'Clôturé'})`,
     `
       <div class="receipt-paper">
         <div style="text-align:center;margin-bottom:10px;">
-          <strong style="font-size:15px;">${esc(state.company?.name || 'RestoGest Cloud')}</strong><br/>
+          <strong style="font-size:15px;">${esc(state.company?.name || 'MyRestoGest')}</strong><br/>
           <span>RAPPORT Z DE CAISSE</span><br/>
           <span>Ouverte : ${esc(fmtDate(z.openedAt))}</span>
           ${z.closedAt ? `<br/><span>Clôturée : ${esc(fmtDate(z.closedAt))}</span>` : ''}
@@ -3008,7 +3097,7 @@ function renderCash() {
               </div>
               <div class="toolbar" style="margin-top:14px;">
                 <a href="${esc(`https://wa.me/?text=${encodeURIComponent(formatZReportText(cs))}`)}" target="_blank" rel="noopener" class="btn btn-whatsapp btn-sm" style="text-decoration:none;flex:1;">Envoyer Z sur WhatsApp</a>
-                <a href="${esc(`mailto:?subject=${encodeURIComponent(`Rapport Z - ${state.company?.name || 'RestoGest'}`)}&body=${encodeURIComponent(formatZReportText(cs))}`)}" class="btn btn-outline btn-sm" style="text-decoration:none;">Envoyer par Email</a>
+                <a href="${esc(`mailto:?subject=${encodeURIComponent(`Rapport Z - ${state.company?.name || 'MyRestoGest'}`)}&body=${encodeURIComponent(formatZReportText(cs))}`)}" class="btn btn-outline btn-sm" style="text-decoration:none;">Envoyer par Email</a>
               </div>
             </div>
 
@@ -3205,7 +3294,7 @@ function renderSubscription() {
       <div>
         <div class="brand-badge" style="margin-bottom:8px;">
           <span class="brand-dot"></span>
-          <span>RestoGest Cloud Licence</span>
+          <span>Licence MyRestoGest</span>
         </div>
         <h3 style="margin:0 0 4px;font-family:var(--font-display);font-size:20px;">
           ${sub ? esc(sub.plan_name) : 'Essai Gratuit Cloud'} — ${statusBadge(sub?.status || 'trial')}
@@ -3264,7 +3353,7 @@ function renderSubscription() {
     <div class="card">
       <div class="section-head">
         <h3>Choisissez votre moyen de paiement de licence</h3>
-        <span class="muted-text">Activation instantanée Sénégal &amp; Guinée</span>
+        <span class="muted-text">Validation après réception du paiement (Sénégal &amp; Guinée)</span>
       </div>
       <div class="service-mode-pills">
         <button type="button" class="service-pill ${state.checkoutMethod === 'wave' ? 'active' : ''}" data-sub-method="wave">Wave Mobile</button>
@@ -3363,7 +3452,7 @@ function bindSubscription() {
               <label>${state.checkoutMethod === 'card_visa_uba' ? '4 derniers chiffres carte / Réf. autorisation' : 'Numéro téléphone Wave / Orange Money'}</label>
               <input id="sub-payer-ref" required placeholder="+221 77 ... ou +224 62 ..." />
             </div>
-            <button type="submit" class="btn btn-success btn-full">Confirmer et activer ma licence</button>
+            <button type="submit" class="btn btn-success btn-full">Transmettre la demande de paiement</button>
           </form>
         `
       );
@@ -3381,7 +3470,7 @@ function bindSubscription() {
             },
           });
           closeModal();
-          showToast(`Licence activée (${res.data.licenseReference}) !`, 'success');
+          showToast(`Demande d'abonnement enregistrée en attente de validation (${res.data.licenseReference}) !`, 'info');
           await refreshAllData();
         } catch (err) {
           showToast(err.message, 'error');
@@ -3581,6 +3670,15 @@ async function init() {
       submitBtn.textContent = 'Création en cours...';
     }
     try {
+      const acceptCheckbox = document.getElementById('reg-accept-terms');
+      if (!acceptCheckbox || !acceptCheckbox.checked) {
+        showToast(
+          "Vous devez accepter les Conditions Générales d'Utilisation (CGU) et les Conditions Générales de Vente (CGV) pour créer votre compte.",
+          'warning'
+        );
+        return;
+      }
+
       const countrySelect = document.getElementById('reg-country');
       const countryCode = countrySelect ? countrySelect.value : 'SN';
       const selectedOpt = countrySelect ? countrySelect.options[countrySelect.selectedIndex] : null;
@@ -3598,6 +3696,12 @@ async function init() {
           fullName: document.getElementById('reg-fullname').value,
           email: document.getElementById('reg-email').value,
           password: document.getElementById('reg-password').value,
+          acceptTerms: true,
+          acceptCgu: true,
+          acceptCgv: true,
+          cguVersion: '2026-11-21',
+          cgvVersion: '2026-11-21',
+          privacyPolicyVersion: '2026-11-21',
         },
       });
       setToken(res.data.token);
@@ -3609,7 +3713,7 @@ async function init() {
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.textContent = prevLabel || 'Créer mon espace RESTOGEST';
+        submitBtn.textContent = prevLabel || 'Créer mon espace MyRestoGest';
       }
     }
   });

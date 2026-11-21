@@ -88,6 +88,7 @@ describe('RESTOGEST V1.3 — Marché Africain, Multi-Devises & Wave SN (+2217889
         email: `dakar.${Date.now()}@restogest.sn`,
         password: 'Password123!',
         fullName: 'Cheikh Diop',
+        acceptTerms: true,
       },
     });
     expect(regSn.status).toBe(201);
@@ -104,6 +105,7 @@ describe('RESTOGEST V1.3 — Marché Africain, Multi-Devises & Wave SN (+2217889
         email: `conakry.${Date.now()}@restogest.gn`,
         password: 'Password123!',
         fullName: 'Aissatou Barry',
+        acceptTerms: true,
       },
     });
     expect(regGn.status).toBe(201);
