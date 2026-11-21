@@ -136,7 +136,7 @@ export function printCustomerQrReceipt(order, companyName, currency) {
   printHtmlWindow(
     `Ticket Client ${order.order_number}`,
     `<div class="ticket">
-      <h2 style="text-align:center;">${esc(companyName || 'RESTOGEST')}</h2>
+      <h2 style="text-align:center;">${esc(companyName || 'MyRestoGest')}</h2>
       <p style="text-align:center;font-size:12px;color:#475569;margin-top:0;">
         Ticket de commande QR • ${esc(order.order_number)}<br/>
         Table : ${esc(order.table_name_snapshot)} (${esc(order.table_code_snapshot)})<br/>
@@ -572,9 +572,9 @@ export function bindTablesAndQrModule(state, { cur, openModal, closeModal, refre
         })
       );
       printHtmlWindow(
-        `Planche QR Codes — ${state.company?.name || 'RestoGest'}`,
+        `Planche QR Codes — ${state.company?.name || 'MyRestoGest'}`,
         `<div style="text-align:center;">
-          <h2>Planche QR Codes Tables — ${esc(state.company?.name || 'RestoGest')}</h2>
+          <h2>Planche QR Codes Tables — ${esc(state.company?.name || 'MyRestoGest')}</h2>
           <p style="font-size:12px;color:#475569;">Découpez et déposez chaque support sur la table correspondante</p>
           <div>${posters.join('')}</div>
         </div>`
@@ -1405,11 +1405,11 @@ export function printSaasInvoiceModal(invoice, merchant) {
     `<div style="max-width:680px;margin:0 auto;border:1px solid #cbd5e1;padding:28px;border-radius:10px;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0f172a;padding-bottom:16px;margin-bottom:20px;">
         <div>
-          <h1 style="color:#f97316;margin:0;">${esc(merchant?.brand_name || 'RESTOGEST')}</h1>
+          <h1 style="color:#f97316;margin:0;">${esc(merchant?.brand_name && !['RESTOGEST', 'RESTOGEST SaaS', 'RestoGest', 'RestoGest Cloud'].includes(merchant.brand_name) ? merchant.brand_name : 'MyRestoGest')}</h1>
           <div style="font-size:13px;color:#475569;margin-top:4px;">
-            ${esc(merchant?.legal_name && merchant.legal_name !== 'RESTOGEST CLOUD SAS' ? merchant.legal_name : 'RESTOGEST — Fondé par Hadiry Dramé')}<br/>
+            ${esc(merchant?.legal_name && !['RESTOGEST CLOUD SAS', 'RESTOGEST — Hadiry Dramé'].includes(merchant.legal_name) ? merchant.legal_name : 'MyRestoGest — Fondé par Hadiry Dramé')}<br/>
             ${esc(merchant?.address || 'Sénégal & Guinée')}<br/>
-            Email : ${esc(merchant?.support_email && merchant.support_email !== 'facturation@myrestogest.com' ? merchant.support_email : 'hadirydrame@gmail.com')}
+            Email : ${esc(merchant?.support_email && !['facturation@myrestogest.com', 'contact@myrestogest.com'].includes(merchant.support_email) ? merchant.support_email : 'hadirydrame@gmail.com')}
           </div>
         </div>
         <div style="text-align:right;">
@@ -1500,7 +1500,7 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
       <div>
         <div class="brand-badge" style="margin-bottom:8px;">
           <span class="brand-dot"></span>
-          <span>Abonnement &amp; Licence SaaS RestoGest Afrique</span>
+          <span>Abonnement &amp; Licence MyRestoGest</span>
         </div>
         <h3 style="margin:0 0 4px;font-family:var(--font-display);font-size:20px;">
           ${sub ? esc(sub.plan_name || sub.plan_code) : 'Essai Gratuit Cloud'} — ${statusBadge(sub?.status || 'trial')}
@@ -1789,7 +1789,7 @@ export function bindSubscriptionModuleV12(state, { cur, openModal, closeModal, r
           </div>
 
           <p class="muted-text" style="font-size:11px;">
-            🔒 Validation propriétaire : Votre paiement est transmis directement à l'espace Super-Admin RESTOGEST pour activation rapide.
+            🔒 Validation propriétaire : Votre paiement est transmis directement à l'espace Super-Admin MyRestoGest pour activation rapide.
           </p>
 
           <button type="submit" class="btn btn-success btn-full">Envoyer le paiement pour validation</button>
@@ -1832,7 +1832,7 @@ export function bindSubscriptionModuleV12(state, { cur, openModal, closeModal, r
           if (res.data.mode === 'confirmed') {
             showToast(`Abonnement ${plan.name} activé et facture générée !`, 'success');
           } else {
-            showToast('Paiement transmis au propriétaire RESTOGEST — validation rapide depuis l’espace Super-Admin.', 'info');
+            showToast('Paiement transmis au propriétaire MyRestoGest — validation rapide depuis l’espace Super-Admin.', 'info');
           }
           await refreshAllData();
         } catch (err) {
@@ -1851,7 +1851,7 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
   const subtab = state.subtabs.saasAdmin || 'transactions';
 
   if (!overview) {
-    return `<div class="card"><p class="muted-text">Chargement des données financières SaaS RESTOGEST...</p></div>`;
+    return `<div class="card"><p class="muted-text">Chargement des données financières MyRestoGest...</p></div>`;
   }
 
   const k = overview.kpis || {};
@@ -1873,7 +1873,7 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
     <div class="card" style="margin-bottom:16px;border-left:4px solid var(--primary);">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
         <div>
-          <h3 style="margin:0;">🏦 Finances RESTOGEST — Pilotage Multi-Devises &amp; Marché Africain</h3>
+          <h3 style="margin:0;">🏦 Finances MyRestoGest — Pilotage Multi-Devises &amp; Marché Africain</h3>
           <p class="muted-text" style="margin:4px 0 0;font-size:12px;">
             Séparation comptable stricte : chaque devise est suivie séparément (aucune addition brute XOF + GNF + NGN).
           </p>
@@ -2198,7 +2198,7 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
         ? `
           <div class="two-col">
             <div class="card">
-              <div class="section-head"><h3>📱 Moyens de réception RestoGest</h3></div>
+              <div class="section-head"><h3>📱 Moyens de réception MyRestoGest</h3></div>
               <div class="table-wrap" style="margin-bottom:16px;">
                 <table class="responsive-table">
                   <thead><tr><th>Pays</th><th>Compte</th><th>Numéro / IBAN</th><th>Statut</th></tr></thead>
@@ -2242,7 +2242,7 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                 </div>
                 <div class="field">
                   <label>Libellé du compte</label>
-                  <input id="ra-label" required placeholder="Compte Marchand RestoGest" />
+                  <input id="ra-label" required placeholder="Compte Marchand MyRestoGest" />
                 </div>
                 <button type="submit" class="btn btn-primary">Ajouter / Mettre à jour ce compte de réception</button>
               </form>
@@ -2289,7 +2289,7 @@ export function renderSaasFinancesAdminModule(state, { cur, statusBadge }) {
                   <input id="po-provider" required value="PayDunya / Wave Business" />
                 </div>
                 <div class="field">
-                  <label>Compte récepteur RESTOGEST</label>
+                  <label>Compte récepteur MyRestoGest</label>
                   <input id="po-dest" required value="UBA / Wave +221788979342" />
                 </div>
                 <div class="field">
@@ -2400,7 +2400,7 @@ export function bindSaasFinancesAdminModule(state, { openModal, closeModal, refr
       try {
         await apiFetch(`/api/subscriptions/admin/transactions/${btn.dataset.saConfirmTx}/confirm`, {
           method: 'POST',
-          body: { note: 'Confirmé après contrôle réel depuis Finances RESTOGEST' },
+          body: { note: 'Confirmé après contrôle réel depuis Finances MyRestoGest' },
         });
         showToast('Paiement confirmé, abonnement activé et facture émise !', 'success');
         await refreshAllData();

@@ -56,7 +56,7 @@ async function saFetch(url, opts = {}) {
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     });
   } catch {
-    throw new Error('Impossible de joindre le serveur RESTOGEST. Vérifiez votre connexion internet.');
+    throw new Error('Impossible de joindre le serveur MyRestoGest. Vérifiez votre connexion internet.');
   }
 
   const data = await res.json().catch(() => ({}));
@@ -616,7 +616,7 @@ function renderAdminDashboard() {
     ${state.subtab === 'reception'
       ? `
           <div class="card">
-            <div class="section-head"><h3>Moyens de Réception Propriétaire RESTOGEST</h3></div>
+            <div class="section-head"><h3>Moyens de Réception Propriétaire MyRestoGest</h3></div>
             <div class="table-wrap">
               <table class="responsive-table">
                 <thead><tr><th>Pays</th><th>Libellé</th><th>Numéro Marchand / IBAN</th><th>Devise</th><th>Statut</th></tr></thead>
@@ -956,7 +956,7 @@ function renderAdminDashboard() {
 
   document.getElementById('btn-copy-demo-creds')?.addEventListener('click', async () => {
     if (!state.lastCreatedDemo) return;
-    const text = `Accès Démo RESTOGEST\nURL: ${window.location.origin}/\nÉtablissement: ${state.lastCreatedDemo.companyName}\nE-mail: ${state.lastCreatedDemo.email}\nMot de passe: ${state.lastCreatedDemo.password}`;
+    const text = `Accès Démo MyRestoGest\nURL: ${window.location.origin}/\nÉtablissement: ${state.lastCreatedDemo.companyName}\nE-mail: ${state.lastCreatedDemo.email}\nMot de passe: ${state.lastCreatedDemo.password}`;
     try {
       await navigator.clipboard.writeText(text);
       showToast('Identifiants démo copiés dans le presse-papiers', 'success');

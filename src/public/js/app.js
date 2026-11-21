@@ -119,7 +119,7 @@ const ROUTE_META = {
   customers: { title: 'Fichier Clients', sub: 'Répertoire clients, historique de commandes et points de fidélité' },
   staff: { title: 'Équipe & Employés', sub: 'Comptes individuels, rôles métiers, autorisations et suivi d’activité' },
   subscription: { title: 'Abonnement & Licence', sub: 'Comparateur des plans, souscription SaaS et factures XOF / GNF' },
-  'saas-admin': { title: 'Finances RESTOGEST', sub: 'Pilotage des revenus SaaS, abonnements clients, factures et reversements' },
+  'saas-admin': { title: 'Finances MyRestoGest', sub: 'Pilotage des revenus SaaS, abonnements clients, factures et reversements' },
 };
 
 const ROUTE_PERMISSIONS = {
@@ -442,7 +442,7 @@ function renderChrome() {
       licPill.textContent = `Essai • ${sub.plan_name}`;
     } else {
       licPill.className = 'status-pill status-neutral hide-xs';
-      licPill.textContent = 'RestoGest Cloud';
+      licPill.textContent = 'MyRestoGest';
     }
   }
 
@@ -866,7 +866,7 @@ function renderDashboard() {
       <div class="section-head">
         <div>
           <h3 style="margin:0;">Configuration guidée (${doneStepsCount}/${onboardingSteps.length})</h3>
-          <p class="muted-text" style="margin-top:4px;">Suivez ces étapes pour démarrer rapidement avec RESTOGEST.</p>
+          <p class="muted-text" style="margin-top:4px;">Suivez ces étapes pour démarrer rapidement avec MyRestoGest.</p>
         </div>
         <button id="btn-dismiss-onboarding" type="button" class="btn btn-outline btn-sm">Masquer</button>
       </div>
@@ -1232,7 +1232,7 @@ function buildWhatsAppReceiptText(payload) {
   const cur = payload.currency || CURRENCY();
   const meta = parseSaleMeta(payload.notes);
   const lines = [
-    `*${payload.companyName || 'RestoGest'}*`,
+    `*${payload.companyName || 'MyRestoGest'}*`,
     `Facture : *${payload.invoiceNumber}*`,
     `Mode : ${serviceModeSummary(meta)}`,
   ];
@@ -2852,7 +2852,7 @@ function formatZReportText(session) {
   const z = session.zReport;
   const pb = z.paymentBreakdown;
   const lines = [
-    `RAPPORT Z DE CAISSE — ${state.company?.name || 'RestoGest'}`,
+    `RAPPORT Z DE CAISSE — ${state.company?.name || 'MyRestoGest'}`,
     `Statut : ${z.status === 'open' ? 'Session en cours' : 'Clôturée'}`,
     `Ouverture : ${fmtDate(z.openedAt)}`,
     ...(z.closedAt ? [`Clôture : ${fmtDate(z.closedAt)}`] : []),
@@ -2887,14 +2887,14 @@ function openZReportModal(session) {
   const pb = z.paymentBreakdown;
   const textReport = formatZReportText(session);
   const waHref = `https://wa.me/?text=${encodeURIComponent(textReport)}`;
-  const mailHref = `mailto:?subject=${encodeURIComponent(`Rapport Z de caisse - ${state.company?.name || 'RestoGest'}`)}&body=${encodeURIComponent(textReport)}`;
+  const mailHref = `mailto:?subject=${encodeURIComponent(`Rapport Z de caisse - ${state.company?.name || 'MyRestoGest'}`)}&body=${encodeURIComponent(textReport)}`;
 
   openModal(
     `Rapport Z de Caisse (${z.status === 'open' ? 'Temps réel' : 'Clôturé'})`,
     `
       <div class="receipt-paper">
         <div style="text-align:center;margin-bottom:10px;">
-          <strong style="font-size:15px;">${esc(state.company?.name || 'RestoGest Cloud')}</strong><br/>
+          <strong style="font-size:15px;">${esc(state.company?.name || 'MyRestoGest')}</strong><br/>
           <span>RAPPORT Z DE CAISSE</span><br/>
           <span>Ouverte : ${esc(fmtDate(z.openedAt))}</span>
           ${z.closedAt ? `<br/><span>Clôturée : ${esc(fmtDate(z.closedAt))}</span>` : ''}
@@ -3008,7 +3008,7 @@ function renderCash() {
               </div>
               <div class="toolbar" style="margin-top:14px;">
                 <a href="${esc(`https://wa.me/?text=${encodeURIComponent(formatZReportText(cs))}`)}" target="_blank" rel="noopener" class="btn btn-whatsapp btn-sm" style="text-decoration:none;flex:1;">Envoyer Z sur WhatsApp</a>
-                <a href="${esc(`mailto:?subject=${encodeURIComponent(`Rapport Z - ${state.company?.name || 'RestoGest'}`)}&body=${encodeURIComponent(formatZReportText(cs))}`)}" class="btn btn-outline btn-sm" style="text-decoration:none;">Envoyer par Email</a>
+                <a href="${esc(`mailto:?subject=${encodeURIComponent(`Rapport Z - ${state.company?.name || 'MyRestoGest'}`)}&body=${encodeURIComponent(formatZReportText(cs))}`)}" class="btn btn-outline btn-sm" style="text-decoration:none;">Envoyer par Email</a>
               </div>
             </div>
 
@@ -3205,7 +3205,7 @@ function renderSubscription() {
       <div>
         <div class="brand-badge" style="margin-bottom:8px;">
           <span class="brand-dot"></span>
-          <span>RestoGest Cloud Licence</span>
+          <span>Licence MyRestoGest</span>
         </div>
         <h3 style="margin:0 0 4px;font-family:var(--font-display);font-size:20px;">
           ${sub ? esc(sub.plan_name) : 'Essai Gratuit Cloud'} — ${statusBadge(sub?.status || 'trial')}
@@ -3609,7 +3609,7 @@ async function init() {
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.textContent = prevLabel || 'Créer mon espace RESTOGEST';
+        submitBtn.textContent = prevLabel || 'Créer mon espace MyRestoGest';
       }
     }
   });

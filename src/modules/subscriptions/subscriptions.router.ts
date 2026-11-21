@@ -145,12 +145,20 @@ async function ensureDefaultPlansAndMerchant(client: IDbClient): Promise<void> {
          bank_name, bank_account_name, bank_iban
        )
        VALUES (
-         'RESTOGEST — Hadiry Dramé', 'RESTOGEST', 'hadirydrame@gmail.com',
+         'MyRestoGest — Hadiry Dramé', 'MyRestoGest', 'hadirydrame@gmail.com',
          '+221 78 897 93 42', '+221 78 897 93 42',
          'Sénégal & Guinée', 'XOF', 'manual_wave_sn',
          '+221788979342', NULL, NULL,
-         'UBA / Orabank Afrique de l’Ouest', 'RESTOGEST — Hadiry Dramé', 'SN08 0010 2030 4050 6070 8090'
+         'UBA / Orabank Afrique de l’Ouest', 'MyRestoGest — Hadiry Dramé', 'SN08 0010 2030 4050 6070 8090'
        )`
+    );
+  } else {
+    await client.query(
+      `UPDATE public.saas_merchant_settings
+       SET brand_name = CASE WHEN brand_name IN ('RESTOGEST', 'RESTOGEST SaaS', 'RestoGest', 'RestoGest Cloud') THEN 'MyRestoGest' ELSE brand_name END,
+           legal_name = CASE WHEN legal_name IN ('RESTOGEST CLOUD SAS', 'RESTOGEST — Hadiry Dramé') THEN 'MyRestoGest — Hadiry Dramé' ELSE legal_name END,
+           support_email = CASE WHEN support_email IN ('facturation@myrestogest.com', 'contact@myrestogest.com') THEN 'hadirydrame@gmail.com' ELSE support_email END,
+           bank_account_name = CASE WHEN bank_account_name IN ('RESTOGEST CLOUD SAS', 'RESTOGEST — Hadiry Dramé') THEN 'MyRestoGest — Hadiry Dramé' ELSE bank_account_name END`
     );
   }
 }
@@ -321,7 +329,7 @@ async function confirmSaasTransactionAndActivateSubscription(
     `SELECT name FROM public.companies WHERE id = $1`,
     [txRow.company_id]
   );
-  const company = compRes.rows[0] || { name: 'Client RestoGest' };
+  const company = compRes.rows[0] || { name: 'Client MyRestoGest' };
 
   const invoiceNumber = `FA-RG-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}-${crypto
     .randomBytes(2)
@@ -2102,7 +2110,7 @@ const receptionAccountSchema = z.object({
   accountLabel: z.string().min(2).max(150),
   merchantNumberOrIban: z.string().min(3).max(150),
   currencyCode: z.string().min(2).max(10),
-  usageScope: z.string().max(200).default('abonnements et frais commerciaux RestoGest'),
+  usageScope: z.string().max(200).default('abonnements et frais commerciaux MyRestoGest'),
   verificationStatus: z.enum(['manual_verification_required', 'verified_api', 'inactive']).default('manual_verification_required'),
   instructions: z.string().max(1000).optional().nullable(),
   isActive: z.boolean().default(true),

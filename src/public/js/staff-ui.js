@@ -235,7 +235,7 @@ export function bindStaffModule(state, { openModal, closeModal, confirmActionMod
 
   document.getElementById('btn-copy-staff-creds')?.addEventListener('click', async () => {
     if (!state.lastCreatedStaff) return;
-    const txt = `Accès RESTOGEST (${state.company?.name || ''})\nURL : ${window.location.origin}/\nNom : ${state.lastCreatedStaff.fullName}\nRôle : ${state.lastCreatedStaff.roleName}\nE-mail : ${state.lastCreatedStaff.email}\nMot de passe : ${state.lastCreatedStaff.password}`;
+    const txt = `Accès MyRestoGest (${state.company?.name || ''})\nURL : ${window.location.origin}/\nNom : ${state.lastCreatedStaff.fullName}\nRôle : ${state.lastCreatedStaff.roleName}\nE-mail : ${state.lastCreatedStaff.email}\nMot de passe : ${state.lastCreatedStaff.password}`;
     try {
       await navigator.clipboard.writeText(txt);
       showToast('Identifiants copiés dans le presse-papiers', 'success');
