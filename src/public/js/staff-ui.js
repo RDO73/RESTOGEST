@@ -155,9 +155,12 @@ export function renderStaffModule(state) {
                               <button type="button" class="btn btn-outline btn-sm" data-staff-edit="${esc(m.id)}">Modifier</button>
                               ${
                                 !isSelf
-                                  ? m.isActive
-                                    ? `<button type="button" class="btn btn-danger btn-sm" data-staff-toggle="${esc(m.id)}" data-next-active="false">Suspendre</button>`
-                                    : `<button type="button" class="btn btn-success btn-sm" data-staff-toggle="${esc(m.id)}" data-next-active="true">Réactiver</button>`
+                                  ? `${
+                                      m.isActive
+                                        ? `<button type="button" class="btn btn-danger btn-sm" data-staff-toggle="${esc(m.id)}" data-next-active="false">Suspendre</button>`
+                                        : `<button type="button" class="btn btn-success btn-sm" data-staff-toggle="${esc(m.id)}" data-next-active="true">Réactiver</button>`
+                                    }
+                                    <button type="button" class="btn btn-outline btn-sm" data-staff-delete="${esc(m.id)}" data-staff-name="${esc(m.fullName)}">Retirer</button>`
                                   : ''
                               }
                             </div>
@@ -388,6 +391,24 @@ export function bindStaffModule(state, { openModal, closeModal, confirmActionMod
             body: { isActive: nextActive },
           });
           showToast(nextActive ? 'Employé réactivé' : 'Employé suspendu', 'success');
+          await refreshAllData({ force: true });
+        },
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-staff-delete]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const userId = btn.dataset.staffDelete;
+      const staffName = btn.dataset.staffName || 'cet employé';
+      confirmActionModal({
+        title: `Retirer ${staffName} de l'établissement ?`,
+        message: `Le compte de ${staffName} sera détaché de l'établissement (révoquant immédiatement sa session et libérant une place dans votre quota utilisateurs), tout en conservant intégralement son historique de ventes, dépenses et journaux d'audit.`,
+        confirmLabel: 'Retirer de l’équipe',
+        variant: 'danger',
+        onConfirm: async () => {
+          const res = await apiFetch(`/api/staff/${userId}`, { method: 'DELETE' });
+          showToast(res.message || `${staffName} retiré de l'équipe`, 'success');
           await refreshAllData({ force: true });
         },
       });

@@ -1,4 +1,25 @@
-import { apiFetch, esc, fmtDate, fmtMoney, showToast } from './api.js';
+import { apiFetch, esc, fmtDate, fmtMoney, getToken, showToast } from './api.js';
+
+async function fetchQrSvg(tableId) {
+  const token = getToken();
+  const headers =
+    token && token !== 'cookie-session' ? { Authorization: `Bearer ${token}` } : {};
+  const res = await fetch(`/api/qr/tables/${encodeURIComponent(tableId)}/qrcode.svg`, {
+    credentials: 'same-origin',
+    headers,
+  });
+  if (!res.ok) {
+    let msg = 'Impossible de charger le QR Code.';
+    try {
+      const body = await res.json();
+      msg = body?.error?.message || body?.error || body?.message || msg;
+    } catch {
+      // ignore non-JSON body
+    }
+    throw new Error(msg);
+  }
+  return res.text();
+}
 
 // -------------------------------------------------------------
 // SONORE WEB AUDIO API POUR NOUVELLES COMMANDES QR / APPELS SERVEUR
@@ -87,7 +108,7 @@ export function printHtmlWindow(title, bodyHtml) {
 export function printKitchenTicket(order) {
   const itemsHtml = (order.items || [])
     .map((it) => {
-      const opts = (it.options || []).map((o) => `${o.groupName}: ${o.label}`).join(' | ');
+      const opts = (it.options || []).map((o) => `${o.groupName}: ${o.optionLabel || o.label || ''}`).join(' | ');
       return `
         <div style="padding:8px 0;border-bottom:1px dashed #94a3b8;">
           <div style="font-size:16px;font-weight:bold;">${esc(it.quantity)}x ${esc(it.product_name_snapshot)}</div>
@@ -120,7 +141,7 @@ export function printKitchenTicket(order) {
 export function printCustomerQrReceipt(order, companyName, currency) {
   const itemsHtml = (order.items || [])
     .map((it) => {
-      const opts = (it.options || []).map((o) => `${o.groupName}: ${o.label}`).join(' • ');
+      const opts = (it.options || []).map((o) => `${o.groupName}: ${o.optionLabel || o.label || ''}`).join(' • ');
       return `
         <div class="line">
           <div>
@@ -249,6 +270,7 @@ export function renderTablesAndQrModule(state, { cur, parseSaleMeta }) {
             free: 'Libre',
             occupied: 'Occupée',
             order_pending: 'Commande QR reçue',
+            in_preparation: 'En préparation',
             preparing: 'En préparation',
             ready: 'Prête à servir',
             served: 'Servie',
@@ -558,10 +580,7 @@ export function bindTablesAndQrModule(state, { cur, openModal, closeModal, refre
     try {
       const posters = await Promise.all(
         activeTables.map(async (t) => {
-          const res = await fetch(`/api/qr/tables/${t.id}/qrcode.svg`, {
-            headers: { Authorization: `Bearer ${localStorage.getItem('restogest_token') || ''}` },
-          });
-          const svgText = await res.text();
+          const svgText = await fetchQrSvg(t.id);
           return `<div style="display:inline-block;margin:10px;page-break-inside:avoid;">${svgText}</div>`;
         })
       );
@@ -583,10 +602,7 @@ export function bindTablesAndQrModule(state, { cur, openModal, closeModal, refre
       const tableId = btn.dataset.dlQrSvg;
       const code = btn.dataset.tableCode;
       try {
-        const res = await fetch(`/api/qr/tables/${tableId}/qrcode.svg`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('restogest_token') || ''}` },
-        });
-        const svgText = await res.text();
+        const svgText = await fetchQrSvg(tableId);
         openModal(
           `Support QR Code • Table ${code}`,
           `<div style="text-align:center;">
@@ -619,7 +635,11 @@ export function bindTablesAndQrModule(state, { cur, openModal, closeModal, refre
     btn.addEventListener('click', async () => {
       try {
         const res = await apiFetch(`/api/qr/tables/${btn.dataset.tableHistory}/history`);
-        const { table, orders } = res.data;
+        const table =
+          (state.qrTables || []).find((t) => t.id === btn.dataset.tableHistory) ||
+          res.data?.table ||
+          { name: 'Table', code: '' };
+        const orders = Array.isArray(res.data) ? res.data : (res.data?.orders || []);
         openModal(
           `Historique • ${table.name} (${table.code})`,
           orders.length === 0
@@ -929,7 +949,7 @@ export function renderQrOrdersAndKdsModule(state, { cur }) {
           .map((o) => {
             const itemsHtml = (o.items || [])
               .map((it) => {
-                const opts = (it.options || []).map((op) => `${op.groupName}: ${op.label}`).join(' | ');
+                const opts = (it.options || []).map((op) => `${op.groupName}: ${op.optionLabel || op.label || ''}`).join(' | ');
                 return `
                               <div style="padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px;">
                                 <div style="display:flex;justify-content:space-between;">
@@ -1060,7 +1080,7 @@ export function renderQrOrdersAndKdsModule(state, { cur }) {
                             <ul style="margin:8px 0;padding-left:18px;font-size:14px;">
                               ${(o.items || [])
                 .map((it) => {
-                  const opts = (it.options || []).map((op) => op.label).join(', ');
+                  const opts = (it.options || []).map((op) => op.optionLabel || op.label || '').filter(Boolean).join(', ');
                   return `<li><strong>${it.quantity}x ${esc(it.product_name_snapshot)}</strong> ${opts ? `<span style="color:#fdba74;">[${esc(opts)}]</span>` : ''} ${it.item_note ? `<em>(${esc(it.item_note)})</em>` : ''}</li>`;
                 })
                 .join('')}
@@ -1530,7 +1550,7 @@ export function renderSubscriptionModuleV12(state, { cur, statusBadge }) {
           }
               </div>
               <div class="muted-text" style="font-size:12px;margin-bottom:10px;">
-                Jusqu'à <strong>${plan.max_users || 10}</strong> utilisateurs • <strong>${plan.max_tables || 50}</strong> tables QR • <strong>${plan.max_locations || 1}</strong> site(s)
+                Jusqu'à <strong>${Number(plan.max_users) >= 999 ? 'Illimité' : (plan.max_users || 10)}</strong> utilisateurs • <strong>${Number(plan.max_tables) >= 999 ? 'Illimité' : (plan.max_tables || 50)}</strong> tables QR • <strong>${plan.max_locations || 1}</strong> site(s)
               </div>
               <div>
                 <div class="pricing-price">${esc(fmtMoney(displayPrice, displayCurrency))}</div>

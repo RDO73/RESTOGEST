@@ -40,6 +40,11 @@ const FLOOR_TABLES = [
   { code: 'CPT2', name: 'Comptoir 2', zone: 'Comptoir', seats: 2 },
 ];
 
+function getActiveFloorTables() {
+  const liveTables = (state.qrTables || []).filter((t) => t.is_active !== false);
+  return liveTables.length > 0 ? liveTables : FLOOR_TABLES;
+}
+
 const PAYMENT_CHANNELS = [
   { id: 'cash', apiMethod: 'cash', label: 'Espèces', ref: 'Espèces' },
   { id: 'wave', apiMethod: 'mobile_money', label: 'Wave', ref: 'Wave' },
@@ -457,12 +462,13 @@ function renderChrome() {
     const sub = state.subscriptionData?.subscription || state.subscriptionStatus;
     if (!state.isDemo && sub?.isReadOnly) {
       readOnlyBanner.classList.remove('hidden');
+      const canManageBilling = can('settings:manage');
       readOnlyBanner.innerHTML = `
         <div>
           <strong>🔒 Mode Lecture Seule — Période d’essai ou abonnement arrivé à échéance</strong> :
-          vos ventes, rapports Z, stocks et produits restent intégralement consultables et exportables, mais les nouvelles saisies sont suspendues jusqu’à la régularisation de votre abonnement.
+          vos ventes, rapports Z, stocks et produits restent intégralement consultables et exportables, mais les nouvelles saisies sont suspendues jusqu’à la régularisation de l’abonnement${canManageBilling ? '.' : ' par le propriétaire de l’établissement.'}
         </div>
-        <button id="btn-readonly-go-sub" type="button" class="btn btn-danger btn-sm">Régulariser mon abonnement</button>
+        ${canManageBilling ? '<button id="btn-readonly-go-sub" type="button" class="btn btn-danger btn-sm">Régulariser mon abonnement</button>' : ''}
       `;
       document.getElementById('btn-readonly-go-sub')?.addEventListener('click', () => setRoute('subscription'));
     } else {
@@ -885,7 +891,8 @@ function renderDashboard() {
   const pendingSales = state.sales.filter((s) => s.status === 'pending');
   const totalSalesAmount = completedSales.reduce((acc, s) => acc + parseFloat(s.total_amount || 0), 0);
   const cashBalance = state.cashCurrent ? state.cashCurrent.metrics?.theoreticalCashInDrawer : null;
-  const occupiedTablesCount = FLOOR_TABLES.filter((t) =>
+  const activeFloorTables = getActiveFloorTables();
+  const occupiedTablesCount = activeFloorTables.filter((t) =>
     pendingSales.some((s) => parseSaleMeta(s.notes).tableCode === t.code)
   ).length;
 
@@ -1010,7 +1017,7 @@ function renderDashboard() {
         <h3>Raccourcis opérationnels</h3>
       </div>
       <div class="toolbar">
-        <button class="btn btn-primary" data-jump="tables" type="button">Plan de Salle (${occupiedTablesCount}/${FLOOR_TABLES.length})</button>
+        <button class="btn btn-primary" data-jump="tables" type="button">Plan de Salle (${occupiedTablesCount}/${activeFloorTables.length})</button>
         <button class="btn btn-amber" data-jump="pos" type="button">Ouvrir Caisse POS</button>
         <button class="btn btn-outline" data-jump="catalog" type="button">Catalogue &amp; Recettes</button>
         <button class="btn btn-outline" data-jump="purchases" type="button">Achats &amp; Fournisseurs</button>
@@ -1555,7 +1562,7 @@ function renderPos() {
                                 <label>Table attribuée</label>
                                 <select id="pos-table-select">
                                   <option value="">Comptoir / Libre</option>
-                                  ${FLOOR_TABLES.map(
+                                  ${getActiveFloorTables().map(
             (t) =>
               `<option value="${esc(t.code)}" ${meta.tableCode === t.code ? 'selected' : ''}>${esc(t.name)} (${esc(t.zone)})</option>`
           ).join('')}
@@ -1841,7 +1848,7 @@ function bindPos() {
     try {
       const code = document.getElementById('pos-table-select')?.value || '';
       const tState = document.getElementById('pos-table-state')?.value || 'occupied';
-      const table = FLOOR_TABLES.find((t) => t.code === code);
+      const table = getActiveFloorTables().find((t) => t.code === code);
       const curMeta = parseSaleMeta(state.activeSale.notes);
       await apiFetch(`/api/sales/${state.activeSale.id}`, {
         method: 'PUT',
@@ -3346,7 +3353,7 @@ function renderSubscription() {
     <div class="card">
       <div class="section-head">
         <h3>Choisissez votre moyen de paiement de licence</h3>
-        <span class="muted-text">Activation instantanée Sénégal &amp; Guinée</span>
+        <span class="muted-text">Validation après réception du paiement (Sénégal &amp; Guinée)</span>
       </div>
       <div class="service-mode-pills">
         <button type="button" class="service-pill ${state.checkoutMethod === 'wave' ? 'active' : ''}" data-sub-method="wave">Wave Mobile</button>
@@ -3445,7 +3452,7 @@ function bindSubscription() {
               <label>${state.checkoutMethod === 'card_visa_uba' ? '4 derniers chiffres carte / Réf. autorisation' : 'Numéro téléphone Wave / Orange Money'}</label>
               <input id="sub-payer-ref" required placeholder="+221 77 ... ou +224 62 ..." />
             </div>
-            <button type="submit" class="btn btn-success btn-full">Confirmer et activer ma licence</button>
+            <button type="submit" class="btn btn-success btn-full">Transmettre la demande de paiement</button>
           </form>
         `
       );
