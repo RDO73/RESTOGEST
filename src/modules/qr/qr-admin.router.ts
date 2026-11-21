@@ -14,6 +14,13 @@ import {
 
 export const qrAdminRouter = Router();
 
+function createHttpError(statusCode: number, message: string, code: string): Error & { statusCode: number; code: string } {
+  const err = new Error(message) as Error & { statusCode: number; code: string };
+  err.statusCode = statusCode;
+  err.code = code;
+  return err;
+}
+
 qrAdminRouter.use(requireAuth);
 qrAdminRouter.use(requireActiveSubscriptionWriteAccess);
 qrAdminRouter.use((req, res, next) => {
@@ -75,31 +82,51 @@ export async function ensureDefaultCompanyTablesAndSettings(
   client: IDbClient,
   companyId: string
 ): Promise<void> {
-  const compRes = await client.query(
-    `SELECT name FROM public.companies WHERE id = $1`,
+  const settingsCheck = await client.query(
+    `SELECT 1 FROM public.qr_menu_settings WHERE company_id = $1 LIMIT 1`,
     [companyId]
   );
-  const companyName = compRes.rows[0]?.name || 'Mon Établissement';
-
-  await client.query(
-    `INSERT INTO public.qr_menu_settings (company_id, display_name)
-     VALUES ($1, $2)
-     ON CONFLICT (company_id) DO NOTHING`,
-    [companyId, companyName]
-  );
-
   const countRes = await client.query(
     `SELECT COUNT(*)::INT AS cnt FROM public.dining_tables WHERE company_id = $1`,
     [companyId]
   );
-  if (Number(countRes.rows[0]?.cnt || 0) === 0) {
-    let maxTablesToSeed = DEFAULT_TABLES_SEED.length;
-    try {
-      const subState = await resolveCompanySubscriptionState(client, companyId);
-      maxTablesToSeed = Math.min(DEFAULT_TABLES_SEED.length, subState.quotas.maxTables);
-    } catch {
-      // fallback to default seed length
-    }
+  const needSettings = settingsCheck.rows.length === 0;
+  const needTables = Number(countRes.rows[0]?.cnt || 0) === 0;
+  if (!needSettings && !needTables) {
+    return;
+  }
+
+  let subState: Awaited<ReturnType<typeof resolveCompanySubscriptionState>> | null = null;
+  try {
+    subState = await resolveCompanySubscriptionState(client, companyId);
+  } catch {
+    subState = null;
+  }
+
+  // Ne jamais effectuer d'écriture sur un établissement expiré lors d'une lecture GET
+  if (subState?.isReadOnly) {
+    return;
+  }
+
+  if (needSettings) {
+    const compRes = await client.query(
+      `SELECT name FROM public.companies WHERE id = $1`,
+      [companyId]
+    );
+    const companyName = compRes.rows[0]?.name || 'Mon Établissement';
+
+    await client.query(
+      `INSERT INTO public.qr_menu_settings (company_id, display_name)
+       VALUES ($1, $2)
+       ON CONFLICT (company_id) DO NOTHING`,
+      [companyId, companyName]
+    );
+  }
+
+  if (needTables) {
+    const maxTablesToSeed = subState
+      ? Math.min(DEFAULT_TABLES_SEED.length, subState.quotas.maxTables)
+      : DEFAULT_TABLES_SEED.length;
     for (const t of DEFAULT_TABLES_SEED.slice(0, maxTablesToSeed)) {
       await client.query(
         `INSERT INTO public.dining_tables (company_id, code, name, zone, seats, table_type, qr_token, is_active, current_status)
@@ -122,7 +149,7 @@ export async function createLinkedPendingSaleForQrOrder(
     [qrOrderId, companyId]
   );
   if (ordRes.rows.length === 0) {
-    throw new Error('Commande QR introuvable');
+    throw createHttpError(404, 'Commande QR introuvable', 'ORDER_NOT_FOUND');
   }
   const order = ordRes.rows[0];
   if (order.linked_sale_id) {
@@ -585,86 +612,105 @@ qrAdminRouter.put('/settings', async (req, res, next) => {
   try {
     const schema = z.object({
       displayName: z.string().max(255).optional(),
+      tagline: z.string().max(255).optional().nullable(),
       logoUrl: z.string().max(2000).optional().nullable(),
       coverUrl: z.string().max(2000).optional().nullable(),
       primaryColor: z.string().max(20).optional(),
-      accentColor: z.string().max(20).optional(),
       phone: z.string().max(60).optional().nullable(),
+      whatsappPhone: z.string().max(60).optional().nullable(),
       address: z.string().max(500).optional().nullable(),
-      openingHours: z.string().max(500).optional(),
-      welcomeMessage: z.string().max(1000).optional(),
+      openingHours: z.union([z.record(z.any()), z.string().max(500)]).optional(),
+      welcomeMessage: z.string().max(1000).optional().nullable(),
       footerNote: z.string().max(500).optional(),
       qrOrderingEnabled: z.boolean().optional(),
       takeawayEnabled: z.boolean().optional(),
+      allowTakeawayQr: z.boolean().optional(),
       autoAcceptOrders: z.boolean().optional(),
       callWaiterEnabled: z.boolean().optional(),
+      allowCallWaiter: z.boolean().optional(),
       requestBillEnabled: z.boolean().optional(),
-      showPrices: z.boolean().optional(),
-      estimatedPrepMinutes: z.number().int().min(0).max(240).optional(),
-      hiddenCategoryIds: z.array(z.string()).optional(),
-      categoryOrder: z.array(z.string()).optional(),
-      hiddenProductIds: z.array(z.string()).optional(),
-      productOrder: z.array(z.string()).optional(),
+      allowRequestBill: z.boolean().optional(),
       productMetadata: z.record(z.any()).optional(),
     });
     const data = schema.parse(req.body);
+    const effectiveAllowCallWaiter =
+      data.allowCallWaiter !== undefined ? data.allowCallWaiter : data.callWaiterEnabled;
+    const effectiveAllowRequestBill =
+      data.allowRequestBill !== undefined ? data.allowRequestBill : data.requestBillEnabled;
+    const effectiveAllowTakeaway =
+      data.allowTakeawayQr !== undefined ? data.allowTakeawayQr : data.takeawayEnabled;
 
     const updated = await withTenantContext(req.auth!, async (client) => {
       await ensureDefaultCompanyTablesAndSettings(client, req.auth!.companyId);
+
+      let nextOpeningHours: Record<string, any> | null = null;
+      if (data.openingHours !== undefined || data.productMetadata !== undefined) {
+        const curRes = await client.query(
+          `SELECT opening_hours FROM public.qr_menu_settings WHERE company_id = $1`,
+          [req.auth!.companyId]
+        );
+        const existingOh =
+          curRes.rows[0]?.opening_hours && typeof curRes.rows[0].opening_hours === 'object'
+            ? { ...curRes.rows[0].opening_hours }
+            : {};
+        if (typeof data.openingHours === 'string') {
+          existingOh.label = data.openingHours;
+        } else if (data.openingHours && typeof data.openingHours === 'object') {
+          Object.assign(existingOh, data.openingHours);
+        }
+        if (data.productMetadata && typeof data.productMetadata === 'object') {
+          existingOh.__productMeta = {
+            ...(existingOh.__productMeta || {}),
+            ...data.productMetadata,
+          };
+        }
+        nextOpeningHours = existingOh;
+      }
+
       const result = await client.query(
         `UPDATE public.qr_menu_settings
          SET display_name = COALESCE($1, display_name),
-             logo_url = CASE WHEN $2::BOOLEAN THEN $3 ELSE logo_url END,
-             cover_url = CASE WHEN $4::BOOLEAN THEN $5 ELSE cover_url END,
-             primary_color = COALESCE($6, primary_color),
-             accent_color = COALESCE($7, accent_color),
-             phone = CASE WHEN $8::BOOLEAN THEN $9 ELSE phone END,
-             address = CASE WHEN $10::BOOLEAN THEN $11 ELSE address END,
-             opening_hours = COALESCE($12, opening_hours),
-             welcome_message = COALESCE($13, welcome_message),
-             footer_note = COALESCE($14, footer_note),
-             qr_ordering_enabled = COALESCE($15, qr_ordering_enabled),
-             takeaway_enabled = COALESCE($16, takeaway_enabled),
-             auto_accept_orders = COALESCE($17, auto_accept_orders),
-             call_waiter_enabled = COALESCE($18, call_waiter_enabled),
-             request_bill_enabled = COALESCE($19, request_bill_enabled),
-             show_prices = COALESCE($20, show_prices),
-             estimated_prep_minutes = COALESCE($21, estimated_prep_minutes),
-             hidden_category_ids = COALESCE($22::jsonb, hidden_category_ids),
-             category_order = COALESCE($23::jsonb, category_order),
-             hidden_product_ids = COALESCE($24::jsonb, hidden_product_ids),
-             product_order = COALESCE($25::jsonb, product_order),
-             product_metadata = COALESCE(product_metadata || $26::jsonb, product_metadata),
+             tagline = CASE WHEN $2::BOOLEAN THEN $3 ELSE tagline END,
+             logo_url = CASE WHEN $4::BOOLEAN THEN $5 ELSE logo_url END,
+             cover_url = CASE WHEN $6::BOOLEAN THEN $7 ELSE cover_url END,
+             primary_color = COALESCE($8, primary_color),
+             phone = CASE WHEN $9::BOOLEAN THEN $10 ELSE phone END,
+             whatsapp_phone = CASE WHEN $11::BOOLEAN THEN $12 ELSE whatsapp_phone END,
+             address = CASE WHEN $13::BOOLEAN THEN $14 ELSE address END,
+             opening_hours = COALESCE($15::jsonb, opening_hours),
+             welcome_message = COALESCE($16, welcome_message),
+             footer_note = COALESCE($17, footer_note),
+             qr_ordering_enabled = COALESCE($18, qr_ordering_enabled),
+             allow_takeaway_qr = COALESCE($19, allow_takeaway_qr),
+             auto_accept_orders = COALESCE($20, auto_accept_orders),
+             allow_call_waiter = COALESCE($21, allow_call_waiter),
+             allow_request_bill = COALESCE($22, allow_request_bill),
              updated_at = NOW()
-         WHERE company_id = $27
+         WHERE company_id = $23
          RETURNING *`,
         [
           data.displayName ?? null,
+          data.tagline !== undefined,
+          data.tagline ?? null,
           data.logoUrl !== undefined,
           data.logoUrl ?? null,
           data.coverUrl !== undefined,
           data.coverUrl ?? null,
           data.primaryColor ?? null,
-          data.accentColor ?? null,
           data.phone !== undefined,
           data.phone ?? null,
+          data.whatsappPhone !== undefined,
+          data.whatsappPhone ?? null,
           data.address !== undefined,
           data.address ?? null,
-          data.openingHours ?? null,
+          nextOpeningHours ? JSON.stringify(nextOpeningHours) : null,
           data.welcomeMessage ?? null,
           data.footerNote ?? null,
           typeof data.qrOrderingEnabled === 'boolean' ? data.qrOrderingEnabled : null,
-          typeof data.takeawayEnabled === 'boolean' ? data.takeawayEnabled : null,
+          typeof effectiveAllowTakeaway === 'boolean' ? effectiveAllowTakeaway : null,
           typeof data.autoAcceptOrders === 'boolean' ? data.autoAcceptOrders : null,
-          typeof data.callWaiterEnabled === 'boolean' ? data.callWaiterEnabled : null,
-          typeof data.requestBillEnabled === 'boolean' ? data.requestBillEnabled : null,
-          typeof data.showPrices === 'boolean' ? data.showPrices : null,
-          data.estimatedPrepMinutes ?? null,
-          data.hiddenCategoryIds ? JSON.stringify(data.hiddenCategoryIds) : null,
-          data.categoryOrder ? JSON.stringify(data.categoryOrder) : null,
-          data.hiddenProductIds ? JSON.stringify(data.hiddenProductIds) : null,
-          data.productOrder ? JSON.stringify(data.productOrder) : null,
-          data.productMetadata ? JSON.stringify(data.productMetadata) : null,
+          typeof effectiveAllowCallWaiter === 'boolean' ? effectiveAllowCallWaiter : null,
+          typeof effectiveAllowRequestBill === 'boolean' ? effectiveAllowRequestBill : null,
           req.auth!.companyId,
         ]
       );
@@ -868,7 +914,9 @@ qrAdminRouter.get('/orders', async (req, res, next) => {
         query += ` AND qo.closed_at IS NULL`;
       }
 
-      params.push(parseInt(limit as string, 10) || 60);
+      const parsedLimit = Number.parseInt(String(limit ?? ''), 10);
+      const safeLimit = Math.min(200, Math.max(1, Number.isFinite(parsedLimit) ? parsedLimit : 60));
+      params.push(safeLimit);
       query += ` ORDER BY qo.created_at DESC LIMIT $${params.length}`;
 
       const ordersRes = await client.query(query, params);
@@ -951,7 +999,7 @@ qrAdminRouter.post('/orders/:id/status', async (req, res, next) => {
       const order = ordRes.rows[0];
 
       if (order.status === 'rejected' || order.status === 'cancelled') {
-        throw new Error(`Cette commande est déjà au statut ${order.status}`);
+        throw createHttpError(409, `Cette commande est déjà au statut ${order.status}`, 'INVALID_ORDER_STATUS');
       }
 
       let linkedSaleId: string | null = order.linked_sale_id;
@@ -1068,7 +1116,7 @@ qrAdminRouter.post('/orders/:id/pay', async (req, res, next) => {
       }
 
       if (['rejected', 'cancelled'].includes(order.status)) {
-        throw new Error('Impossible d\'encaisser une commande refusée ou annulée');
+        throw createHttpError(409, "Impossible d'encaisser une commande refusée ou annulée", 'ORDER_NOT_PAYABLE');
       }
 
       let saleId: string = order.linked_sale_id;
@@ -1326,20 +1374,50 @@ qrAdminRouter.get('/analytics', async (req, res, next) => {
       const sumRow = summaryRes.rows[0] || {};
       const sold = parseFloat(sumRow.total_sold_amount || 0);
       const collected = parseFloat(sumRow.total_collected_amount || 0);
+      const unpaid = Math.max(0, Math.round((sold - collected) * 100) / 100);
+      const totalOrders = Number(sumRow.total_orders || 0);
+      const servedOrders = (byStatusRes.rows || [])
+        .filter((r: any) => r.status === 'served')
+        .reduce((acc: number, r: any) => acc + Number(r.count || 0), 0);
+      const cancelledOrRejectedOrders = (byStatusRes.rows || [])
+        .filter((r: any) => r.status === 'cancelled' || r.status === 'rejected')
+        .reduce((acc: number, r: any) => acc + Number(r.count || 0), 0);
+      const activeOrdersForBasket = Math.max(0, totalOrders - cancelledOrRejectedOrders);
+      const avgBasket = activeOrdersForBasket > 0 ? Math.round((sold / activeOrdersForBasket) * 100) / 100 : 0;
 
       return {
         summary: {
-          totalOrders: Number(sumRow.total_orders || 0),
+          totalOrders,
           takeawayOrders: Number(sumRow.takeaway_orders || 0),
           dineInOrders: Number(sumRow.dine_in_orders || 0),
           totalSoldAmount: sold,
           totalCollectedAmount: collected,
-          remainingToPayAmount: Math.max(0, Math.round((sold - collected) * 100) / 100),
+          remainingToPayAmount: unpaid,
           avgPrepMinutes: sumRow.avg_prep_minutes !== null ? parseFloat(sumRow.avg_prep_minutes) : null,
+          total_orders: totalOrders,
+          served_orders: servedOrders,
+          cancelled_or_rejected_orders: cancelledOrRejectedOrders,
+          paid_revenue: collected,
+          unpaid_active_revenue: unpaid,
+          average_basket: avgBasket,
+          dine_in_orders: Number(sumRow.dine_in_orders || 0),
+          takeaway_orders: Number(sumRow.takeaway_orders || 0),
         },
         byStatus: byStatusRes.rows,
-        byTable: byTableRes.rows,
-        topProducts: topProductsRes.rows,
+        byTable: byTableRes.rows.map((t: any) => ({
+          ...t,
+          table_code_snapshot: t.table_code,
+          table_name_snapshot: t.table_name,
+        })),
+        topTables: byTableRes.rows.map((t: any) => ({
+          ...t,
+          table_code_snapshot: t.table_code,
+          table_name_snapshot: t.table_name,
+        })),
+        topProducts: topProductsRes.rows.map((p: any) => ({
+          ...p,
+          product_name_snapshot: p.product_name,
+        })),
         topCategories: topCategoriesRes.rows,
         peakHours: peakHoursRes.rows,
       };

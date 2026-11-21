@@ -62,17 +62,20 @@ class PGlitePoolAdapter implements IDbPool {
         const db = new PGlite(this.dataDir);
         await db.waitReady;
 
-        const reg = await db.query<{ mig: string | null; comp: string | null; dt: string | null; sc: string | null }>(
-          "SELECT to_regclass('public.schema_migrations') AS mig, to_regclass('public.companies') AS comp, to_regclass('public.dining_tables') AS dt, to_regclass('public.saas_countries') AS sc"
+        const reg = await db.query<{ mig: string | null; comp: string | null; dt: string | null; sc: string | null; uta: string | null }>(
+          "SELECT to_regclass('public.schema_migrations') AS mig, to_regclass('public.companies') AS comp, to_regclass('public.dining_tables') AS dt, to_regclass('public.saas_countries') AS sc, to_regclass('public.user_terms_acceptances') AS uta"
         );
-        let has011 = false;
+        const { applyMigrations, getLatestMigrationFilename } = await import('./migrate.js');
+        const latestMigration = getLatestMigrationFilename();
+        let hasLatest = false;
         if (reg.rows[0]?.mig) {
-          const m011 = await db.query(
-            "SELECT 1 FROM public.schema_migrations WHERE filename = '011_sn_gn_focus_and_superadmin.sql' LIMIT 1"
+          const mLatest = await db.query(
+            'SELECT 1 FROM public.schema_migrations WHERE filename = $1 LIMIT 1',
+            [latestMigration]
           );
-          has011 = m011.rows.length > 0;
+          hasLatest = mLatest.rows.length > 0;
         }
-        if (!reg.rows[0]?.mig || !reg.rows[0]?.comp || !reg.rows[0]?.dt || !reg.rows[0]?.sc || !has011) {
+        if (!reg.rows[0]?.mig || !reg.rows[0]?.comp || !reg.rows[0]?.dt || !reg.rows[0]?.sc || !reg.rows[0]?.uta || !hasLatest) {
           const bootstrapPool: IDbPool & { exec: (sql: string) => Promise<void> } = {
             query: async (text: string, params?: any[]) => {
               const res = await db.query(text, params);
@@ -90,7 +93,6 @@ class PGlitePoolAdapter implements IDbPool {
             }),
             end: async () => {},
           };
-          const { applyMigrations } = await import('./migrate.js');
           await applyMigrations(bootstrapPool);
         }
 
@@ -209,14 +211,17 @@ export async function ensureDatabaseReady(): Promise<void> {
   if (!pgReadyPromise) {
     pgReadyPromise = (async () => {
       try {
+        const { applyMigrations, getLatestMigrationFilename } = await import('./migrate.js');
+        const latestMigration = getLatestMigrationFilename();
         const probe = await adminPoolInstance.query(
-          "SELECT to_regclass('public.schema_migrations') AS mig, to_regclass('public.companies') AS comp, to_regclass('public.dining_tables') AS dt, to_regclass('public.saas_countries') AS sc"
+          "SELECT to_regclass('public.schema_migrations') AS mig, to_regclass('public.companies') AS comp, to_regclass('public.dining_tables') AS dt, to_regclass('public.saas_countries') AS sc, to_regclass('public.user_terms_acceptances') AS uta"
         );
-        if (probe.rows[0]?.mig && probe.rows[0]?.comp && probe.rows[0]?.dt && probe.rows[0]?.sc) {
-          const m011 = await adminPoolInstance.query(
-            "SELECT 1 FROM public.schema_migrations WHERE filename = '011_sn_gn_focus_and_superadmin.sql' LIMIT 1"
+        if (probe.rows[0]?.mig && probe.rows[0]?.comp && probe.rows[0]?.dt && probe.rows[0]?.sc && probe.rows[0]?.uta) {
+          const mLatest = await adminPoolInstance.query(
+            'SELECT 1 FROM public.schema_migrations WHERE filename = $1 LIMIT 1',
+            [latestMigration]
           );
-          if (m011.rows.length > 0) {
+          if (mLatest.rows.length > 0) {
             return;
           }
         }
@@ -225,7 +230,6 @@ export async function ensureDatabaseReady(): Promise<void> {
         try {
           await lockClient.query('SELECT pg_advisory_lock(73910421)');
           try {
-            const { applyMigrations } = await import('./migrate.js');
             await applyMigrations(adminPoolInstance);
           } finally {
             await lockClient.query('SELECT pg_advisory_unlock(73910421)').catch(() => {});

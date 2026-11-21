@@ -66,6 +66,7 @@ catalogRouter.post('/categories', async (req, res, next) => {
 // -------------------------------------------------------------
 catalogRouter.get('/products', async (req, res, next) => {
   try {
+    const includeInactive = req.query.includeInactive === 'true';
     const products = await withTenantContext(req.auth!, async (client) => {
       const result = await client.query(
         `SELECT p.id, p.category_id, c.name as category_name, p.name, p.sku,
@@ -75,6 +76,7 @@ catalogRouter.get('/products', async (req, res, next) => {
          FROM public.products p
          LEFT JOIN public.categories c ON c.id = p.category_id
          LEFT JOIN public.stock_levels sl ON sl.product_id = p.id
+         ${includeInactive ? '' : 'WHERE p.is_active = TRUE'}
          ORDER BY p.name ASC`
       );
       return result.rows;

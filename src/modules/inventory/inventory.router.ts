@@ -6,6 +6,15 @@ import { requireActiveSubscriptionWriteAccess } from '../subscriptions/subscript
 
 export const inventoryRouter = Router();
 
+function parsePagination(rawLimit: unknown, rawOffset: unknown, defaultLimit = 100): { limit: number; offset: number } {
+  const parsedLimit = Number.parseInt(String(rawLimit ?? ''), 10);
+  const parsedOffset = Number.parseInt(String(rawOffset ?? ''), 10);
+  return {
+    limit: Math.min(200, Math.max(1, Number.isFinite(parsedLimit) ? parsedLimit : defaultLimit)),
+    offset: Math.max(0, Number.isFinite(parsedOffset) ? parsedOffset : 0),
+  };
+}
+
 inventoryRouter.use(requireAuth);
 inventoryRouter.use(requireActiveSubscriptionWriteAccess);
 inventoryRouter.use((req, res, next) => {
@@ -34,7 +43,7 @@ inventoryRouter.get('/levels', async (req, res, next) => {
          FROM public.stock_levels sl
          JOIN public.products p ON p.id = sl.product_id
          LEFT JOIN public.categories c ON c.id = p.category_id
-         WHERE 1=1
+         WHERE p.is_active = TRUE
       `;
       const params: any[] = [];
 
@@ -54,10 +63,11 @@ inventoryRouter.get('/levels', async (req, res, next) => {
 
       query += ` ORDER BY (sl.current_quantity <= p.min_stock_alert) DESC, p.name ASC`;
 
-      params.push(parseInt(limit as string, 10));
+      const page = parsePagination(limit, offset, 100);
+      params.push(page.limit);
       query += ` LIMIT $${params.length}`;
 
-      params.push(parseInt(offset as string, 10));
+      params.push(page.offset);
       query += ` OFFSET $${params.length}`;
 
       const result = await client.query(query, params);
@@ -88,6 +98,7 @@ inventoryRouter.get('/alerts', async (req, res, next) => {
          JOIN public.products p ON p.id = sl.product_id
          WHERE sl.current_quantity <= p.min_stock_alert
            AND p.inventory_tracking <> 'none'
+           AND p.is_active = TRUE
          ORDER BY sl.current_quantity ASC, p.name ASC`
       );
       return result.rows;
@@ -113,7 +124,8 @@ inventoryRouter.get('/summary', async (req, res, next) => {
           COUNT(CASE WHEN sl.current_quantity <= 0 THEN 1 END)::INT as out_of_stock_count
          FROM public.stock_levels sl
          JOIN public.products p ON p.id = sl.product_id
-         WHERE p.inventory_tracking <> 'none'`
+         WHERE p.inventory_tracking <> 'none'
+           AND p.is_active = TRUE`
       );
       return result.rows[0];
     });
@@ -164,10 +176,11 @@ inventoryRouter.get('/movements', async (req, res, next) => {
         query += ` AND sm.created_at <= $${params.length}`;
       }
 
-      params.push(parseInt(limit as string, 10));
+      const page = parsePagination(limit, offset, 100);
+      params.push(page.limit);
       query += ` ORDER BY sm.created_at DESC LIMIT $${params.length}`;
 
-      params.push(parseInt(offset as string, 10));
+      params.push(page.offset);
       query += ` OFFSET $${params.length}`;
 
       const result = await client.query(query, params);

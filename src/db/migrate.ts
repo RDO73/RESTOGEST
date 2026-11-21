@@ -38,6 +38,19 @@ async function execSql(pool: IDbPool, sql: string): Promise<void> {
   }
 }
 
+export function getLatestMigrationFilename(migrationsDir?: string): string {
+  const dir = resolveMigrationsDir(migrationsDir);
+  const files = fs
+    .readdirSync(dir)
+    .filter((f) => /^\d+_.*\.sql$/i.test(f))
+    .sort((a, b) => a.localeCompare(b, 'en'));
+
+  if (files.length === 0) {
+    throw new Error(`Aucun fichier de migration trouvé dans : ${dir}`);
+  }
+  return files[files.length - 1];
+}
+
 export async function applyMigrations(
   pool: IDbPool = adminPool,
   migrationsDir?: string

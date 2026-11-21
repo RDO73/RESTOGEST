@@ -154,7 +154,9 @@ export const PAYMENT_PROVIDER_ADAPTERS: Record<string, PaymentProviderAdapter> =
     }),
     verifyWebhookSignature: (rawBody, headers, fallbackSecret) => {
       if (process.env.FLW_WEBHOOK_HASH && headers['verif-hash']) {
-        return String(headers['verif-hash']) === process.env.FLW_WEBHOOK_HASH;
+        const expectedHash = crypto.createHash('sha256').update(process.env.FLW_WEBHOOK_HASH).digest();
+        const receivedHash = crypto.createHash('sha256').update(String(headers['verif-hash'])).digest();
+        return crypto.timingSafeEqual(expectedHash, receivedHash);
       }
       return verifyDefaultHmac(rawBody, headers, fallbackSecret);
     },

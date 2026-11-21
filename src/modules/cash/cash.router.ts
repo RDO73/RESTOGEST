@@ -7,6 +7,22 @@ import { requireActiveSubscriptionWriteAccess } from '../subscriptions/subscript
 
 export const cashRouter = Router();
 
+function createHttpError(statusCode: number, message: string, code: string): Error & { statusCode: number; code: string } {
+  const err = new Error(message) as Error & { statusCode: number; code: string };
+  err.statusCode = statusCode;
+  err.code = code;
+  return err;
+}
+
+function parsePagination(rawLimit: unknown, rawOffset: unknown, defaultLimit = 50): { limit: number; offset: number } {
+  const parsedLimit = Number.parseInt(String(rawLimit ?? ''), 10);
+  const parsedOffset = Number.parseInt(String(rawOffset ?? ''), 10);
+  return {
+    limit: Math.min(200, Math.max(1, Number.isFinite(parsedLimit) ? parsedLimit : defaultLimit)),
+    offset: Math.max(0, Number.isFinite(parsedOffset) ? parsedOffset : 0),
+  };
+}
+
 cashRouter.use(requireAuth);
 cashRouter.use(requireActiveSubscriptionWriteAccess);
 cashRouter.use((req, res, next) => {
@@ -220,10 +236,11 @@ cashRouter.get('/sessions', async (req, res, next) => {
 
       query += ` ORDER BY cs.opened_at DESC`;
 
-      params.push(parseInt(limit as string, 10));
+      const page = parsePagination(limit, offset, 50);
+      params.push(page.limit);
       query += ` LIMIT $${params.length}`;
 
-      params.push(parseInt(offset as string, 10));
+      params.push(page.offset);
       query += ` OFFSET $${params.length}`;
 
       const result = await client.query(query, params);
@@ -313,7 +330,11 @@ cashRouter.post('/sessions/open', async (req, res, next) => {
         [req.auth!.companyId]
       );
       if (existing.rows.length > 0) {
-        throw new Error('Une session de caisse est déjà active pour cette entreprise. Clôturez-la avant d\'en ouvrir une nouvelle.');
+        throw createHttpError(
+          409,
+          "Une session de caisse est déjà active pour cette entreprise. Clôturez-la avant d'en ouvrir une nouvelle.",
+          'CASH_SESSION_ALREADY_OPEN'
+        );
       }
 
       const result = await client.query(
@@ -412,10 +433,11 @@ cashRouter.get('/expenses', async (req, res, next) => {
 
       query += ` ORDER BY e.created_at DESC`;
 
-      params.push(parseInt(limit as string, 10));
+      const page = parsePagination(limit, offset, 50);
+      params.push(page.limit);
       query += ` LIMIT $${params.length}`;
 
-      params.push(parseInt(offset as string, 10));
+      params.push(page.offset);
       query += ` OFFSET $${params.length}`;
 
       const result = await client.query(query, params);

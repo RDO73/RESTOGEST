@@ -19,6 +19,7 @@ import {
   recordLoginFailure,
   resetLoginFailures,
 } from '../../middlewares/rate-limit.js';
+import { recordUserTermsAcceptance } from '../subscriptions/subscription-guard.service.js';
 
 export const superAdminRouter = Router();
 
@@ -44,7 +45,7 @@ async function ensureAdminSecurityEventsTable(): Promise<void> {
        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
        action VARCHAR(100) NOT NULL,
        table_name VARCHAR(100) NOT NULL DEFAULT 'super_admin_security',
-       company_name VARCHAR(255) NOT NULL DEFAULT 'RESTOGEST Plateforme',
+       company_name VARCHAR(255) NOT NULL DEFAULT 'MyRestoGest Plateforme',
        user_email VARCHAR(255) NOT NULL,
        new_values JSONB NOT NULL DEFAULT '{}'::jsonb
      )`
@@ -57,7 +58,7 @@ function recordAdminSecurityEvent(action: string, details: Record<string, any>):
     created_at: new Date().toISOString(),
     action,
     table_name: 'super_admin_security',
-    company_name: 'RESTOGEST Plateforme',
+    company_name: 'MyRestoGest Plateforme',
     user_email: config.superAdmin.email,
     new_values: details,
   };
@@ -119,7 +120,7 @@ superAdminRouter.post('/auth/login', checkLoginRateLimit('admin_login'), async (
       role: 'SUPER_ADMIN',
       email: config.superAdmin.email,
       fullName: config.superAdmin.fullName,
-      companyName: 'RESTOGEST Plateforme SaaS',
+      companyName: 'MyRestoGest Plateforme SaaS',
       currency: 'XOF',
       isDemo: false,
     });
@@ -178,20 +179,27 @@ superAdminRouter.get('/establishments', requireAuth, requireSuperAdmin, async (r
       const params: any[] = [];
       const where: string[] = [`c.id <> '00000000-0000-0000-0000-000000000000'::UUID`];
 
+      const effectiveSubStatusSql = `
+        CASE
+          WHEN cs.status IN ('trial', 'active') AND COALESCE(cs.current_period_end, cs.trial_ends_at) < NOW() THEN 'expired'
+          ELSE COALESCE(cs.status, 'trial')
+        END
+      `;
+
       if (countryFilter) {
         params.push(countryFilter);
         where.push(`COALESCE(c.country_code, 'SN') = $${params.length}`);
       }
       if (statusFilter) {
         params.push(statusFilter);
-        where.push(`COALESCE(cs.status, 'trial') = $${params.length}`);
+        where.push(`(${effectiveSubStatusSql}) = $${params.length}`);
       }
 
       const result = await client.query(
         `SELECT c.id, c.name, c.business_type, COALESCE(c.country_code, 'SN') AS country_code,
                 c.currency, c.is_active, c.created_at,
                 cs.id AS subscription_id, COALESCE(cs.plan_code, 'PRO') AS plan_code,
-                COALESCE(cs.status, 'trial') AS subscription_status,
+                (${effectiveSubStatusSql}) AS subscription_status,
                 COALESCE(cs.billing_period, 'monthly') AS billing_period,
                 cs.current_period_end,
                 cs.last_payment_method,
@@ -201,16 +209,18 @@ superAdminRouter.get('/establishments', requireAuth, requireSuperAdmin, async (r
                   SELECT u.email
                   FROM public.company_users cu
                   JOIN public.users u ON u.id = cu.user_id
+                  LEFT JOIN public.roles r ON r.id = cu.role_id AND r.company_id = cu.company_id
                   WHERE cu.company_id = c.id
-                  ORDER BY cu.user_id ASC
+                  ORDER BY COALESCE((r.permissions->>'all')::boolean, FALSE) DESC, cu.joined_at ASC
                   LIMIT 1
                 ) AS owner_email,
                 (
                   SELECT u.full_name
                   FROM public.company_users cu
                   JOIN public.users u ON u.id = cu.user_id
+                  LEFT JOIN public.roles r ON r.id = cu.role_id AND r.company_id = cu.company_id
                   WHERE cu.company_id = c.id
-                  ORDER BY cu.user_id ASC
+                  ORDER BY COALESCE((r.permissions->>'all')::boolean, FALSE) DESC, cu.joined_at ASC
                   LIMIT 1
                 ) AS owner_name,
                 (
@@ -305,20 +315,48 @@ superAdminRouter.post('/establishments/demo', requireAuth, requireSuperAdmin, as
       [companyId, currency, countryCode]
     );
 
+    const proPlanRes = await adminPool.query(
+      `SELECT id FROM public.subscription_plans WHERE code = 'PRO' LIMIT 1`
+    );
+    const proPlanId = proPlanRes.rows[0]?.id || null;
+
     await adminPool.query(
-      `UPDATE public.company_subscriptions
-       SET status = $2,
+      `INSERT INTO public.company_subscriptions (
+         company_id, plan_id, plan_code, status, billing_period,
+         starts_at, ends_at, trial_ends_at, current_period_start, current_period_end,
+         last_payment_method, last_payment_ref, updated_at
+       )
+       VALUES (
+         $1, $2, 'PRO', $3, 'monthly',
+         NOW(),
+         NOW() + make_interval(days => $4),
+         NOW() + make_interval(days => $4),
+         NOW(),
+         NOW() + make_interval(days => $4),
+         'admin_demo', 'DEMO-SUPERADMIN', NOW()
+       )
+       ON CONFLICT (company_id) DO UPDATE
+       SET plan_id = COALESCE(EXCLUDED.plan_id, public.company_subscriptions.plan_id),
            plan_code = 'PRO',
+           status = EXCLUDED.status,
            billing_period = 'monthly',
-           trial_ends_at = NOW() + make_interval(days => $3),
-           current_period_start = NOW(),
-           current_period_end = NOW() + make_interval(days => $3),
+           starts_at = EXCLUDED.starts_at,
+           ends_at = EXCLUDED.ends_at,
+           trial_ends_at = EXCLUDED.trial_ends_at,
+           current_period_start = EXCLUDED.current_period_start,
+           current_period_end = EXCLUDED.current_period_end,
            last_payment_method = 'admin_demo',
            last_payment_ref = 'DEMO-SUPERADMIN',
-           updated_at = NOW()
-       WHERE company_id = $1`,
-      [companyId, parsed.status, durationDays]
+           updated_at = NOW()`,
+      [companyId, proPlanId, parsed.status, durationDays]
     );
+
+    await recordUserTermsAcceptance(adminPool, {
+      companyId,
+      userId,
+      source: 'admin_demo',
+      userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+    });
 
     try {
       await adminPool.query(
@@ -700,7 +738,10 @@ superAdminRouter.get(
           `SELECT c.id, c.name, c.business_type, COALESCE(c.country_code, 'SN') AS country_code,
                   c.currency, c.default_tax_rate, c.allow_negative_stock, c.is_active, c.created_at,
                   cs.id AS subscription_id, COALESCE(cs.plan_code, 'PRO') AS plan_code,
-                  COALESCE(cs.status, 'trial') AS subscription_status,
+                  CASE
+                    WHEN cs.status IN ('trial', 'active') AND COALESCE(cs.current_period_end, cs.trial_ends_at) < NOW() THEN 'expired'
+                    ELSE COALESCE(cs.status, 'trial')
+                  END AS subscription_status,
                   COALESCE(cs.billing_period, 'monthly') AS billing_period,
                   cs.trial_ends_at, cs.current_period_start, cs.current_period_end,
                   cs.last_payment_method, cs.last_payment_ref, cs.last_payment_amount
