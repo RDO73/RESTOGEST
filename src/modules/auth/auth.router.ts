@@ -527,9 +527,57 @@ authRouter.post('/establishments', requireAuth, async (req, res, next) => {
       const client = await adminPool.connect();
       try {
         await client.query('BEGIN');
+
+        // 1. Vérifier strictement que l'utilisateur connecté est bien le propriétaire actif de l'établissement source
+        const ownerCheck = await client.query(
+          `SELECT cu.user_id, c.is_active AS company_active, r.permissions
+           FROM public.company_users cu
+           JOIN public.companies c ON c.id = cu.company_id
+           JOIN public.users u ON u.id = cu.user_id
+           LEFT JOIN public.roles r ON r.id = cu.role_id AND r.company_id = cu.company_id
+           WHERE cu.company_id = $1
+             AND cu.user_id = $2
+             AND cu.is_active = TRUE
+             AND c.is_active = TRUE
+             AND u.is_active = TRUE
+             AND COALESCE((r.permissions->>'all')::boolean, FALSE) = TRUE
+           LIMIT 1`,
+          [auth.companyId, auth.userId]
+        );
+        if (ownerCheck.rows.length === 0) {
+          const err = new Error(
+            "Accès refusé : seul le propriétaire actif de l'établissement principal peut créer un site supplémentaire."
+          ) as Error & { statusCode?: number; code?: string };
+          err.statusCode = 403;
+          err.code = 'OWNER_PERMISSION_REQUIRED';
+          throw err;
+        }
+
+        // 2. Vérifier la réacceptation CGU/CGV, l'état actif de l'abonnement et le quota maxLocations (10 sur ENTREPRISE)
         await enforceSubscriptionQuota(client, auth.companyId, 'locations', {
           ownerUserId: auth.userId,
         });
+
+        const parentSubState = await resolveCompanySubscriptionState(client, auth.companyId);
+        if (parentSubState.status !== 'active' || parentSubState.isReadOnly) {
+          const err = new Error(
+            "Un abonnement payant actif (formule Entreprise) est requis pour créer un établissement supplémentaire."
+          ) as Error & { statusCode?: number; code?: string };
+          err.statusCode = 403;
+          err.code = 'ACTIVE_ENTERPRISE_SUBSCRIPTION_REQUIRED';
+          throw err;
+        }
+        const parentSub = parentSubState.subscription;
+        const rootParentCompanyId =
+          parentSub.last_payment_ref && String(parentSub.last_payment_ref).startsWith('MULTI-SITE:')
+            ? String(parentSub.last_payment_ref).slice('MULTI-SITE:'.length).trim()
+            : auth.companyId;
+
+        const planRes = await client.query(
+          `SELECT id FROM public.subscription_plans WHERE code = $1 LIMIT 1`,
+          [parentSubState.planCode]
+        );
+        const inheritedPlanId = planRes.rows[0]?.id || parentSub.plan_id || null;
 
         const countryCode = data.countryCode.trim().toUpperCase();
         const countryRes = await client.query(
@@ -567,14 +615,82 @@ authRouter.post('/establishments', requireAuth, async (req, res, next) => {
           [newCompany.id, resolvedCurrency, resolvedCountryCode]
         );
 
-        await initializeCompanyTrialSubscription(client, newCompany.id, {
-          planCode: 'PRO',
-          status: 'trial',
-          durationDays: 14,
+        // 3. Héritage direct de l'abonnement ENTREPRISE actif (sans créer d'essai PRO de 14 jours ni de double facturation)
+        const inheritedSubRes = await client.query(
+          `INSERT INTO public.company_subscriptions (
+             company_id, plan_id, plan_code, status, billing_period,
+             starts_at, ends_at, trial_ends_at, current_period_start, current_period_end,
+             custom_max_users, custom_max_locations, custom_max_tables, custom_max_products,
+             last_payment_method, last_payment_ref, last_payment_amount, updated_at
+           )
+           VALUES (
+             $1, $2, $3, $4, $5,
+             $6, $7, $8, $9, $10,
+             $11, $12, $13, $14,
+             'multi_site_inheritance', $15, 0, NOW()
+           )
+           ON CONFLICT (company_id) DO UPDATE
+           SET plan_id = EXCLUDED.plan_id,
+               plan_code = EXCLUDED.plan_code,
+               status = EXCLUDED.status,
+               billing_period = EXCLUDED.billing_period,
+               starts_at = EXCLUDED.starts_at,
+               ends_at = EXCLUDED.ends_at,
+               trial_ends_at = EXCLUDED.trial_ends_at,
+               current_period_start = EXCLUDED.current_period_start,
+               current_period_end = EXCLUDED.current_period_end,
+               custom_max_users = EXCLUDED.custom_max_users,
+               custom_max_locations = EXCLUDED.custom_max_locations,
+               custom_max_tables = EXCLUDED.custom_max_tables,
+               custom_max_products = EXCLUDED.custom_max_products,
+               last_payment_method = EXCLUDED.last_payment_method,
+               last_payment_ref = EXCLUDED.last_payment_ref,
+               last_payment_amount = 0,
+               updated_at = NOW()
+           RETURNING *`,
+          [
+            newCompany.id,
+            inheritedPlanId,
+            parentSubState.planCode,
+            parentSubState.status,
+            parentSub.billing_period || 'monthly',
+            parentSub.starts_at || new Date().toISOString(),
+            parentSub.ends_at || parentSub.current_period_end || new Date().toISOString(),
+            parentSub.trial_ends_at || null,
+            parentSub.current_period_start || new Date().toISOString(),
+            parentSub.current_period_end || parentSub.ends_at || new Date().toISOString(),
+            parentSub.custom_max_users ?? null,
+            parentSub.custom_max_locations ?? null,
+            parentSub.custom_max_tables ?? null,
+            parentSub.custom_max_products ?? null,
+            `MULTI-SITE:${rootParentCompanyId}`,
+          ]
+        );
+
+        // 4. Enregistrer la preuve d'acceptation CGU/CGV active du propriétaire sur le nouvel établissement
+        await recordUserTermsAcceptance(client, {
+          companyId: newCompany.id,
+          userId: auth.userId,
+          source: 'register',
+          userAgent: String(req.headers['user-agent'] || '') || null,
         });
 
         await client.query('COMMIT');
-        return newCompany;
+        return {
+          ...newCompany,
+          subscription: {
+            ...inheritedSubRes.rows[0],
+            plan_code: parentSubState.planCode,
+            plan_name: parentSubState.planName,
+            status: parentSubState.status,
+            max_users: parentSubState.quotas.maxUsers,
+            max_locations: parentSubState.quotas.maxLocations,
+            max_tables: parentSubState.quotas.maxTables,
+            max_products: parentSubState.quotas.maxProducts,
+            parent_company_id: rootParentCompanyId,
+            is_linked_multi_site: true,
+          },
+        };
       } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
         throw err;

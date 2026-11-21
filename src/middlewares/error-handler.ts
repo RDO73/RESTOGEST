@@ -34,6 +34,9 @@ export function errorHandler(
         ...(err.planCode ? { planCode: err.planCode } : {}),
         ...(typeof err.currentCount === 'number' ? { currentCount: err.currentCount } : {}),
         ...(typeof err.maxAllowed === 'number' ? { maxAllowed: err.maxAllowed } : {}),
+        ...(err.requiresReacceptance ? { requiresReacceptance: true } : {}),
+        ...(err.currentRequiredCguVersion ? { currentRequiredCguVersion: err.currentRequiredCguVersion } : {}),
+        ...(err.currentRequiredCgvVersion ? { currentRequiredCgvVersion: err.currentRequiredCgvVersion } : {}),
       },
       message: err.message,
     });

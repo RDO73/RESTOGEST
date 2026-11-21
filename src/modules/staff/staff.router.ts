@@ -1,8 +1,13 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth, requirePermission } from '../../middlewares/auth-middleware.js';
+import {
+  OWNER_SUPER_ADMIN_USER_ID,
+  requireAuth,
+  requirePermission,
+} from '../../middlewares/auth-middleware.js';
 import { adminPool, ensureDatabaseReady } from '../../db/pool.js';
+import { config } from '../../config/env.js';
 import { hashPassword } from '../../auth/password.js';
 import {
   ALL_PERMISSIONS,
@@ -104,6 +109,14 @@ staffRouter.post('/', async (req, res, next) => {
     const data = createStaffSchema.parse(req.body);
 
     const normalizedEmail = data.email.trim().toLowerCase();
+    if (normalizedEmail === config.superAdmin.email.trim().toLowerCase()) {
+      res.status(403).json({
+        success: false,
+        error: 'Ce compte système ne peut pas être rattaché comme employé.',
+      });
+      return;
+    }
+
     const preset = data.rolePreset ? getRolePreset(data.rolePreset) : undefined;
 
     let resolvedPerms: PermissionsMap;
@@ -137,36 +150,153 @@ staffRouter.post('/', async (req, res, next) => {
         await enforceSubscriptionQuota(client, companyId, 'users');
 
         const existingUser = await client.query(
-          `SELECT id FROM public.users WHERE LOWER(email) = $1 LIMIT 1`,
+          `SELECT id, email, full_name, is_active, created_at
+           FROM public.users
+           WHERE LOWER(email) = $1
+           LIMIT 1`,
           [normalizedEmail]
         );
+
+        let targetUser: { id: string; email: string; full_name: string; created_at?: any };
+        let isReattached = false;
+
         if (existingUser.rows.length > 0) {
-          await client.query('ROLLBACK');
-          res.status(409).json({
-            success: false,
-            error: 'Un compte utilisateur existe déjà avec cette adresse e-mail.',
-          });
-          return;
+          const foundUser = existingUser.rows[0];
+
+          // Interdire formellement le rattachement du compte Super-Admin plateforme
+          if (foundUser.id === OWNER_SUPER_ADMIN_USER_ID) {
+            await client.query('ROLLBACK');
+            res.status(403).json({
+              success: false,
+              error: 'Ce compte système ne peut pas être rattaché comme employé.',
+            });
+            return;
+          }
+
+          // Vérifier si le compte a été suspendu globalement par le Super-Admin plateforme
+          if (!foundUser.is_active) {
+            const saSuspendRes = await client.query(
+              `SELECT action
+               FROM public.audit_logs
+               WHERE record_id = $1::uuid
+                 AND action IN ('SUPER_ADMIN_USER_SUSPENDED', 'SUPER_ADMIN_USER_ACTIVATED')
+               ORDER BY created_at DESC
+               LIMIT 1`,
+              [foundUser.id]
+            );
+            if (saSuspendRes.rows[0]?.action === 'SUPER_ADMIN_USER_SUSPENDED') {
+              await client.query('ROLLBACK');
+              res.status(403).json({
+                success: false,
+                error: 'Ce compte utilisateur a été suspendu par l’administration de la plateforme.',
+              });
+              return;
+            }
+          }
+
+          // 1. Vérifier si l'utilisateur est déjà membre actif de cet établissement
+          const currentMembership = await client.query(
+            `SELECT is_active FROM public.company_users WHERE company_id = $1 AND user_id = $2 LIMIT 1`,
+            [companyId, foundUser.id]
+          );
+          if (currentMembership.rows.length > 0 && currentMembership.rows[0].is_active === true) {
+            await client.query('ROLLBACK');
+            res.status(409).json({
+              success: false,
+              error: 'Cet employé fait déjà partie de l’équipe active de votre établissement.',
+            });
+            return;
+          }
+
+          // 2. Interdire le rattachement d'un utilisateur appartenant à un autre établissement
+          const otherCompanyMembership = await client.query(
+            `SELECT COUNT(*)::INT AS cnt
+             FROM public.company_users
+             WHERE user_id = $1 AND company_id <> $2`,
+            [foundUser.id, companyId]
+          );
+          if (Number(otherCompanyMembership.rows[0]?.cnt || 0) > 0) {
+            await client.query('ROLLBACK');
+            res.status(409).json({
+              success: false,
+              error: 'Un compte utilisateur existe déjà avec cette adresse e-mail dans un autre établissement.',
+            });
+            return;
+          }
+
+          // 3. Vérifier que cette identité a légitimement appartenu à CET établissement par le passé
+          const priorHistoryCheck = await client.query(
+            `SELECT
+               (SELECT COUNT(*)::INT FROM public.company_users WHERE company_id = $1 AND user_id = $2) +
+               (SELECT COUNT(*)::INT FROM public.audit_logs WHERE company_id = $1 AND (record_id = $2::uuid OR user_id = $2::uuid)) +
+               (SELECT COUNT(*)::INT FROM public.user_sessions WHERE company_id = $1 AND user_id = $2) +
+               (SELECT COUNT(*)::INT FROM public.sales WHERE company_id = $1 AND user_id = $2) +
+               (SELECT COUNT(*)::INT FROM public.cash_sessions WHERE company_id = $1 AND (opened_by = $2 OR closed_by = $2)) +
+               (SELECT COUNT(*)::INT FROM public.stock_movements WHERE company_id = $1 AND user_id = $2) AS prior_links`,
+            [companyId, foundUser.id]
+          );
+          const hasPriorLinkToThisCompany = Number(priorHistoryCheck.rows[0]?.prior_links || 0) > 0;
+
+          if (!hasPriorLinkToThisCompany) {
+            await client.query('ROLLBACK');
+            res.status(409).json({
+              success: false,
+              error: 'Un compte utilisateur existe déjà avec cette adresse e-mail.',
+            });
+            return;
+          }
+
+          // 4. Réactivation légitime de l'ancien employé dans cet établissement :
+          // - Aucun doublon dans public.users
+          // - Préservation du nom complet existant (full_name non écrasé)
+          // - Révocation de toutes les anciennes sessions
+          // - Mise à jour du mot de passe d'accès fourni
+          isReattached = true;
+          const preservedFullName = foundUser.full_name || data.fullName.trim();
+          await client.query(
+            `UPDATE public.users SET is_active = TRUE, updated_at = NOW() WHERE id = $1`,
+            [foundUser.id]
+          );
+          await client.query(
+            `INSERT INTO public.user_credentials (user_id, password_hash, algo)
+             VALUES ($1, $2, 'argon2id')
+             ON CONFLICT (user_id) DO UPDATE
+             SET password_hash = EXCLUDED.password_hash, updated_at = NOW()`,
+            [foundUser.id, passwordHash]
+          );
+          await client.query(
+            `UPDATE public.user_sessions
+             SET revoked_at = NOW()
+             WHERE user_id = $1 AND revoked_at IS NULL`,
+            [foundUser.id]
+          );
+
+          targetUser = {
+            id: foundUser.id,
+            email: foundUser.email,
+            full_name: preservedFullName,
+            created_at: foundUser.created_at,
+          };
+        } else {
+          const userInsert = await client.query(
+            `INSERT INTO public.users (email, full_name, is_active)
+             VALUES ($1, $2, TRUE)
+             RETURNING id, email, full_name, created_at`,
+            [normalizedEmail, data.fullName.trim()]
+          );
+          targetUser = userInsert.rows[0];
+
+          await client.query(
+            `INSERT INTO public.user_credentials (user_id, password_hash, algo)
+             VALUES ($1, $2, 'argon2id')`,
+            [targetUser.id, passwordHash]
+          );
         }
-
-        const userInsert = await client.query(
-          `INSERT INTO public.users (email, full_name, is_active)
-           VALUES ($1, $2, TRUE)
-           RETURNING id, email, full_name, created_at`,
-          [normalizedEmail, data.fullName.trim()]
-        );
-        const newUser = userInsert.rows[0];
-
-        await client.query(
-          `INSERT INTO public.user_credentials (user_id, password_hash, algo)
-           VALUES ($1, $2, 'argon2id')`,
-          [newUser.id, passwordHash]
-        );
 
         // Créer un rôle dédié à l'employé ou réutiliser le rôle exact de l'entreprise
         const finalRoleName = buildUniqueRoleName(
           resolvedRoleLabel,
-          String(newUser.id).slice(0, 6),
+          String(targetUser.id).slice(0, 6),
           isCustomPerms
         );
 
@@ -185,7 +315,7 @@ staffRouter.post('/', async (req, res, next) => {
         } else {
           roleId = crypto.randomUUID();
           const safeRoleName = existingRole.rows.length > 0
-            ? `${finalRoleName.slice(0, 85)} #${String(newUser.id).slice(0, 6)}`
+            ? `${finalRoleName.slice(0, 85)} #${String(targetUser.id).slice(0, 6)}-${Date.now().toString().slice(-3)}`
             : finalRoleName;
           await client.query(
             `INSERT INTO public.roles (id, company_id, name, permissions)
@@ -196,22 +326,26 @@ staffRouter.post('/', async (req, res, next) => {
 
         await client.query(
           `INSERT INTO public.company_users (company_id, user_id, role_id, is_active)
-           VALUES ($1, $2, $3, TRUE)`,
-          [companyId, newUser.id, roleId]
+           VALUES ($1, $2, $3, TRUE)
+           ON CONFLICT (company_id, user_id) DO UPDATE
+           SET role_id = EXCLUDED.role_id, is_active = TRUE`,
+          [companyId, targetUser.id, roleId]
         );
 
         await client.query(
           `INSERT INTO public.audit_logs (company_id, user_id, action, table_name, record_id, new_values)
-           VALUES ($1, $2, 'STAFF_MEMBER_CREATED', 'company_users', $3, $4::jsonb)`,
+           VALUES ($1, $2, $3, 'company_users', $4, $5::jsonb)`,
           [
             companyId,
             actorUserId,
-            newUser.id,
+            isReattached ? 'STAFF_MEMBER_REATTACHED' : 'STAFF_MEMBER_CREATED',
+            targetUser.id,
             JSON.stringify({
               email: normalizedEmail,
-              fullName: data.fullName.trim(),
+              fullName: targetUser.full_name,
               roleName: resolvedRoleLabel,
               roleCode: inferRoleCode(resolvedRoleLabel, resolvedPerms),
+              reattached: isReattached,
             }),
           ]
         );
@@ -220,12 +354,15 @@ staffRouter.post('/', async (req, res, next) => {
 
         res.status(201).json({
           success: true,
-          message: `Compte employé créé pour ${data.fullName.trim()}`,
+          message: isReattached
+            ? `Compte employé réactivé et rattaché pour ${targetUser.full_name}`
+            : `Compte employé créé pour ${targetUser.full_name}`,
           data: {
-            id: newUser.id,
-            email: newUser.email,
-            fullName: newUser.full_name,
+            id: targetUser.id,
+            email: targetUser.email,
+            fullName: targetUser.full_name,
             isActive: true,
+            reattached: isReattached,
             roleId,
             roleName: resolvedRoleLabel,
             roleCode: inferRoleCode(resolvedRoleLabel, resolvedPerms),

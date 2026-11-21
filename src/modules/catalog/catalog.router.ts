@@ -225,26 +225,41 @@ catalogRouter.delete('/products/:id', async (req, res, next) => {
            (SELECT COUNT(*)::INT FROM public.sale_items WHERE product_id = $1) AS sale_items_cnt,
            (SELECT COUNT(*)::INT FROM public.purchase_items WHERE product_id = $1) AS purchase_items_cnt,
            (SELECT COUNT(*)::INT FROM public.qr_order_items WHERE product_id = $1) AS qr_items_cnt,
-           (SELECT COUNT(*)::INT FROM public.stock_movements WHERE product_id = $1) AS stock_mov_cnt`,
+           (SELECT COUNT(*)::INT FROM public.stock_movements WHERE product_id = $1) AS stock_mov_cnt,
+           (SELECT COUNT(*)::INT FROM public.stock_levels WHERE product_id = $1) AS stock_lvl_cnt,
+           (SELECT COUNT(*)::INT FROM public.recipes WHERE finished_product_id = $1) AS recipes_cnt,
+           (SELECT COUNT(*)::INT FROM public.recipe_ingredients WHERE ingredient_id = $1) AS recipe_ing_cnt`,
         [productId]
       );
       const u = usageRes.rows[0] || {};
+      const dependencies = {
+        saleItems: Number(u.sale_items_cnt || 0),
+        purchaseItems: Number(u.purchase_items_cnt || 0),
+        qrOrderItems: Number(u.qr_items_cnt || 0),
+        stockMovements: Number(u.stock_mov_cnt || 0),
+        stockLevels: Number(u.stock_lvl_cnt || 0),
+        recipes: Number(u.recipes_cnt || 0),
+        recipeIngredients: Number(u.recipe_ing_cnt || 0),
+      };
       const hasHistory =
-        Number(u.sale_items_cnt || 0) > 0 ||
-        Number(u.purchase_items_cnt || 0) > 0 ||
-        Number(u.qr_items_cnt || 0) > 0 ||
-        Number(u.stock_mov_cnt || 0) > 0;
+        dependencies.saleItems > 0 ||
+        dependencies.purchaseItems > 0 ||
+        dependencies.qrOrderItems > 0 ||
+        dependencies.stockMovements > 0 ||
+        dependencies.stockLevels > 0 ||
+        dependencies.recipes > 0 ||
+        dependencies.recipeIngredients > 0;
 
       if (hasHistory) {
         await client.query(
           `UPDATE public.products SET is_active = FALSE, updated_at = NOW() WHERE id = $1`,
           [productId]
         );
-        return { found: true, mode: 'deactivated' as const };
+        return { found: true, mode: 'deactivated' as const, dependencies };
       }
 
       await client.query(`DELETE FROM public.products WHERE id = $1`, [productId]);
-      return { found: true, mode: 'deleted' as const };
+      return { found: true, mode: 'deleted' as const, dependencies };
     });
 
     if (!outcome.found) {
@@ -258,7 +273,7 @@ catalogRouter.delete('/products/:id', async (req, res, next) => {
         outcome.mode === 'deleted'
           ? 'Produit supprimé et place libérée dans votre quota.'
           : 'Produit archivé (historique conservé) et place libérée dans votre quota.',
-      data: { id: productId, mode: outcome.mode },
+      data: { id: productId, mode: outcome.mode, dependencies: outcome.dependencies },
     });
   } catch (error) {
     next(error);

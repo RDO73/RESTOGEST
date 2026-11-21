@@ -79,7 +79,7 @@ export async function withCompanyQuotaLock<T>(companyKey: string, task: () => Pr
   const chained = prev.then(() => current, () => current);
   companyQuotaMutexMap.set(companyKey, chained);
 
-  await prev.catch(() => {});
+  await prev.catch(() => { });
   try {
     return await task();
   } finally {
@@ -123,6 +123,28 @@ export class SubscriptionReadOnlyError extends Error {
   ) {
     super(message);
     this.name = 'SubscriptionReadOnlyError';
+  }
+}
+
+export class TermsReacceptanceRequiredError extends Error {
+  public readonly statusCode = 403;
+  public readonly code = 'TERMS_REACCEPTANCE_REQUIRED';
+  public readonly requiresReacceptance = true;
+  public readonly currentRequiredCguVersion: string;
+  public readonly currentRequiredCgvVersion: string;
+
+  constructor(opts: {
+    currentRequiredCguVersion: string;
+    currentRequiredCgvVersion: string;
+    message?: string;
+  }) {
+    super(
+      opts.message ||
+      `Une nouvelle version obligatoire des Conditions Générales d'Utilisation (${opts.currentRequiredCguVersion}) et des Conditions Générales de Vente (${opts.currentRequiredCgvVersion}) doit être acceptée avant toute opération d'écriture.`
+    );
+    this.name = 'TermsReacceptanceRequiredError';
+    this.currentRequiredCguVersion = opts.currentRequiredCguVersion;
+    this.currentRequiredCgvVersion = opts.currentRequiredCgvVersion;
   }
 }
 
@@ -243,7 +265,7 @@ export async function recordUserTermsAcceptance(
 export async function getUserTermsAcceptanceStatus(
   db: DbExecutor,
   companyId: string,
-  userId: string
+  userId?: string | null
 ): Promise<{
   accepted: boolean;
   requiresReacceptance: boolean;
@@ -263,14 +285,25 @@ export async function getUserTermsAcceptanceStatus(
 }> {
   const required = getRequiredLegalVersions();
   const res = await db.query(
-    `SELECT id, cgu_version, cgv_version, privacy_policy_version, accepted_at, proof_hash, acceptance_source
+    `SELECT id, user_id, cgu_version, cgv_version, privacy_policy_version, accepted_at, proof_hash, acceptance_source
      FROM public.user_terms_acceptances
-     WHERE company_id = $1 AND user_id = $2
+     WHERE company_id = $1
      ORDER BY accepted_at DESC`,
-    [companyId, userId]
+    [companyId]
   );
 
   if (res.rows.length === 0) {
+    if (companyId === DEMO_TENANT_ID) {
+      return {
+        accepted: true,
+        requiresReacceptance: false,
+        currentRequiredCguVersion: required.cguVersion,
+        currentRequiredCgvVersion: required.cgvVersion,
+        currentRequiredPrivacyVersion: required.privacyPolicyVersion,
+        latestAcceptance: null,
+        historyCount: 0,
+      };
+    }
     return {
       accepted: false,
       requiresReacceptance: true,
@@ -282,9 +315,29 @@ export async function getUserTermsAcceptanceStatus(
     };
   }
 
-  const latest = res.rows[0];
-  const isUpToDate =
-    latest.cgu_version === required.cguVersion && latest.cgv_version === required.cgvVersion;
+  const userRows = userId ? res.rows.filter((r: any) => r.user_id === userId) : [];
+  const matchingRequiredRow =
+    res.rows.find(
+      (r: any) =>
+        (!userId || r.user_id === userId) &&
+        r.cgu_version === required.cguVersion &&
+        r.cgv_version === required.cgvVersion
+    ) ||
+    res.rows.find(
+      (r: any) => r.cgu_version === required.cguVersion && r.cgv_version === required.cgvVersion
+    ) ||
+    null;
+
+  const latestUserRow = userRows[0] || null;
+  const latestCompanyRow = res.rows[0];
+  const latest =
+    matchingRequiredRow ||
+    (latestUserRow &&
+      new Date(latestUserRow.accepted_at).getTime() >= new Date(latestCompanyRow.accepted_at).getTime()
+      ? latestUserRow
+      : latestCompanyRow);
+
+  const isUpToDate = Boolean(matchingRequiredRow);
 
   return {
     accepted: isUpToDate,
@@ -301,7 +354,7 @@ export async function getUserTermsAcceptanceStatus(
       proofHash: latest.proof_hash,
       source: latest.acceptance_source,
     },
-    historyCount: res.rows.length,
+    historyCount: userRows.length > 0 ? userRows.length : res.rows.length,
   };
 }
 
@@ -436,6 +489,136 @@ export async function resolveCompanySubscriptionState(
   }
 
   const row = subRes.rows[0];
+
+  // Si ce site est un établissement secondaire rattaché à un abonnement principal ENTREPRISE (MULTI-SITE:<parentCompanyId>),
+  // synchroniser dynamiquement son état, sa formule, ses quotas et son expiration/suspension avec l'établissement principal,
+  // tout en vérifiant que le même propriétaire actif détient toujours les deux établissements.
+  if (row.last_payment_ref && String(row.last_payment_ref).startsWith('MULTI-SITE:')) {
+    const parentCompanyId = String(row.last_payment_ref).slice('MULTI-SITE:'.length).trim();
+    if (parentCompanyId && parentCompanyId !== companyId) {
+      const sharedOwnerRes = await db.query(
+        `SELECT c_parent.is_active AS parent_company_active
+         FROM public.company_users cu_child
+         JOIN public.roles r_child ON r_child.id = cu_child.role_id AND r_child.company_id = cu_child.company_id
+         JOIN public.company_users cu_parent ON cu_parent.user_id = cu_child.user_id
+         JOIN public.roles r_parent ON r_parent.id = cu_parent.role_id AND r_parent.company_id = cu_parent.company_id
+         JOIN public.companies c_parent ON c_parent.id = cu_parent.company_id
+         WHERE cu_child.company_id = $1
+           AND cu_parent.company_id = $2
+           AND cu_child.is_active = TRUE
+           AND cu_parent.is_active = TRUE
+           AND COALESCE((r_child.permissions->>'all')::boolean, FALSE) = TRUE
+           AND COALESCE((r_parent.permissions->>'all')::boolean, FALSE) = TRUE
+         LIMIT 1`,
+        [companyId, parentCompanyId]
+      );
+
+      if (sharedOwnerRes.rows.length === 0) {
+        const fallbackQuotas = PLAN_QUOTA_DEFAULTS.PRO;
+        return {
+          subscription: {
+            ...row,
+            status: 'expired',
+            daysRemaining: 0,
+            isExpired: true,
+            isReadOnly: true,
+          },
+          planCode: String(row.plan_code || 'PRO'),
+          planName: 'Accès multi-sites révoqué',
+          status: 'expired',
+          isExpired: true,
+          isReadOnly: true,
+          daysRemaining: 0,
+          quotas: fallbackQuotas,
+        };
+      }
+
+      const parentCompanyActive = Boolean(sharedOwnerRes.rows[0].parent_company_active);
+      const parentState = await resolveCompanySubscriptionState(db, parentCompanyId);
+      const pSub = parentState.subscription;
+      const syncedStatus = parentCompanyActive ? parentState.status : 'suspended';
+      const syncedExpired = !parentCompanyActive || parentState.isExpired;
+      const syncedReadOnly = !parentCompanyActive || parentState.isReadOnly;
+
+      if (
+        row.plan_code !== parentState.planCode ||
+        row.status !== syncedStatus ||
+        String(row.current_period_end || '') !== String(pSub.current_period_end || '')
+      ) {
+        try {
+          await db.query(
+            `UPDATE public.company_subscriptions
+             SET plan_id = $2,
+                 plan_code = $3,
+                 status = $4,
+                 billing_period = $5,
+                 starts_at = $6,
+                 ends_at = $7,
+                 trial_ends_at = $8,
+                 current_period_start = $9,
+                 current_period_end = $10,
+                 custom_max_users = $11,
+                 custom_max_locations = $12,
+                 custom_max_tables = $13,
+                 custom_max_products = $14,
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [
+              row.id,
+              pSub.plan_id || null,
+              parentState.planCode,
+              syncedStatus,
+              pSub.billing_period || 'monthly',
+              pSub.starts_at || null,
+              pSub.ends_at || null,
+              pSub.trial_ends_at || null,
+              pSub.current_period_start || null,
+              pSub.current_period_end || null,
+              pSub.custom_max_users ?? null,
+              pSub.custom_max_locations ?? null,
+              pSub.custom_max_tables ?? null,
+              pSub.custom_max_products ?? null,
+            ]
+          );
+        } catch {
+          // non-blocking if inside read-only role
+        }
+      }
+
+      return {
+        subscription: {
+          ...row,
+          plan_id: pSub.plan_id,
+          plan_code: parentState.planCode,
+          plan_name: parentState.planName,
+          status: syncedStatus,
+          billing_period: pSub.billing_period,
+          starts_at: pSub.starts_at,
+          ends_at: pSub.ends_at,
+          trial_ends_at: pSub.trial_ends_at,
+          current_period_start: pSub.current_period_start,
+          current_period_end: pSub.current_period_end,
+          daysRemaining: syncedExpired ? 0 : parentState.daysRemaining,
+          isExpired: syncedExpired,
+          isReadOnly: syncedReadOnly,
+          max_users: parentState.quotas.maxUsers,
+          max_locations: parentState.quotas.maxLocations,
+          max_tables: parentState.quotas.maxTables,
+          max_products: parentState.quotas.maxProducts,
+          parent_company_id: parentCompanyId,
+          is_linked_multi_site: true,
+        },
+        planCode: parentState.planCode,
+        planName: parentState.planName,
+        status: syncedStatus,
+        isExpired: syncedExpired,
+        isReadOnly: syncedReadOnly,
+        daysRemaining: syncedExpired ? 0 : parentState.daysRemaining,
+        quotas: parentState.quotas,
+      };
+    }
+  }
+
   const planCode = String(row.plan_code || row.sp_code || 'PRO').toUpperCase();
   const baseDefaults = PLAN_QUOTA_DEFAULTS[planCode] || PLAN_QUOTA_DEFAULTS.PRO;
   const planName =
@@ -486,8 +669,8 @@ export async function resolveCompanySubscriptionState(
     companyId === DEMO_TENANT_ID
       ? false
       : ['expired', 'past_due', 'suspended', 'cancelled'].includes(effectiveStatus) ||
-        (effectiveStatus === 'pending_payment' && isDatePast) ||
-        isDatePast;
+      (effectiveStatus === 'pending_payment' && isDatePast) ||
+      isDatePast;
 
   const daysRemaining = isDatePast
     ? 0
@@ -519,8 +702,9 @@ export async function resolveCompanySubscriptionState(
 
 /**
  * Middleware Express : autorise toutes les consultations et exports (GET/HEAD/OPTIONS)
- * mais bloque côté serveur toute opération d'écriture/création/modification
- * lorsque la période d'essai ou l'abonnement de l'établissement est expiré (mode lecture seule).
+ * mais bloque côté serveur toute opération d'écriture/création/modification :
+ * 1. Lorsqu'une nouvelle version obligatoire des CGU/CGV doit être réacceptée (requiresReacceptance === true).
+ * 2. Lorsque la période d'essai ou l'abonnement de l'établissement est expiré (mode lecture seule).
  */
 export async function requireActiveSubscriptionWriteAccess(
   req: Request,
@@ -537,6 +721,22 @@ export async function requireActiveSubscriptionWriteAccess(
     const companyId = req.auth?.companyId;
     if (!companyId || companyId === DEMO_TENANT_ID) {
       next();
+      return;
+    }
+
+    const termsStatus = await getUserTermsAcceptanceStatus(adminPool, companyId, req.auth?.userId);
+    if (termsStatus.requiresReacceptance) {
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'TERMS_REACCEPTANCE_REQUIRED',
+          message:
+            "Une nouvelle version obligatoire des Conditions Générales d'Utilisation (CGU) et des Conditions Générales de Vente (CGV) est entrée en vigueur. Vous devez accepter ces conditions mises à jour avant d'effectuer toute opération d'écriture.",
+          requiresReacceptance: true,
+          currentRequiredCguVersion: termsStatus.currentRequiredCguVersion,
+          currentRequiredCgvVersion: termsStatus.currentRequiredCgvVersion,
+        },
+      });
       return;
     }
 
@@ -585,6 +785,16 @@ export async function enforceSubscriptionQuota(
     await db.query(`SELECT pg_advisory_xact_lock(hashtext($1::text))`, [`quota:${companyId}:${resourceType}`]);
   } catch {
     // fallback in case db is a pool without active transaction
+  }
+
+  if (companyId !== DEMO_TENANT_ID) {
+    const termsStatus = await getUserTermsAcceptanceStatus(db, companyId, opts.ownerUserId);
+    if (termsStatus.requiresReacceptance) {
+      throw new TermsReacceptanceRequiredError({
+        currentRequiredCguVersion: termsStatus.currentRequiredCguVersion,
+        currentRequiredCgvVersion: termsStatus.currentRequiredCgvVersion,
+      });
+    }
   }
 
   const subState = await resolveCompanySubscriptionState(db, companyId);

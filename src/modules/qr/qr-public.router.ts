@@ -6,7 +6,10 @@ import {
   ensureDefaultCompanyTablesAndSettings,
   createLinkedPendingSaleForQrOrder,
 } from './qr-admin.router.js';
-import { resolveCompanySubscriptionState } from '../subscriptions/subscription-guard.service.js';
+import {
+  getUserTermsAcceptanceStatus,
+  resolveCompanySubscriptionState,
+} from '../subscriptions/subscription-guard.service.js';
 
 export const qrPublicRouter = Router();
 
@@ -357,6 +360,15 @@ qrPublicRouter.post('/menu/:qrToken/orders', publicOrderSubmitLimiter, async (re
       }
 
       const companyId = table.company_id as string;
+      const termsStatus = await getUserTermsAcceptanceStatus(client, companyId, null);
+      if (termsStatus.requiresReacceptance) {
+        return {
+          errorStatus: 403,
+          errorCode: 'TERMS_REACCEPTANCE_REQUIRED',
+          errorMessage:
+            "La prise de commande digitale est temporairement suspendue en attente de validation des conditions contractuelles mises à jour par l'établissement.",
+        };
+      }
       const subState = await resolveCompanySubscriptionState(client, companyId);
       if (subState.isReadOnly) {
         return {
@@ -894,6 +906,15 @@ qrPublicRouter.post('/menu/:qrToken/service-request', publicOrderSubmitLimiter, 
       }
 
       const companyId = table.company_id as string;
+      const termsStatus = await getUserTermsAcceptanceStatus(client, companyId, null);
+      if (termsStatus.requiresReacceptance) {
+        return {
+          errorStatus: 403,
+          errorCode: 'TERMS_REACCEPTANCE_REQUIRED',
+          errorMessage:
+            "Ce service est temporairement suspendu en attente de validation des conditions contractuelles mises à jour par l'établissement.",
+        };
+      }
       const subState = await resolveCompanySubscriptionState(client, companyId);
       if (subState.isReadOnly) {
         return {

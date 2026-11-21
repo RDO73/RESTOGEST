@@ -11,7 +11,11 @@ import {
   computeConsolidatedMultiCurrencyFinances,
 } from './african-market.service.js';
 import { getPaymentProviderAdapter } from './providers/payment-adapters.js';
-import { resolveCompanySubscriptionState } from './subscription-guard.service.js';
+import {
+  getUserTermsAcceptanceStatus,
+  resolveCompanySubscriptionState,
+} from './subscription-guard.service.js';
+import { DEMO_TENANT_ID } from '../../db/demo-seed.js';
 
 export const subscriptionsRouter = Router();
 
@@ -290,6 +294,29 @@ async function confirmSaasTransactionAndActivateSubscription(
     ]
   );
   const subscription = subRes.rows[0];
+
+  // Propager l'activation / renouvellement aux éventuels sites secondaires rattachés en multi-sites
+  await client.query(
+    `UPDATE public.company_subscriptions
+     SET plan_id = COALESCE($2, plan_id),
+         plan_code = $3,
+         status = 'active',
+         billing_period = $4,
+         starts_at = $5,
+         ends_at = $6,
+         current_period_start = $5,
+         current_period_end = $6,
+         updated_at = NOW()
+     WHERE last_payment_ref = $1`,
+    [
+      `MULTI-SITE:${txRow.company_id}`,
+      planId,
+      txRow.plan_code,
+      txRow.billing_period,
+      periodStart.toISOString(),
+      periodEnd.toISOString(),
+    ]
+  );
 
   const txUpdateRes = await client.query(
     `UPDATE public.saas_subscription_transactions
@@ -671,7 +698,7 @@ const updateSettingsSchema = z.object({
   whatsappPhone: z.string().max(40).optional().nullable(),
 });
 
-subscriptionsRouter.put('/settings', async (req, res, next) => {
+subscriptionsRouter.put('/settings', requirePermission('settings:manage'), async (req, res, next) => {
   try {
     const parsed = updateSettingsSchema.parse(req.body);
     const countryCode = parsed.country.trim().toUpperCase();
@@ -712,42 +739,103 @@ subscriptionsRouter.put('/settings', async (req, res, next) => {
   }
 });
 
-const updateCompanySettingsLegacySchema = z.object({
-  name: z.string().min(2).max(200).optional(),
-  currency: z.string().min(2).max(10),
-  defaultTaxRate: z.number().min(0).max(100).optional(),
-  allowNegativeStock: z.boolean().optional(),
-});
+const updateCompanySettingsLegacySchema = z
+  .object({
+    // Paramètres de facturation nécessaires au renouvellement (autorisés en lecture seule)
+    currency: z.string().trim().toUpperCase().pipe(z.enum(['XOF', 'GNF', 'EUR', 'USD'])),
+    country: z.string().trim().min(2).max(10).optional(),
+    whatsappPhone: z.string().max(40).optional().nullable(),
+    // Paramètres opérationnels de l'établissement (bloqués en lecture seule et si réacceptation CGU/CGV exigée)
+    name: z.string().trim().min(2).max(200).optional(),
+    defaultTaxRate: z.number().min(0).max(100).optional(),
+    allowNegativeStock: z.boolean().optional(),
+  })
+  .strict();
 
 subscriptionsRouter.put('/company-settings', requirePermission('settings:manage'), async (req, res, next) => {
   try {
     const parsed = updateCompanySettingsLegacySchema.parse(req.body);
-    const updated = await withAdminTransaction(async (client) => {
-      const compRes = await client.query(
-        `UPDATE public.companies
-         SET name = COALESCE($2, name),
-             currency = $3,
-             default_tax_rate = COALESCE($4, default_tax_rate),
-             allow_negative_stock = COALESCE($5, allow_negative_stock),
-             updated_at = NOW()
-         WHERE id = $1
-         RETURNING *`,
-        [
-          req.auth!.companyId,
-          parsed.name || null,
-          parsed.currency,
-          parsed.defaultTaxRate !== undefined ? parsed.defaultTaxRate : null,
-          parsed.allowNegativeStock !== undefined ? parsed.allowNegativeStock : null,
-        ]
-      );
+    const companyId = req.auth!.companyId;
+    const hasOperationalFields =
+      parsed.name !== undefined ||
+      parsed.defaultTaxRate !== undefined ||
+      parsed.allowNegativeStock !== undefined;
 
-      const country = parsed.currency === 'GNF' ? 'GN' : 'SN';
+    if (hasOperationalFields && companyId !== DEMO_TENANT_ID) {
+      const termsStatus = await getUserTermsAcceptanceStatus(adminPool, companyId, req.auth?.userId);
+      if (termsStatus.requiresReacceptance) {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'TERMS_REACCEPTANCE_REQUIRED',
+            message:
+              "La modification des paramètres opérationnels de l'établissement (nom, TVA, politique de stock négatif) est bloquée tant que la nouvelle version obligatoire des CGU et CGV n'a pas été acceptée.",
+            requiresReacceptance: true,
+            currentRequiredCguVersion: termsStatus.currentRequiredCguVersion,
+            currentRequiredCgvVersion: termsStatus.currentRequiredCgvVersion,
+          },
+        });
+        return;
+      }
+
+      const subState = await resolveCompanySubscriptionState(adminPool, companyId);
+      if (subState.isReadOnly) {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'SUBSCRIPTION_EXPIRED_READ_ONLY',
+            message:
+              "Votre établissement est en mode lecture seule : seuls les paramètres de facturation (devise, pays) nécessaires à la régularisation de votre abonnement peuvent être modifiés.",
+            subscriptionStatus: subState.status,
+            isReadOnly: true,
+          },
+        });
+        return;
+      }
+    }
+
+    const updated = await withAdminTransaction(async (client) => {
+      const resolvedCountry = (parsed.country || (parsed.currency === 'GNF' ? 'GN' : 'SN')).toUpperCase();
+
+      const compRes = hasOperationalFields
+        ? await client.query(
+            `UPDATE public.companies
+             SET name = COALESCE($2, name),
+                 currency = $3,
+                 country_code = $6,
+                 default_tax_rate = COALESCE($4, default_tax_rate),
+                 allow_negative_stock = COALESCE($5, allow_negative_stock),
+                 updated_at = NOW()
+             WHERE id = $1
+             RETURNING *`,
+            [
+              companyId,
+              parsed.name || null,
+              parsed.currency,
+              parsed.defaultTaxRate !== undefined ? parsed.defaultTaxRate : null,
+              parsed.allowNegativeStock !== undefined ? parsed.allowNegativeStock : null,
+              resolvedCountry,
+            ]
+          )
+        : await client.query(
+            `UPDATE public.companies
+             SET currency = $2,
+                 country_code = $3,
+                 updated_at = NOW()
+             WHERE id = $1
+             RETURNING *`,
+            [companyId, parsed.currency, resolvedCountry]
+          );
+
       await client.query(
-        `INSERT INTO public.company_settings (company_id, currency, country, updated_at)
-         VALUES ($1, $2, $3, NOW())
+        `INSERT INTO public.company_settings (company_id, currency, country, whatsapp_phone, updated_at)
+         VALUES ($1, $2, $3, $4, NOW())
          ON CONFLICT (company_id) DO UPDATE
-         SET currency = EXCLUDED.currency, updated_at = NOW()`,
-        [req.auth!.companyId, parsed.currency, country]
+         SET currency = EXCLUDED.currency,
+             country = EXCLUDED.country,
+             whatsapp_phone = COALESCE(EXCLUDED.whatsapp_phone, public.company_settings.whatsapp_phone),
+             updated_at = NOW()`,
+        [companyId, parsed.currency, resolvedCountry, parsed.whatsappPhone ?? null]
       );
 
       return compRes.rows[0];
@@ -1111,6 +1199,7 @@ subscriptionsRouter.post('/checkout', requirePermission('settings:manage'), asyn
       );
       const pendingSub = pendingSubRes.rows[0];
 
+
       await safeAuditLog(client, {
         companyId: req.auth!.companyId,
         userId: req.auth!.userId,
@@ -1290,6 +1379,7 @@ subscriptionsRouter.get('/admin/overview', async (req, res, next) => {
            )::INT AS expired_or_suspended_count,
            COALESCE(SUM(
              CASE
+               WHEN COALESCE(cs.last_payment_ref, '') LIKE 'MULTI-SITE:%' THEN 0
                WHEN cs.status = 'active' AND cs.billing_period = 'monthly' THEN sp.monthly_price
                WHEN cs.status = 'active' AND cs.billing_period = 'quarterly' THEN ROUND(sp.quarterly_price / 3.0, 2)
                WHEN cs.status = 'active' AND cs.billing_period = 'semiannual' THEN ROUND(sp.semiannual_price / 6.0, 2)
@@ -1556,6 +1646,7 @@ subscriptionsRouter.post('/admin/transactions/:id/confirm', async (req, res, nex
         isWebhook: false,
       });
 
+
       await safeAuditLog(client, {
         companyId: txRes.rows[0].company_id,
         userId: resolveActorUserId(req.auth),
@@ -1611,6 +1702,7 @@ subscriptionsRouter.post('/admin/transactions/:id/reject', async (req, res, next
          RETURNING *`,
         [txId, reason]
       );
+
 
       await safeAuditLog(client, {
         companyId: txRes.rows[0].company_id,
@@ -1722,6 +1814,36 @@ subscriptionsRouter.post('/admin/subscriptions/:id/status', async (req, res, nex
           nextCustomTables,
           nextCustomProducts,
           parsed.reason,
+          nextPlanId,
+        ]
+      );
+
+
+      // Propager immédiatement la mise à jour à tous les établissements secondaires rattachés en multi-sites (MULTI-SITE:<companyId>)
+      await client.query(
+        `UPDATE public.company_subscriptions
+         SET status = $2,
+             plan_code = $3,
+             plan_id = $10,
+             current_period_end = $4,
+             ends_at = $4,
+             trial_ends_at = $5,
+             custom_max_users = $6,
+             custom_max_locations = $7,
+             custom_max_tables = $8,
+             custom_max_products = $9,
+             updated_at = NOW()
+         WHERE last_payment_ref = $1`,
+        [
+          `MULTI-SITE:${sub.company_id}`,
+          nextStatus,
+          nextPlanCode,
+          nextPeriodEnd.toISOString(),
+          nextTrialEndsAt.toISOString(),
+          nextCustomUsers,
+          nextCustomLocations,
+          nextCustomTables,
+          nextCustomProducts,
           nextPlanId,
         ]
       );
@@ -1922,6 +2044,7 @@ subscriptionsRouter.post('/admin/transactions/:id/refund', async (req, res, next
         [txId, reason]
       );
 
+
       await safeAuditLog(client, {
         companyId: tx.company_id,
         userId: resolveActorUserId(req.auth),
@@ -1999,6 +2122,7 @@ subscriptionsRouter.post('/admin/countries', async (req, res, next) => {
         ]
       );
 
+
       await safeAuditLog(client, {
         companyId: req.auth!.companyId,
         userId: resolveActorUserId(req.auth),
@@ -2063,6 +2187,7 @@ subscriptionsRouter.put('/admin/country-prices', async (req, res, next) => {
         ]
       );
 
+
       await safeAuditLog(client, {
         companyId: req.auth!.companyId,
         userId: resolveActorUserId(req.auth),
@@ -2112,6 +2237,7 @@ subscriptionsRouter.put('/admin/exchange-rates', async (req, res, next) => {
          VALUES ($1, $2, $3, $4, $5)`,
         [base, target, parsed.rate, parsed.source.trim(), resolveActorUserId(req.auth)]
       );
+
 
       await safeAuditLog(client, {
         companyId: req.auth!.companyId,
@@ -2183,6 +2309,7 @@ subscriptionsRouter.post('/admin/reception-accounts', async (req, res, next) => 
         ]
       );
 
+
       await safeAuditLog(client, {
         companyId: req.auth!.companyId,
         userId: resolveActorUserId(req.auth),
@@ -2241,6 +2368,7 @@ subscriptionsRouter.put('/admin/country-payment-methods', async (req, res, next)
         ]
       );
 
+
       await safeAuditLog(client, {
         companyId: req.auth!.companyId,
         userId: resolveActorUserId(req.auth),
@@ -2290,6 +2418,7 @@ subscriptionsRouter.put('/admin/providers/:code', async (req, res, next) => {
           parsed.notes !== undefined ? parsed.notes : curr.notes,
         ]
       );
+
 
       await safeAuditLog(client, {
         companyId: req.auth!.companyId,
