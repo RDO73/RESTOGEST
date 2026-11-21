@@ -145,11 +145,11 @@ async function ensureDefaultPlansAndMerchant(client: IDbClient): Promise<void> {
          bank_name, bank_account_name, bank_iban
        )
        VALUES (
-         'RESTOGEST CLOUD SAS', 'RESTOGEST SaaS', 'facturation@myrestogest.com',
-         '+221 77 000 00 00', '+221 78 897 93 42',
-         'Dakar (Sénégal) & Conakry (Guinée)', 'XOF', 'manual_wave_sn',
+         'RESTOGEST — Hadiry Dramé', 'RESTOGEST', 'hadirydrame@gmail.com',
+         '+221 78 897 93 42', '+221 78 897 93 42',
+         'Sénégal & Guinée', 'XOF', 'manual_wave_sn',
          '+221788979342', NULL, NULL,
-         'UBA / Orabank Afrique de l’Ouest', 'RESTOGEST CLOUD SAS', 'SN08 0010 2030 4050 6070 8090'
+         'UBA / Orabank Afrique de l’Ouest', 'RESTOGEST — Hadiry Dramé', 'SN08 0010 2030 4050 6070 8090'
        )`
     );
   }

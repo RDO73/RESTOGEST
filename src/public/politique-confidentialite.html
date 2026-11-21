@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Politique de confidentialité — RESTOGEST</title>
-  <meta name="description" content="Politique de confidentialité de RESTOGEST : données collectées, finalités, durées de conservation, sécurité PostgreSQL RLS et droits des utilisateurs." />
+  <meta name="description" content="Politique de confidentialité de RESTOGEST : données collectées, fonctionnement technique des sessions et de la conservation, sécurité PostgreSQL RLS et contact du fondateur Hadiry Dramé." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="canonical" href="https://myrestogest.com/politique-confidentialite" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -20,7 +20,7 @@
     .legal-card p, .legal-card li { font-size: 15px; line-height: 1.7; color: #475569; }
     .legal-card ul { padding-left: 20px; }
     .legal-meta { font-size: 13px; color: #64748b; margin-bottom: 24px; }
-    .legal-tag { display: inline-block; background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; border-radius: 6px; padding: 1px 7px; font-size: 12px; font-weight: 700; }
+    .legal-note { background: #f8fafc; border-left: 4px solid #ea580c; padding: 14px 16px; border-radius: 8px; margin: 14px 0; font-size: 14px; color: #334155; }
   </style>
 </head>
 <body class="lp-shell">
@@ -39,58 +39,75 @@
   <main class="legal-page">
     <article class="legal-card">
       <h1>Politique de confidentialité</h1>
-      <p class="legal-meta">RESTOGEST (<code>https://myrestogest.com</code>) · Document de transparence — certaines mentions juridiques sont marquées <span class="legal-tag">À valider</span> avant publication définitive.</p>
+      <p class="legal-meta">Plateforme <strong>RESTOGEST</strong> (<code>https://myrestogest.com</code>) · Responsable : <strong>Hadiry Dramé</strong></p>
 
-      <h2>1. Données du compte utilisateur</h2>
-      <p>Lors de la création et de l’utilisation d’un compte RESTOGEST, nous enregistrons les informations strictement nécessaires à l’accès sécurisé :</p>
-      <ul>
-        <li>Nom complet du gérant et adresse e-mail professionnelle ;</li>
-        <li>Mot de passe stocké exclusivement sous forme hachée (Argon2), jamais en clair ;</li>
-        <li>Informations techniques de session (jeton de session chiffré et dates de connexion).</li>
-      </ul>
-
-      <h2>2. Données de l’établissement</h2>
-      <p>Pour faire fonctionner le logiciel au quotidien, l’établissement enregistre :</p>
-      <ul>
-        <li>Nom de l’établissement, type d’activité, pays (Sénégal ou Guinée), devise (FCFA ou GNF) et numéro WhatsApp du gérant si renseigné ;</li>
-        <li>Catalogue produits, catégories, fiches recettes, tables, QR codes, fournisseurs et niveaux de stock.</li>
-      </ul>
-
-      <h2>3. Commandes et opérations enregistrées</h2>
-      <p>L’application conserve l’historique opérationnel de votre établissement : tickets de caisse, commandes QR sur table, commandes à emporter ou en livraison (incluant nom/téléphone client si saisis pour la livraison), mouvements de stock, sessions de caisse, rapports Z, dépenses, achats fournisseurs et factures d’abonnement RESTOGEST.</p>
-
-      <h2>4. Finalités de la collecte</h2>
-      <ul>
-        <li>Fournir les fonctionnalités de caisse, menu digital, gestion de stock et clôture Z ;</li>
-        <li>Assurer la sécurité des accès, l’isolation stricte entre établissements (PostgreSQL Row Level Security) et la traçabilité anti-fraude ;</li>
-        <li>Gérer la facturation, la validation des abonnements (Wave, Orange Money, virement, carte UBA) et le support client.</li>
-      </ul>
-
-      <h2>5. Durées de conservation</h2>
-      <ul>
-        <li><strong>Données actives du compte et de l’établissement :</strong> conservées pendant toute la durée d’utilisation du service ;</li>
-        <li><strong>Données après résiliation / fermeture de compte :</strong> suppression ou anonymisation dans un délai à définir <span class="legal-tag">À valider</span> (ex. 30 à 90 jours après clôture, hors obligations comptables légales) ;</li>
-        <li><strong>Pièces comptables et factures d’abonnement :</strong> conservées selon les délais légaux applicables au Sénégal et en Guinée <span class="legal-tag">À valider</span>.</li>
-      </ul>
-
-      <h2>6. Sous-traitants techniques et sécurité</h2>
-      <p>Les données sont hébergées sur une infrastructure Cloud (Vercel pour l’application web/API et Neon pour PostgreSQL). Chaque établissement est isolé en base de données par des politiques de sécurité au niveau des lignes (RLS). Aucune donnée commerciale n’est revendue à des tiers.</p>
-
-      <h2>7. Vos droits (accès, rectification, suppression)</h2>
-      <p>Conformément aux principes de protection des données personnelles <span class="legal-tag">À valider : références légales locales CDP Sénégal / Guinée</span>, tout utilisateur peut demander l’accès, la rectification, l’export ou la suppression de ses données personnelles.</p>
-
-      <h2>8. Coordonnées de contact</h2>
+      <h2>1. Responsable du traitement des données</h2>
       <p>
-        Pour toute question relative à vos données personnelles ou pour exercer vos droits :
+        Les données traitées via la plateforme <strong>RESTOGEST</strong> sont placées sous la responsabilité de son fondateur et propriétaire, <strong>Hadiry Dramé</strong> (activité entrepreneuriale en phase de lancement commercial ; aucune société immatriculée n’étant constituée à ce jour, la structuration juridique interviendra ultérieurement lorsque le développement de l’activité le justifiera).
       </p>
       <ul>
-        <li><strong>WhatsApp support RESTOGEST :</strong> <a href="https://wa.me/221788979342" target="_blank" rel="noopener">+221 78 897 93 42</a></li>
-        <li><strong>Identité juridique complète, siège social et e-mail dédié vie privée :</strong> <span class="legal-tag">À valider</span> par l’éditeur.</li>
+        <li><strong>Responsable :</strong> Hadiry Dramé</li>
+        <li><strong>E-mail de contact :</strong> <a href="mailto:hadirydrame@gmail.com">hadirydrame@gmail.com</a></li>
+        <li><strong>WhatsApp :</strong> <a href="https://wa.me/221788979342" target="_blank" rel="noopener">+221 78 897 93 42</a></li>
+      </ul>
+
+      <h2>2. Données réellement collectées par la plateforme</h2>
+      <ul>
+        <li><strong>Comptes propriétaires et employés :</strong> nom complet, adresse e-mail de connexion, rôle métier et permissions attribuées, mot de passe stocké exclusivement sous forme hachée (algorithme <strong>Argon2id</strong>, jamais en clair) et empreintes techniques de session.</li>
+        <li><strong>Données de l’établissement :</strong> nom de l’établissement, type d’activité (restaurant, pâtisserie ou mixte), pays (Sénégal ou Guinée), devise (XOF ou GNF), taux de TVA par défaut et règles de suivi de stock.</li>
+        <li><strong>Données opérationnelles et commerciales :</strong> catégories, produits, fiches recettes, niveaux et mouvements de stock, sessions de caisse, rapports Z, ventes, paiements, remboursements, dépenses, achats fournisseurs, tables et commandes par QR code.</li>
+        <li><strong>Données clients des restaurants :</strong> nom, téléphone, adresse e-mail (optionnelle) et points de fidélité lorsque l’établissement choisit de les enregistrer dans son fichier clients ou lors d’une commande en livraison.</li>
+        <li><strong>Données d’abonnement :</strong> formule souscrite, période de facturation, montants et références de paiement transmises pour vérification.</li>
+      </ul>
+
+      <h2>3. Cookies techniques et sessions</h2>
+      <p>
+        RESTOGEST utilise exclusivement des <strong>cookies techniques strictement nécessaires</strong> au fonctionnement sécurisé de la connexion :
+      </p>
+      <ul>
+        <li>Un cookie de session <code>HttpOnly</code> et <code>SameSite=Strict</code> permettant de maintenir la session authentifiée sans exposer le jeton au JavaScript tiers ;</li>
+        <li>Un cookie technique <code>restogest_csrf</code> servant uniquement à protéger vos formulaires contre les requêtes falsifiées (CSRF).</li>
+      </ul>
+      <p>
+        RESTOGEST n’utilise aucun cookie publicitaire et ne revend aucune donnée à des tiers.
+      </p>
+
+      <h2>4. Finalités de l’utilisation des données</h2>
+      <ul>
+        <li>Permettre à l’établissement et à ses employés d’utiliser au quotidien les outils de caisse, commandes, stocks, dépenses, clients et rapports ;</li>
+        <li>Garantir l’isolation stricte des données entre chaque établissement inscrit et la traçabilité des opérations sensibles ;</li>
+        <li>Gérer les abonnements, la validation des paiements et l’assistance aux utilisateurs.</li>
+      </ul>
+
+      <h2>5. Fonctionnement technique de la conservation et de la suppression</h2>
+      <div class="legal-note">
+        <strong>Transparence sur les mécanismes techniques actuels :</strong>
+        <ul style="margin:8px 0 0;">
+          <li><strong>Sessions de connexion :</strong> les sessions utilisateurs expirent automatiquement après <strong>24 heures</strong> (7 jours pour la session de démonstration) et sont immédiatement révoquées en base de données dès qu’un utilisateur se déconnecte ou qu’un compte est suspendu.</li>
+          <li><strong>Données de l’établissement :</strong> conservées dans la base PostgreSQL tant que le compte de l’établissement est maintenu pour lui permettre de retrouver son historique commercial et ses rapports Z.</li>
+          <li><strong>Journaux d’audit de sécurité :</strong> les opérations sensibles (ventes, paiements, achats, dépenses, modifications de rôles) sont inscrites dans un journal d’audit protégé techniquement contre l’altération afin de prévenir les fraudes internes au sein de l’établissement.</li>
+          <li><strong>Suppression ou export sur demande :</strong> le logiciel ne comporte pas à ce jour de tâche automatisée supprimant seule les données après une durée fixe. En cas d’arrêt d’utilisation ou de demande de suppression de compte, l’accès peut être immédiatement suspendu et la suppression ou l’export des données est effectué sur demande directe auprès du fondateur.</li>
+        </ul>
+      </div>
+
+      <h2>6. Hébergement, sous-traitants techniques et sécurité</h2>
+      <p>
+        L’application et son API sont hébergées sur <strong>Vercel Inc.</strong> et la base de données PostgreSQL est hébergée sur <strong>Neon Inc.</strong> Toutes les tables métier multi-établissements sont protégées par des politiques PostgreSQL <strong>Row Level Security (RLS)</strong> forcées empêchant un établissement d’accéder aux données d’un autre établissement.
+      </p>
+
+      <h2>7. Vos droits et contact</h2>
+      <p>
+        Chaque propriétaire d’établissement ou utilisateur peut à tout moment demander l’accès, la rectification, l’export ou la suppression de ses informations en contactant directement <strong>Hadiry Dramé</strong> :
+      </p>
+      <ul>
+        <li><strong>Par e-mail :</strong> <a href="mailto:hadirydrame@gmail.com">hadirydrame@gmail.com</a></li>
+        <li><strong>Par WhatsApp :</strong> <a href="https://wa.me/221788979342" target="_blank" rel="noopener">+221 78 897 93 42</a></li>
       </ul>
 
       <div style="margin-top:32px;display:flex;gap:12px;flex-wrap:wrap;">
         <a href="/mentions-legales" class="lp-btn lp-btn-outline">Mentions légales</a>
-        <a href="/cgv" class="lp-btn lp-btn-outline">CGV</a>
+        <a href="/cgu" class="lp-btn lp-btn-outline">Consulter les CGU</a>
+        <a href="/cgv" class="lp-btn lp-btn-outline">Consulter les CGV</a>
         <a href="/" class="lp-btn lp-btn-primary">Retour à RESTOGEST</a>
       </div>
     </article>

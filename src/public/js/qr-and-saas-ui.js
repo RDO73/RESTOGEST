@@ -1405,11 +1405,11 @@ export function printSaasInvoiceModal(invoice, merchant) {
     `<div style="max-width:680px;margin:0 auto;border:1px solid #cbd5e1;padding:28px;border-radius:10px;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0f172a;padding-bottom:16px;margin-bottom:20px;">
         <div>
-          <h1 style="color:#f97316;margin:0;">${esc(merchant?.brand_name || 'RESTOGEST SaaS')}</h1>
+          <h1 style="color:#f97316;margin:0;">${esc(merchant?.brand_name || 'RESTOGEST')}</h1>
           <div style="font-size:13px;color:#475569;margin-top:4px;">
-            ${esc(merchant?.legal_name || 'RESTOGEST CLOUD SAS')}<br/>
-            ${esc(merchant?.address || 'Dakar & Conakry')}<br/>
-            Email : ${esc(merchant?.support_email || 'facturation@myrestogest.com')}
+            ${esc(merchant?.legal_name && merchant.legal_name !== 'RESTOGEST CLOUD SAS' ? merchant.legal_name : 'RESTOGEST — Fondé par Hadiry Dramé')}<br/>
+            ${esc(merchant?.address || 'Sénégal & Guinée')}<br/>
+            Email : ${esc(merchant?.support_email && merchant.support_email !== 'facturation@myrestogest.com' ? merchant.support_email : 'hadirydrame@gmail.com')}
           </div>
         </div>
         <div style="text-align:right;">
